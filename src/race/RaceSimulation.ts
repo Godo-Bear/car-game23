@@ -135,7 +135,14 @@ export class RaceSimulation {
         prevHeading: 0,
       });
     }
-    this.traffic = this.cars.map((c) => ({ car: c.physics, proj: c.proj }));
+    this.traffic = this.cars.map((c) => ({
+      car: c.physics,
+      proj: c.proj,
+      // The human player gets extra room; once on autopilot they're just another car.
+      get cautious() {
+        return c.isPlayer && !c.autopilot;
+      },
+    }));
     this.race = this.placeOnGrid();
   }
 
@@ -278,12 +285,13 @@ export class RaceSimulation {
     }
   }
 
+  /** Put a wedged AI car back on track. Reversing counts as stuck, so back-and-forth shuffling is caught. */
   private updateStuck(car: SimCar, dt: number): void {
     const controlledByAI = !car.isPlayer || car.autopilot;
     if (!controlledByAI) return;
-    if (Math.abs(car.physics.forwardSpeed) < 2) car.stuckTime += dt;
+    if (car.physics.forwardSpeed < 2) car.stuckTime += dt;
     else car.stuckTime = Math.max(0, car.stuckTime - dt * 2);
-    if (car.stuckTime > 6) this.respawn(car);
+    if (car.stuckTime > 8) this.respawn(car);
   }
 
   private savePrev(car: SimCar): void {

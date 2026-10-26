@@ -7,6 +7,8 @@ import { clamp, lerp, moveTowards, smoothstep } from '../core/math';
  * - Longitudinal weight transfer changes axle loads under braking/acceleration (lift-off/trail-braking rotation).
  * - Rear-wheel drive through a 6-speed automatic gearbox and an engine torque curve.
  * - Rear tyres obey a (softened) friction circle so the handbrake and power oversteer can break traction.
+ * - Pulling the handbrake starts a drift: the rear stays loose while you hold it with throttle and
+ *   countersteer, with a little automatic countersteer and an angle limiter so it's controllable.
  * - Below ~6 m/s the model blends into a kinematic model so it is stable when parking or launching.
  *
  * Pure TypeScript with no rendering dependencies so it can be unit tested and shared by player and AI cars.
@@ -65,7 +67,7 @@ export const SPORTS_CAR: VehicleSpec = {
   tireGrip: 1.55,
   corneringStiffnessFront: 95000,
   corneringStiffnessRear: 110000,
-  handbrakeGrip: 0.5,
+  handbrakeGrip: 0.55,
   maxBrakeForce: 15500,
   frontBrakeBias: 0.62,
   dragCoefficient: 0.42,
@@ -115,6 +117,12 @@ const ESC_SLIP_GAIN = 3;
  * trail-brake rotation, not so much that braking into a corner on a keyboard spins the car.
  */
 const LAT_TRANSFER = 0.35;
+/** Rear grip while drifting with the handbrake released: loose enough to slide on throttle. */
+const DRIFT_REAR_GRIP = 0.82;
+/** Fraction of the body-slip angle fed back into the steering as automatic countersteer. */
+const DRIFT_COUNTERSTEER = 0.7;
+/** Body slip (rad) beyond which the drift limiter stops the car rotating further (~34 deg). */
+const DRIFT_MAX_ANGLE = 0.6;
 
 export class VehiclePhysics {
   readonly spec: VehicleSpec;
@@ -146,6 +154,11 @@ export class VehiclePhysics {
   wheelSpin = 0;
   throttleApplied = 0;
   braking = false;
+  /** True from a handbrake pull until the car straightens up again. */
+  drifting = false;
+  /** Body slip angle in radians (positive: travelling to the right of where the nose points). */
+  driftAngle = 0;
+  private driftSettle = 0;
   /** Multiplier the AI/difficulty system can use; 1 = normal. */
   powerScale = 1;
   /** Aerodynamic drag multiplier; < 1 while slipstreaming another car. */
@@ -181,6 +194,8 @@ export class VehiclePhysics {
     this.lateralSpeed = 0;
     this.longAccel = 0;
     this.latAccel = 0;
+    this.drifting = false;
+    this.driftAngle = 0;
   }
 
   /** Maximum steering angle available at the current speed (speed-sensitive steering). */
@@ -229,9 +244,23 @@ export class VehiclePhysics {
       brake = t;
     }
 
+    // ---- Drift state ----
+    const bodySlip = speed > 1 ? Math.atan2(w, Math.max(Math.abs(u), 0.5)) : 0;
+    this.driftAngle = bodySlip;
+    if (input.handbrake && u > 8) this.drifting = true;
+    if (this.drifting) {
+      this.driftSettle = Math.abs(bodySlip) < 0.1 && !input.handbrake ? this.driftSettle + dt : 0;
+      if (this.driftSettle > 0.35 || u < 4) this.drifting = false;
+    }
+
     // ---- Steering ----
-    const limit = this.steerLimit(Math.abs(u));
-    const target = clamp(input.steer, -1, 1) * limit;
+    let limit = this.steerLimit(Math.abs(u));
+    let target = clamp(input.steer, -1, 1) * limit;
+    if (this.drifting) {
+      // Allow enough lock to countersteer the slide, and do some of it automatically.
+      limit = Math.max(limit, Math.min(s.maxSteer, Math.abs(bodySlip) + 0.25));
+      target = clamp(clamp(input.steer, -1, 1) * limit + bodySlip * DRIFT_COUNTERSTEER, -limit, limit);
+    }
     const returning = Math.abs(target) < Math.abs(this.steerAngle) && Math.sign(target) !== -Math.sign(this.steerAngle);
     const rate = s.steerRate * s.maxSteer * (returning ? 1.6 : 1);
     this.steerAngle = moveTowards(this.steerAngle, target, rate * dt);
@@ -282,10 +311,10 @@ export class VehiclePhysics {
     const latLoadF = lerp(staticF, loadF, LAT_TRANSFER);
     const latLoadR = lerp(staticR, loadR, LAT_TRANSFER);
     const muF = s.tireGrip;
-    const muR = s.tireGrip * (input.handbrake ? s.handbrakeGrip : 1);
+    const muR = s.tireGrip * (input.handbrake ? s.handbrakeGrip : this.drifting ? DRIFT_REAR_GRIP : 1);
 
-    // Traction control: never ask the rear tyres for more than ~85% of their grip.
-    const maxDrive = muR * loadR * (0.7 + 0.15 * this.stabilityAssist);
+    // Traction control: never ask the rear tyres for more than ~85% of their grip (off while drifting).
+    const maxDrive = muR * loadR * (this.drifting ? 1 : 0.7 + 0.15 * this.stabilityAssist);
     driveForce = Math.min(driveForce, maxDrive);
 
     // ---- Brakes (ABS-limited) ----
@@ -294,7 +323,8 @@ export class VehiclePhysics {
     const brakeF = Math.min(brakeTotal * s.frontBrakeBias, muF * loadF * 0.95);
     // Electronic brake-force distribution keeps the rear tyres from locking.
     let brakeR = Math.min(brakeTotal * (1 - s.frontBrakeBias), muR * loadR * 0.5);
-    if (input.handbrake) brakeR = Math.max(brakeR, muR * loadR * 0.9);
+    // The handbrake locks the rear just enough to break traction without killing all your speed.
+    if (input.handbrake) brakeR = Math.max(brakeR, muR * loadR * 0.55);
     this.braking = brake > 0.05;
 
     // ---- Lateral tyre forces ----
@@ -312,7 +342,8 @@ export class VehiclePhysics {
     const longR = driveForce + brakeR;
     const capRTotal = muR * latLoadR;
     const circle = Math.min(1, longR / Math.max(capRTotal, 1));
-    const capR = capRTotal * Math.sqrt(Math.max(0.05, 1 - circle * circle * (0.55 - 0.25 * this.stabilityAssist)));
+    const circleWeight = this.drifting ? 0.8 : 0.55 - 0.25 * this.stabilityAssist;
+    const capR = capRTotal * Math.sqrt(Math.max(0.05, 1 - circle * circle * circleWeight));
     const fyR = -capR * Math.tanh((s.corneringStiffnessRear * slipR) / Math.max(capR, 1));
 
     this.frontSlide = clamp(Math.abs(slipF) / 0.2, 0, 1) * smoothstep(3, 8, speed);
@@ -346,8 +377,8 @@ export class VehiclePhysics {
 
     // Stability control (ESC): pull the yaw rate back toward what a neutral-steering car
     // would do for the current steering input, and bleed off excessive body slip.
-    // Disabled while the handbrake is held so deliberate drifts still work.
-    if (!input.handbrake && this.stabilityAssist > 0 && uNew > 3) {
+    // Disabled while drifting so deliberate slides aren't cancelled.
+    if (!input.handbrake && !this.drifting && this.stabilityAssist > 0 && uNew > 3) {
       const k = this.stabilityAssist;
       const maxYaw = (s.tireGrip * G) / Math.max(speed, 5);
       const refYaw = clamp((-uNew * Math.tan(delta)) / L, -maxYaw, maxYaw);
@@ -356,6 +387,11 @@ export class VehiclePhysics {
       if (oversteer) r = lerp(r, refYaw, Math.min(1, ESC_YAW_GAIN * k * dt));
       const bodySlip = Math.atan2(wNew, uNew);
       if (Math.abs(bodySlip) > 0.08) wNew -= wNew * Math.min(1, ESC_SLIP_GAIN * k * dt);
+    }
+
+    // Drift limiter: past ~34 degrees of slide, stop the car rotating further into a spin.
+    if (this.drifting && Math.abs(bodySlip) > DRIFT_MAX_ANGLE && Math.sign(r) === Math.sign(bodySlip)) {
+      r *= 1 - Math.min(1, (Math.abs(bodySlip) - DRIFT_MAX_ANGLE) * 50 * dt);
     }
 
     // Low-speed kinematic blend.

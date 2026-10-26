@@ -79,3 +79,35 @@ describe('RaceSimulation (headless full race)', () => {
     expect(positions).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
   }, 30_000);
 });
+
+describe('AI respects the player', () => {
+  // The whole field has to get past a stationary player: on the racing line, or spun sideways.
+  for (const [label, distance, turn] of [
+    ['parked on the racing line', 800, 0],
+    ['spun sideways after Turn 1', 420, Math.PI / 2],
+  ] as const) {
+    it(`never hits a player ${label}`, () => {
+      const sim = new RaceSimulation(TOKYO_CIRCUIT, { laps: 3, opponents: 7, difficulty: 'hard', seed: 3 });
+      const lateral = turn === 0 ? sim.line.offsets[sim.track.indexAtDistance(distance)] : 1.5;
+      const spot = sim.track.pointAt(distance, lateral);
+      sim.player.physics.place(spot.x, spot.z, spot.heading + turn, spot.y);
+      sim.track.project(spot.x, spot.z, -1, sim.player.proj);
+      sim.startRace();
+      // Handbrake only: holding the brake while stopped would engage reverse.
+      const parked = { throttle: 0, brake: 0, steer: 0, handbrake: true };
+      let contacts = 0;
+      let passed = 0;
+      // Long enough for the whole field to arrive and squeeze past (one lane is left at a corner exit).
+      for (let t = 0; t < 75; t += RaceSimulation.STEP) {
+        sim.step(parked);
+        if (sim.player.impact > 0) contacts++;
+      }
+      for (const car of sim.cars) {
+        const r = sim.race.racers[car.id];
+        if (!car.isPlayer && (r.currentLap > 1 || car.proj.distance > distance + 20)) passed++;
+      }
+      expect(contacts).toBe(0);
+      expect(passed).toBe(7); // and they all actually got by
+    });
+  }
+});

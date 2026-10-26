@@ -20,6 +20,7 @@ import { Hud } from '../ui/Hud';
 import { Minimap } from '../ui/Minimap';
 import { Screens } from '../ui/Screens';
 import { CarModel, LIVERIES } from '../vehicles/CarModel';
+import { TireEffects, type EffectsCar } from '../vehicles/TireEffects';
 import { City, placeLamps } from '../world/City';
 import { setupEnvironment } from '../world/Environment';
 
@@ -59,6 +60,12 @@ export class Game {
   private lightsOn = 0;
   private lightsOutAt = 0;
   private wrongWayTime = 0;
+  /** Strongest player impact over this frame's physics steps. */
+  private frameImpact = 0;
+  private driftScore = 0;
+  private driftQuiet = 0;
+  private readonly effects = new TireEffects();
+  private effectCars: EffectsCar[] = [];
   private resultsTimer = 0;
   private elapsed = 0;
 
@@ -96,6 +103,7 @@ export class Game {
     await nextFrame();
     this.city = new City(this.track, lamps, rng);
     this.scene.add(this.city.group);
+    this.scene.add(this.effects.group);
 
     this.hud = new Hud(this.colors);
     this.minimap = new Minimap(document.getElementById('minimap') as HTMLCanvasElement, this.track, this.colors);
@@ -156,6 +164,9 @@ export class Game {
       this.scene.add(model.root);
     }
     this.carModels.forEach((m, i) => (m.root.visible = i < total));
+    this.effectCars = this.sim.cars.map((car, i) => ({ car, root: this.carModels[this.modelOf[i]].root }));
+    this.effects.clear();
+    this.driftScore = 0;
     this.colors.length = 0;
     this.sim.cars.forEach((car, i) => {
       this.colors[car.id] = '#' + LIVERIES[this.modelOf[i] % LIVERIES.length].color.toString(16).padStart(6, '0');
@@ -217,13 +228,16 @@ export class Game {
       while (this.accumulator >= step) {
         this.accumulator -= step;
         const events = this.sim.step(this.state === 'finished' ? neutralControls() : controls);
+        this.frameImpact = Math.max(this.frameImpact, this.sim.player.impact);
         this.handleEvents(events);
       }
       this.updateRaceFeedback(dt);
+      this.frameImpact = 0;
     }
 
     const alpha = running ? this.accumulator / RaceSimulation.STEP : 1;
     this.syncCarModels(alpha, dt);
+    this.effects.update(this.effectCars, running ? dt : 0, this.cam.camera, this.renderer.domElement.height);
 
     const player = this.sim.player;
     const playerModel = this.carModels[0];
@@ -249,6 +263,7 @@ export class Game {
       }
     }
     this.composer.render(dt);
+    this.effects.onRendered();
   }
 
   private handleActions(): void {
@@ -349,17 +364,30 @@ export class Game {
     return { standings: this.sim.race.standings(), playerId: this.sim.player.id, colors: this.colors };
   }
 
-  /** Wrong-way warning, impacts (sound + camera shake). */
+  /** Wrong-way warning, impacts (sound + camera shake), drift scoring. */
   private updateRaceFeedback(dt: number): void {
     const player = this.sim.player;
-    for (const car of this.sim.cars) {
-      if (car.impact > 1.5 && car.isPlayer) {
-        this.audio.impact(car.impact);
-        this.cam.addShake(Math.min(1, car.impact / 15));
-      }
+    if (this.frameImpact > 1.5) {
+      this.audio.impact(this.frameImpact);
+      this.cam.addShake(Math.min(1, this.frameImpact / 15));
     }
     if (this.state !== 'racing') return;
     const p = player.physics;
+
+    // Drift points: speed x angle while sliding; a crash during the drift loses them.
+    const angle = Math.abs(p.driftAngle);
+    if (this.frameImpact > 3) this.driftScore = 0;
+    if (p.drifting && angle > 0.2 && p.speed > 8) {
+      this.driftScore += p.speed * angle * (180 / Math.PI) * 0.5 * dt;
+      this.driftQuiet = 0;
+    } else if (this.driftScore > 0) {
+      this.driftQuiet += dt;
+      if (this.driftQuiet > 0.6) {
+        if (this.driftScore >= 100) this.hud.showMessage(`+${Math.round(this.driftScore).toLocaleString('en-US')} DRIFT`, 1.6, 'gold');
+        this.driftScore = 0;
+      }
+    }
+
     const along = p.vx * player.proj.tx + p.vz * player.proj.tz;
     if (along < -3) this.wrongWayTime += dt;
     else this.wrongWayTime = Math.max(0, this.wrongWayTime - dt * 2);

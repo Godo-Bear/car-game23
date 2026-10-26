@@ -61,6 +61,30 @@ describe('VehiclePhysics', () => {
     expect(Math.abs(drift.heading)).toBeGreaterThan(Math.abs(plain.heading) * 1.3);
   });
 
+  it('holds a handbrake-initiated drift on throttle without spinning', () => {
+    const car = cruising(21);
+    car.gear = 2;
+    let maxSlip = 0;
+    let drifting = 0;
+    simulate(car, 4, (t) => {
+      maxSlip = Math.max(maxSlip, Math.abs(car.driftAngle));
+      if (t > 1 && Math.abs(car.driftAngle) > 0.35) drifting += DT;
+      return input({ throttle: t > 0.5 ? 1 : 0.3, steer: t < 0.5 ? -0.8 : 0, handbrake: t > 0.1 && t < 0.5 });
+    });
+    expect(car.drifting).toBe(true);
+    expect(drifting).toBeGreaterThan(2.5); // slide sustained for most of the 3 s after the flick
+    expect(maxSlip).toBeLessThan(0.95); // the limiter stops it becoming a spin
+    expect(car.speedKmh).toBeGreaterThan(40);
+  });
+
+  it('straightens up and leaves drift mode when you lift off', () => {
+    const car = cruising(21);
+    car.gear = 2;
+    simulate(car, 4.5, (t) => input({ throttle: t > 0.5 && t < 1.5 ? 1 : 0, steer: t < 0.5 ? -0.8 : 0, handbrake: t > 0.1 && t < 0.5 }));
+    expect(Math.abs(car.driftAngle)).toBeLessThan(0.05);
+    expect(car.drifting).toBe(false);
+  });
+
   it('brakes to a stop, then reverses at a limited speed when brake is held', () => {
     const car = cruising(15);
     simulate(car, 6, () => input({ brake: 1 }));

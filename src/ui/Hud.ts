@@ -62,7 +62,14 @@ export class Hud {
     const rpm = p.rpm / p.spec.redlineRpm;
     this.rpmBar.style.width = `${Math.min(100, rpm * 100).toFixed(1)}%`;
     this.rpmBar.parentElement!.classList.toggle('redline', p.rpm > p.spec.shiftUpRpm);
-    this.tow.classList.toggle('on', player.slipstream > 0.25 && p.speedKmh > 80);
+    // One tag under the speed: live drift angle takes priority over the slipstream hint.
+    const driftDeg = Math.round(Math.abs(p.driftAngle) * (180 / Math.PI));
+    const drifting = p.drifting && driftDeg > 11 && p.speed > 8;
+    const towing = player.slipstream > 0.25 && p.speedKmh > 80;
+    if (drifting) this.set('hud-tow', `DRIFT ${driftDeg}°`);
+    else if (towing) this.set('hud-tow', 'SLIPSTREAM');
+    this.tow.classList.toggle('on', drifting || towing);
+    this.tow.classList.toggle('drift', drifting);
 
     const order = race.standings();
     const key = order.map((r) => r.id).join(',');

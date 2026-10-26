@@ -6,7 +6,8 @@ and hosted on Cloudflare.
 - **Core racing loop:** standing start with F1-style start lights, lap counting, live positions, lap
   timing, 3–7 AI opponents, results screen.
 - **Vehicle physics:** semi-simulation bicycle model — tyre slip, weight transfer, 6-speed automatic
-  gearbox, handbrake, stability control, slipstream, and crashes that cost real speed.
+  gearbox, handbrake drifting with skid marks and tyre smoke, stability control, slipstream, and
+  crashes that cost real speed.
 - **Tokyo:** a 2.48 km *Shinjuku–Bay Street Circuit* — main straight under neon towers, a Shibuya
   scramble chicane, an elevated Shuto-style expressway along the bay, and Tokyo Tower, Skytree and
   Rainbow Bridge on the skyline.
@@ -85,7 +86,7 @@ Add `?debug` to the URL to expose the game object as `window.game` in the consol
 | Accelerate | `W` / `↑` | Right trigger |
 | Brake / reverse | `S` / `↓` | Left trigger |
 | Steer | `A` `D` / `←` `→` | Left stick |
-| Handbrake | `Space` | A / Cross |
+| Handbrake / drift | `Space` | A / Cross |
 | Change camera | `C` | Y / Triangle |
 | Reset car to track | `R` | View / Share |
 | Pause | `Esc` / `P` | Menu / Options |

@@ -618,6 +618,9 @@ input {
   opacity: 0;
   transition: opacity 0.2s;
 }
+.tow.drift {
+  color: var(--gold);
+}
 .tow.on {
   opacity: 1;
 }
