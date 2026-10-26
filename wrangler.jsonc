@@ -20,6 +20,7 @@
     {
       "binding": "DB",
       "database_name": "tokyo-racer",
+      "database_id": "a2c3f4aa-98a9-42b3-9618-b894ae57db42",
       "migrations_dir": "migrations"
     }
   ]

@@ -1,6 +1,7 @@
 import type { CareerStats, PlayerSettings, ProfileResponse, RaceRecord } from '../../shared/api';
 
-export type BackendStatus = 'unknown' | 'online' | 'offline';
+/** 'no-database': the API Worker is deployed but its D1 binding is missing. */
+export type BackendStatus = 'unknown' | 'online' | 'offline' | 'no-database';
 
 const GUEST_KEY = 'tokyo-circuit.guest.v1';
 
@@ -71,7 +72,7 @@ export class AccountService {
       if (!isJson || res.status === 404) {
         this.backend = 'offline';
       } else if (res.status === 503) {
-        this.backend = 'offline';
+        this.backend = 'no-database';
         console.warn('[accounts] Backend is deployed but the D1 database binding is missing.');
       } else {
         this.backend = 'online';

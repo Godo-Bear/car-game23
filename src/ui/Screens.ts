@@ -196,6 +196,10 @@ export class Screens {
     $('auth-hint').classList.toggle('hidden', !register);
     $('auth-error').textContent = '';
     const offline = this.account.backend !== 'online';
+    $('auth-offline').textContent =
+      this.account.backend === 'no-database'
+        ? "The game server is running, but its account database isn't connected yet (D1 binding \"DB\" in wrangler.jsonc). Your progress is saved on this device until then."
+        : 'Online accounts need the Cloudflare backend (see docs/DEPLOY_CLOUDFLARE.md). Until then your progress is saved as a guest on this device.';
     $('auth-offline').classList.toggle('hidden', !offline);
     $<HTMLButtonElement>('auth-submit').disabled = offline;
     $('modal-auth').classList.remove('hidden');
