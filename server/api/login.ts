@@ -1,5 +1,6 @@
 import type { CredentialsRequest } from '../../shared/api';
 import {
+  type ApiHandler,
   checkWrite,
   clearFailedLogins,
   createSession,
@@ -11,7 +12,6 @@ import {
   readJson,
   recordFailedLogin,
   timingSafeEqual,
-  type ApiHandler,
   type UserRow,
 } from '../auth';
 

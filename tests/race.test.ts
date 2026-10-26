@@ -4,6 +4,7 @@ import { formatTime, RaceManager } from '../src/race/RaceManager';
 import { RaceSimulation } from '../src/race/RaceSimulation';
 import { TOKYO_CIRCUIT } from '../src/track/tokyoCircuit';
 import { TRACKS } from '../src/track/tracks';
+import { CARS } from '../src/vehicles/cars';
 
 const racers = [
   { id: 0, name: 'A', isPlayer: true },
@@ -81,6 +82,24 @@ describe.each(Object.values(TRACKS))('RaceSimulation on $name (headless full rac
     const positions = sim.race.standings().map((r) => r.position);
     expect(positions).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
   }, 60_000);
+});
+
+describe.each(Object.values(CARS))('One-make race in the $name', (car) => {
+  it('lets the AI drive this car cleanly round Sakura Valley', () => {
+    const sim = new RaceSimulation(TRACKS.sakura.layout, { laps: 1, opponents: 5, carSpec: car.spec, aiGrip: car.aiGrip, seed: 7 });
+    sim.player.autopilot = true;
+    let respawns = 0;
+    const respawn = sim.respawn.bind(sim);
+    sim.respawn = (c) => {
+      respawns++;
+      respawn(c);
+    };
+    sim.startRace();
+    const input = neutralControls();
+    while (sim.race.raceTime < 150 && !sim.race.racers.every((r) => r.finished)) sim.step(input);
+    expect(sim.race.racers.every((r) => r.finished)).toBe(true);
+    expect(respawns).toBe(0);
+  }, 30_000);
 });
 
 describe('AI respects the player', () => {

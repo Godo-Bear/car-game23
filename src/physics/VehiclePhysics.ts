@@ -121,8 +121,19 @@ const LAT_TRANSFER = 0.35;
 const DRIFT_REAR_GRIP = 0.82;
 /** Fraction of the body-slip angle fed back into the steering as automatic countersteer. */
 const DRIFT_COUNTERSTEER = 0.7;
-/** Body slip (rad) beyond which the drift limiter stops the car rotating further (~34 deg). */
+/** Body slip (rad) beyond which the drift limiter stops the car rotating further (~34 deg)... */
 const DRIFT_MAX_ANGLE = 0.6;
+/** ...tightening to ~24 deg at high speed, where a big angle would just scrub you into a wall. */
+const DRIFT_MAX_ANGLE_FAST = 0.42;
+/**
+ * Drift carve (1/s): while sliding, the direction of travel is steadily pulled toward where the
+ * car is pointing, so a drift follows the corner instead of sliding wide. Stronger at speed.
+ */
+const DRIFT_CARVE = 1.1;
+const DRIFT_CARVE_FAST = 3.2;
+/** Most extra cornering (m/s^2) the carve may add, so it helps without feeling on rails. */
+const DRIFT_CARVE_ACCEL = 2.5;
+const DRIFT_CARVE_ACCEL_FAST = 5.5;
 
 export class VehiclePhysics {
   readonly spec: VehicleSpec;
@@ -256,10 +267,13 @@ export class VehiclePhysics {
     // ---- Steering ----
     let limit = this.steerLimit(Math.abs(u));
     let target = clamp(input.steer, -1, 1) * limit;
+    // 0 at moderate speed .. 1 flat out: high-speed drifts get more help.
+    const fast = smoothstep(22, 55, speed);
     if (this.drifting) {
       // Allow enough lock to countersteer the slide, and do some of it automatically.
       limit = Math.max(limit, Math.min(s.maxSteer, Math.abs(bodySlip) + 0.25));
-      target = clamp(clamp(input.steer, -1, 1) * limit + bodySlip * DRIFT_COUNTERSTEER, -limit, limit);
+      const counter = DRIFT_COUNTERSTEER + 0.25 * fast;
+      target = clamp(clamp(input.steer, -1, 1) * limit + bodySlip * counter, -limit, limit);
     }
     const returning = Math.abs(target) < Math.abs(this.steerAngle) && Math.sign(target) !== -Math.sign(this.steerAngle);
     const rate = s.steerRate * s.maxSteer * (returning ? 1.6 : 1);
@@ -311,7 +325,9 @@ export class VehiclePhysics {
     const latLoadF = lerp(staticF, loadF, LAT_TRANSFER);
     const latLoadR = lerp(staticR, loadR, LAT_TRANSFER);
     const muF = s.tireGrip;
-    const muR = s.tireGrip * (input.handbrake ? s.handbrakeGrip : this.drifting ? DRIFT_REAR_GRIP : 1);
+    // A handbrake pull at high speed breaks traction more gently, so it starts a slide, not a spin.
+    const handbrakeGrip = lerp(s.handbrakeGrip, (s.handbrakeGrip + 1) / 2, fast * 0.6);
+    const muR = s.tireGrip * (input.handbrake ? handbrakeGrip : this.drifting ? DRIFT_REAR_GRIP : 1);
 
     // Traction control: never ask the rear tyres for more than ~85% of their grip (off while drifting).
     const maxDrive = muR * loadR * (this.drifting ? 1 : 0.7 + 0.15 * this.stabilityAssist);
@@ -324,7 +340,7 @@ export class VehiclePhysics {
     // Electronic brake-force distribution keeps the rear tyres from locking.
     let brakeR = Math.min(brakeTotal * (1 - s.frontBrakeBias), muR * loadR * 0.5);
     // The handbrake locks the rear just enough to break traction without killing all your speed.
-    if (input.handbrake) brakeR = Math.max(brakeR, muR * loadR * 0.55);
+    if (input.handbrake) brakeR = Math.max(brakeR, muR * loadR * lerp(0.55, 0.3, fast));
     this.braking = brake > 0.05;
 
     // ---- Lateral tyre forces ----
@@ -382,16 +398,26 @@ export class VehiclePhysics {
       const k = this.stabilityAssist;
       const maxYaw = (s.tireGrip * G) / Math.max(speed, 5);
       const refYaw = clamp((-uNew * Math.tan(delta)) / L, -maxYaw, maxYaw);
-      const oversteer =
-        Math.abs(r) > Math.abs(refYaw) + 0.05 || (Math.sign(r) !== Math.sign(refYaw) && Math.abs(r) > 0.15);
+      const oversteer = Math.abs(r) > Math.abs(refYaw) + 0.05 || (Math.sign(r) !== Math.sign(refYaw) && Math.abs(r) > 0.15);
       if (oversteer) r = lerp(r, refYaw, Math.min(1, ESC_YAW_GAIN * k * dt));
       const bodySlip = Math.atan2(wNew, uNew);
       if (Math.abs(bodySlip) > 0.08) wNew -= wNew * Math.min(1, ESC_SLIP_GAIN * k * dt);
     }
 
-    // Drift limiter: past ~34 degrees of slide, stop the car rotating further into a spin.
-    if (this.drifting && Math.abs(bodySlip) > DRIFT_MAX_ANGLE && Math.sign(r) === Math.sign(bodySlip)) {
-      r *= 1 - Math.min(1, (Math.abs(bodySlip) - DRIFT_MAX_ANGLE) * 50 * dt);
+    if (this.drifting && uNew > 5) {
+      // Drift limiter: past the maximum angle, stop the car rotating further into a spin.
+      const maxAngle = lerp(DRIFT_MAX_ANGLE, DRIFT_MAX_ANGLE_FAST, fast);
+      if (Math.abs(bodySlip) > maxAngle && Math.sign(r) === Math.sign(bodySlip)) {
+        r *= 1 - Math.min(1, (Math.abs(bodySlip) - maxAngle) * 50 * dt);
+      }
+      // Carve: swing the velocity toward the heading without changing speed.
+      const carve = lerp(DRIFT_CARVE, DRIFT_CARVE_FAST, fast) * (input.handbrake ? 0.5 : 1);
+      const v = Math.hypot(uNew, wNew);
+      const slip0 = Math.atan2(wNew, uNew);
+      const maxTurn = (lerp(DRIFT_CARVE_ACCEL, DRIFT_CARVE_ACCEL_FAST, fast) / v) * dt;
+      const slip = slip0 - clamp(slip0 * (1 - Math.exp(-carve * dt)), -maxTurn, maxTurn);
+      uNew = v * Math.cos(slip);
+      wNew = v * Math.sin(slip);
     }
 
     // Low-speed kinematic blend.

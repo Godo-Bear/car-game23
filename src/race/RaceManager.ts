@@ -146,7 +146,7 @@ export class RaceManager {
 }
 
 export function formatTime(seconds: number | null): string {
-  if (seconds === null || !isFinite(seconds)) return '--:--.---';
+  if (seconds === null || !Number.isFinite(seconds)) return '--:--.---';
   const m = Math.floor(seconds / 60);
   const s = seconds - m * 60;
   return `${m}:${s.toFixed(3).padStart(6, '0')}`;

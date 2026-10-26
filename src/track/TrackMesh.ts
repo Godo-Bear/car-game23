@@ -1,16 +1,10 @@
 import * as THREE from 'three';
 import type { TimeOfDay } from '../../shared/api';
+import type { RacingLine } from '../ai/RacingLine';
 import { mod } from '../core/math';
 import { GeometryBuilder } from '../world/GeometryBuilder';
-import {
-  asphaltTexture,
-  bannerTexture,
-  checkerTexture,
-  fenceTexture,
-  ROAD_TEXTURE_LENGTH,
-  ruralAsphaltTexture,
-  sidewalkTexture,
-} from '../world/textures';
+import { applyRoadDetail } from '../world/surfaces';
+import { asphaltTexture, bannerTexture, checkerTexture, fenceTexture, ROAD_TEXTURE_LENGTH, ruralAsphaltTexture, sidewalkTexture } from '../world/textures';
 import type { TrackPath } from './TrackPath';
 import type { TrackTheme } from './tracks';
 
@@ -43,6 +37,17 @@ const BARRIER_HEIGHT = 1.05;
 export const BARRIER_THICKNESS = 0.5;
 export const SIDEWALK_WIDTH = 4;
 const FENCE_HEIGHT = 2.6;
+/** Kerbs run from this far inside the road edge... */
+export const KERB_INNER = 1.0;
+/** ...to this far outside it. */
+export const KERB_OUTER = 0.35;
+
+/** Which side of the road has a kerb at sample `i`: -1 left, +1 right, 0 none (inside of corners). */
+export function kerbSide(track: TrackPath, i: number): number {
+  const c = track.samples[mod(i, track.count)].curvature;
+  if (Math.abs(c) <= 1 / 90) return 0;
+  return -(Math.sign(-c) || 1);
+}
 
 export function buildTrackVisual(track: TrackPath, rng: () => number, opts: TrackVisualOptions): TrackVisual {
   const group = new THREE.Group();
@@ -93,6 +98,7 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
   const asphalt = city ? asphaltTexture(rng) : ruralAsphaltTexture(rng, opts.theme === 'mountain' ? 'yellow' : 'dashed');
   asphalt.wrapS = THREE.ClampToEdgeWrapping;
   const roadMaterial = new THREE.MeshStandardMaterial({ map: asphalt, vertexColors: city, roughness: 0.82, metalness: 0.05 });
+  applyRoadDetail(roadMaterial);
   const roadMesh = new THREE.Mesh(road.build(), roadMaterial);
   roadMesh.name = 'road';
   roadMesh.receiveShadow = true;
@@ -138,18 +144,66 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
       const inner = side * wall;
       const outer = side * (wall + BARRIER_THICKNESS);
       // Inner face (toward the road), top, outer face.
-      facing(barrier, at(i, inner), at(i + 1, inner), at(i + 1, inner, BARRIER_HEIGHT), at(i, inner, BARRIER_HEIGHT), [-side * s0.rx, 0, -side * s0.rz], stripe);
-      facing(barrier, at(i, inner, BARRIER_HEIGHT), at(i + 1, inner, BARRIER_HEIGHT), at(i + 1, outer, BARRIER_HEIGHT), at(i, outer, BARRIER_HEIGHT), [0, 1, 0], stripe);
-      facing(barrier, at(i, outer, -1.1), at(i + 1, outer, -1.1), at(i + 1, outer, BARRIER_HEIGHT), at(i, outer, BARRIER_HEIGHT), [side * s0.rx, 0, side * s0.rz], concrete);
+      facing(
+        barrier,
+        at(i, inner),
+        at(i + 1, inner),
+        at(i + 1, inner, BARRIER_HEIGHT),
+        at(i, inner, BARRIER_HEIGHT),
+        [-side * s0.rx, 0, -side * s0.rz],
+        stripe,
+      );
+      facing(
+        barrier,
+        at(i, inner, BARRIER_HEIGHT),
+        at(i + 1, inner, BARRIER_HEIGHT),
+        at(i + 1, outer, BARRIER_HEIGHT),
+        at(i, outer, BARRIER_HEIGHT),
+        [0, 1, 0],
+        stripe,
+      );
+      facing(
+        barrier,
+        at(i, outer, -1.1),
+        at(i + 1, outer, -1.1),
+        at(i + 1, outer, BARRIER_HEIGHT),
+        at(i, outer, BARRIER_HEIGHT),
+        [side * s0.rx, 0, side * s0.rz],
+        concrete,
+      );
 
       if (!elevated) {
         const f = side * (wall + BARRIER_THICKNESS / 2);
-        facing(fence, at(i, f, BARRIER_HEIGHT), at(i + 1, f, BARRIER_HEIGHT), at(i + 1, f, BARRIER_HEIGHT + FENCE_HEIGHT), at(i, f, BARRIER_HEIGHT + FENCE_HEIGHT), [-side * s0.rx, 0, -side * s0.rz], undefined, s0.dist / 0.8, 0, (s0.dist + track.spacing) / 0.8, FENCE_HEIGHT / 0.8);
+        facing(
+          fence,
+          at(i, f, BARRIER_HEIGHT),
+          at(i + 1, f, BARRIER_HEIGHT),
+          at(i + 1, f, BARRIER_HEIGHT + FENCE_HEIGHT),
+          at(i, f, BARRIER_HEIGHT + FENCE_HEIGHT),
+          [-side * s0.rx, 0, -side * s0.rz],
+          undefined,
+          s0.dist / 0.8,
+          0,
+          (s0.dist + track.spacing) / 0.8,
+          FENCE_HEIGHT / 0.8,
+        );
       }
 
       const w0 = side * (wall + BARRIER_THICKNESS);
       const w1 = side * (wall + BARRIER_THICKNESS + SIDEWALK_WIDTH);
-      facing(sidewalk, at(i, w0, 0.14), at(i + 1, w0, 0.14), at(i + 1, w1, 0.14), at(i, w1, 0.14), [0, 1, 0], undefined, w0 / 2, s0.dist / 2, w1 / 2, (s0.dist + track.spacing) / 2);
+      facing(
+        sidewalk,
+        at(i, w0, 0.14),
+        at(i + 1, w0, 0.14),
+        at(i + 1, w1, 0.14),
+        at(i, w1, 0.14),
+        [0, 1, 0],
+        undefined,
+        w0 / 2,
+        s0.dist / 2,
+        w1 / 2,
+        (s0.dist + track.spacing) / 2,
+      );
       // Kerb face / expressway deck edge.
       facing(deck, at(i, w1, -1.1), at(i + 1, w1, -1.1), at(i + 1, w1, 0.14), at(i, w1, 0.14), [side * s0.rx, 0, side * s0.rz]);
     }
@@ -160,10 +214,10 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
 
     // Red/white kerbs on the inside of corners.
     if (corner) {
-      const inside = -outside;
+      const inside = kerbSide(track, i);
       const color = i % 2 ? red : white;
-      const a = inside * (hw - 1.0);
-      const b = inside * (hw + 0.35);
+      const a = inside * (hw - KERB_INNER);
+      const b = inside * (hw + KERB_OUTER);
       facing(curbs, at(i, a, 0.035), at(i + 1, a, 0.035), at(i + 1, b, 0.035), at(i, b, 0.035), [0, 1, 0], color);
     }
   }
@@ -313,26 +367,77 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
     },
     setTimeOfDay(tod: TimeOfDay) {
       if (!city) return;
+      // Wet at night: keep the neon reflections as a sheen, with lamps and signs streaking on top.
+      roadMaterial.envMapIntensity = tod === 'night' ? 0.55 : 1;
       roadMaterial.vertexColors = tod !== 'day';
       roadMaterial.needsUpdate = true;
     },
   };
 }
 
+/**
+ * Rubber laid down on the racing line: two dark wheel tracks that get heavier in braking zones
+ * and through corners, where tyres work hardest.
+ */
+export function buildRubberLine(track: TrackPath, line: RacingLine): THREE.Mesh {
+  const n = track.count;
+  const S = track.samples;
+  const v = line.speedProfile(1.2, 9, 75);
+  const ahead = Math.max(1, Math.round(18 / track.spacing));
+  const pos: number[] = [];
+  const col: number[] = [];
+  const index: number[] = [];
+  for (let i = 0; i <= n; i++) {
+    const k = i % n;
+    const s = S[k];
+    const braking = Math.min(1, Math.max(0, (v[k] - v[(k + ahead) % n]) / 10));
+    const corner = Math.min(1, Math.abs(line.curvature[k]) * 40);
+    const alpha = 0.1 + 0.32 * braking + 0.1 * corner;
+    for (const wheel of [-0.8, 0.8]) {
+      for (const [dl, a] of [
+        [-0.42, 0],
+        [0, alpha],
+        [0.42, 0],
+      ] as const) {
+        const lat = line.offsets[k] + wheel + dl;
+        pos.push(s.x + s.rx * lat, s.y + 0.012, s.z + s.rz * lat);
+        col.push(0.02, 0.02, 0.02, a);
+      }
+    }
+  }
+  // 6 vertices per row (2 strips x 3); 2 quads per strip.
+  for (let i = 0; i < n; i++) {
+    for (const strip of [0, 3]) {
+      for (const q of [0, 1]) {
+        const a = i * 6 + strip + q;
+        const b = a + 6;
+        index.push(a, a + 1, b, a + 1, b + 1, b);
+      }
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+  geo.setIndex(index);
+  const mesh = new THREE.Mesh(
+    geo,
+    new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    }),
+  );
+  mesh.name = 'rubber';
+  mesh.userData.noAO = true;
+  return mesh;
+}
+
 /** Add a quad, flipping its winding if needed so its normal faces `want`. */
-function facing(
-  b: GeometryBuilder,
-  p0: V3,
-  p1: V3,
-  p2: V3,
-  p3: V3,
-  want: V3,
-  color?: THREE.Color,
-  u0 = 0,
-  v0 = 0,
-  u1 = 1,
-  v1 = 1,
-): void {
+function facing(b: GeometryBuilder, p0: V3, p1: V3, p2: V3, p3: V3, want: V3, color?: THREE.Color, u0 = 0, v0 = 0, u1 = 1, v1 = 1): void {
   const ux = p1[0] - p0[0];
   const uy = p1[1] - p0[1];
   const uz = p1[2] - p0[2];

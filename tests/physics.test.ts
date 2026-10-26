@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { collideCars, collideWithWalls } from '../src/physics/Collisions';
-import { VehiclePhysics, type VehicleControls } from '../src/physics/VehiclePhysics';
+import { type VehicleControls, VehiclePhysics } from '../src/physics/VehiclePhysics';
 import { createProjection } from '../src/track/TrackPath';
 
 const DT = 1 / 120;
@@ -77,6 +77,19 @@ describe('VehiclePhysics', () => {
     expect(car.speedKmh).toBeGreaterThan(40);
   });
 
+  it('carves a high-speed drift round the corner instead of sliding wide or spinning', () => {
+    const car = cruising(58); // ~210 km/h
+    let maxSlip = 0;
+    simulate(car, 3, (t) => {
+      maxSlip = Math.max(maxSlip, Math.abs(car.driftAngle));
+      return input({ throttle: t < 0.35 ? 0.3 : 0.8, steer: t < 0.35 ? -1 : -0.6, handbrake: t < 0.35 });
+    });
+    const pathTurn = Math.abs(Math.atan2(car.vx, car.vz));
+    expect(maxSlip).toBeLessThan(0.75); // a slide, not a spin
+    expect(pathTurn).toBeGreaterThan(0.85); // ~50 degrees of corner in 3 s, not a slide into the wall
+    expect(Math.hypot(car.vx, car.vz) * 3.6).toBeGreaterThan(160); // and it keeps its speed
+  });
+
   it('straightens up and leaves drift mode when you lift off', () => {
     const car = cruising(21);
     car.gear = 2;
@@ -98,7 +111,7 @@ describe('VehiclePhysics', () => {
     const car = new VehiclePhysics();
     car.place(0, 0, 0);
     let seed = 7;
-    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     simulate(car, 30, () => input({ throttle: rnd(), brake: rnd() > 0.8 ? 1 : 0, steer: rnd() * 2 - 1, handbrake: rnd() > 0.9 }));
     for (const v of [car.x, car.z, car.vx, car.vz, car.heading, car.yawRate, car.rpm]) expect(Number.isFinite(v)).toBe(true);
   });

@@ -1,21 +1,9 @@
-import { clamp } from './math';
 import type { VehicleControls } from '../physics/VehiclePhysics';
+import { clamp } from './math';
+import { type ActionId, DEFAULT_BINDINGS } from './Settings';
 
-export type Action = 'pause' | 'camera' | 'reset' | 'mute' | 'confirm' | 'controls';
-
-/** Keyboard bindings. Shown verbatim in the Controls panel, so keep labels human-friendly. */
-export const KEY_BINDINGS: { action: string; keys: string[]; codes: string[] }[] = [
-  { action: 'Accelerate', keys: ['W', '↑'], codes: ['KeyW', 'ArrowUp'] },
-  { action: 'Brake / Reverse', keys: ['S', '↓'], codes: ['KeyS', 'ArrowDown'] },
-  { action: 'Steer left', keys: ['A', '←'], codes: ['KeyA', 'ArrowLeft'] },
-  { action: 'Steer right', keys: ['D', '→'], codes: ['KeyD', 'ArrowRight'] },
-  { action: 'Handbrake / drift', keys: ['Space'], codes: ['Space'] },
-  { action: 'Change camera', keys: ['C'], codes: ['KeyC'] },
-  { action: 'Reset car to track', keys: ['R'], codes: ['KeyR'] },
-  { action: 'Pause', keys: ['Esc', 'P'], codes: ['Escape', 'KeyP'] },
-  { action: 'Show controls', keys: ['H'], codes: ['KeyH'] },
-  { action: 'Mute sound', keys: ['M'], codes: ['KeyM'] },
-];
+/** One-shot actions the game reacts to (on press, not while held). */
+export type Action = 'pause' | 'camera' | 'reset' | 'mute' | 'confirm' | 'controls' | 'skip';
 
 export const GAMEPAD_BINDINGS: { action: string; button: string }[] = [
   { action: 'Accelerate', button: 'Right trigger (RT / R2)' },
@@ -27,37 +15,78 @@ export const GAMEPAD_BINDINGS: { action: string; button: string }[] = [
   { action: 'Pause', button: 'Menu / Options' },
 ];
 
-const ACTION_CODES: Record<Action, string[]> = {
-  pause: ['Escape', 'KeyP'],
-  camera: ['KeyC'],
-  reset: ['KeyR'],
-  mute: ['KeyM'],
-  confirm: ['Enter'],
-  controls: ['KeyH'],
+const EDGE_ACTIONS: Partial<Record<ActionId, Action>> = {
+  camera: 'camera',
+  reset: 'reset',
+  pause: 'pause',
+  controls: 'controls',
+  mute: 'mute',
 };
-
 const GAMEPAD_ACTIONS: Partial<Record<Action, number>> = { camera: 3, reset: 8, pause: 9, confirm: 0 };
-const GAME_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space']);
+const NO_SCROLL = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space']);
 
 export class Input {
   readonly controls: VehicleControls = { throttle: 0, brake: 0, steer: 0, handbrake: false };
-  private down = new Set<string>();
-  private pressed = new Set<Action>();
+  private readonly down = new Set<string>();
+  private readonly pressed = new Set<Action>();
   private padPrev: boolean[] = [];
+  /** code -> actions bound to it */
+  private byCode = new Map<string, ActionId[]>();
+  private capture: ((code: string | null) => void) | null = null;
 
   constructor(target: Window = window) {
-    target.addEventListener('keydown', (e) => {
-      if (isTyping(e.target)) return;
-      if (GAME_KEYS.has(e.code)) e.preventDefault();
-      if (!e.repeat) {
-        for (const [action, codes] of Object.entries(ACTION_CODES) as [Action, string[]][]) {
-          if (codes.includes(e.code)) this.pressed.add(action);
+    this.setBindings(DEFAULT_BINDINGS);
+    target.addEventListener(
+      'keydown',
+      (e) => {
+        if (this.capture) {
+          // Rebinding: swallow the key and hand it to the settings screen (Escape cancels).
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          const done = this.capture;
+          this.capture = null;
+          done(e.code === 'Escape' ? null : e.code);
+          return;
         }
-      }
-      this.down.add(e.code);
-    });
+        if (isTyping(e.target)) return;
+        if (NO_SCROLL.has(e.code)) e.preventDefault();
+        if (!e.repeat) {
+          if (e.code === 'Escape') this.pressed.add('pause');
+          if (e.code === 'Enter') this.pressed.add('confirm');
+          for (const id of this.byCode.get(e.code) ?? []) {
+            const action = EDGE_ACTIONS[id];
+            if (action) this.pressed.add(action);
+          }
+          // Any key skips a cinematic.
+          this.pressed.add('skip');
+        }
+        this.down.add(e.code);
+      },
+      true,
+    );
     target.addEventListener('keyup', (e) => this.down.delete(e.code));
     target.addEventListener('blur', () => this.down.clear());
+  }
+
+  setBindings(bindings: Record<ActionId, string[]>): void {
+    this.byCode = new Map();
+    for (const [id, codes] of Object.entries(bindings) as [ActionId, string[]][]) {
+      for (const code of codes) {
+        if (!code) continue;
+        const list = this.byCode.get(code) ?? [];
+        list.push(id);
+        this.byCode.set(code, list);
+      }
+    }
+  }
+
+  /** Deliver the next key press to `fn` instead of the game (null if Escape cancelled). */
+  captureNextKey(fn: (code: string | null) => void): void {
+    this.capture = fn;
+  }
+
+  cancelCapture(): void {
+    this.capture = null;
   }
 
   /** True once per press of the action's key/button. */
@@ -71,19 +100,20 @@ export class Input {
     this.pressed.clear();
   }
 
-  private any(...codes: string[]): boolean {
-    return codes.some((c) => this.down.has(c));
+  private held(action: ActionId): boolean {
+    for (const code of this.down) if (this.byCode.get(code)?.includes(action)) return true;
+    return false;
   }
 
   /** Poll keyboard + first connected gamepad into `controls`. */
   update(): VehicleControls {
     const c = this.controls;
-    let throttle = this.any('KeyW', 'ArrowUp') ? 1 : 0;
-    let brake = this.any('KeyS', 'ArrowDown') ? 1 : 0;
-    let steer = (this.any('KeyD', 'ArrowRight') ? 1 : 0) - (this.any('KeyA', 'ArrowLeft') ? 1 : 0);
-    let handbrake = this.any('Space');
+    let throttle = this.held('accelerate') ? 1 : 0;
+    let brake = this.held('brake') ? 1 : 0;
+    let steer = (this.held('right') ? 1 : 0) - (this.held('left') ? 1 : 0);
+    let handbrake = this.held('handbrake');
 
-    const pad = navigator.getGamepads?.().find((p) => p && p.connected);
+    const pad = navigator.getGamepads?.().find((p) => p?.connected);
     if (pad) {
       const axis = pad.axes[0] ?? 0;
       if (Math.abs(axis) > 0.12) steer = clamp(steer + Math.sign(axis) * ((Math.abs(axis) - 0.12) / 0.88), -1, 1);
@@ -92,7 +122,10 @@ export class Input {
       handbrake ||= pad.buttons[0]?.pressed ?? false;
       for (const [action, index] of Object.entries(GAMEPAD_ACTIONS) as [Action, number][]) {
         const now = pad.buttons[index]?.pressed ?? false;
-        if (now && !this.padPrev[index]) this.pressed.add(action);
+        if (now && !this.padPrev[index]) {
+          this.pressed.add(action);
+          this.pressed.add('skip');
+        }
       }
       this.padPrev = pad.buttons.map((b) => b.pressed);
     }

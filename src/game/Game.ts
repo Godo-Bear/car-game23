@@ -1,50 +1,61 @@
 import * as THREE from 'three';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import type { PlayerSettings, TimeOfDay, TrackId } from '../../shared/api';
 import { AccountService } from '../account/AccountService';
-import { RacingLine } from '../ai/RacingLine';
-import { ChaseCamera, type CameraMode } from '../camera/ChaseCamera';
+import type { RacingLine } from '../ai/RacingLine';
+import { type CameraMode, ChaseCamera } from '../camera/ChaseCamera';
 import { AudioEngine } from '../core/AudioEngine';
 import { Input } from '../core/Input';
 import { createRng } from '../core/math';
+import { type LocalSettings, SettingsStore } from '../core/Settings';
 import { neutralControls } from '../physics/VehiclePhysics';
 import { formatTime, type RaceEvent } from '../race/RaceManager';
-import { RaceSimulation } from '../race/RaceSimulation';
-import { TrackPath } from '../track/TrackPath';
+import { gridSlot, RaceSimulation } from '../race/RaceSimulation';
+import { RenderPipeline } from '../render/RenderPipeline';
+import type { TrackPath } from '../track/TrackPath';
 import { TRACKS } from '../track/tracks';
 import { Hud } from '../ui/Hud';
 import { Minimap } from '../ui/Minimap';
-import { Screens } from '../ui/Screens';
-import { CarModel, LIVERIES } from '../vehicles/CarModel';
-import { TireEffects, type EffectsCar } from '../vehicles/TireEffects';
+import { type HubPanel, Screens } from '../ui/Screens';
+import { CarModel } from '../vehicles/CarModel';
+import { AI_LIVERIES, CARS, carSetup } from '../vehicles/cars';
+import { Sparks } from '../vehicles/Sparks';
+import { type EffectsCar, TireEffects } from '../vehicles/TireEffects';
 import { Lighting } from '../world/Lighting';
 import { buildWorld, type World } from '../world/World';
+import { Cinematics } from './Cinematics';
+import { RaceFeedback } from './RaceFeedback';
+import { TrackLoader } from './TrackLoader';
 
-type State = 'home' | 'countdown' | 'racing' | 'finished';
+type State = 'home' | 'intro' | 'countdown' | 'racing' | 'finished';
 
 const LIGHT_INTERVAL = 0.8;
+/** The homescreen backdrop: cars racing over the Hakone pass on a sunny day. */
+const HOME_TRACK: TrackId = 'hakone';
+const HOME_TIME: TimeOfDay = 'day';
+const TIME_LABEL: Record<TimeOfDay, string> = { day: 'Day', sunset: 'Sunset', night: 'Night' };
 
 export class Game {
-  private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
-  private readonly composer: EffectComposer;
-  private readonly bloom: UnrealBloomPass;
-  private readonly cam: ChaseCamera;
+  private readonly cam = new ChaseCamera(window.innerWidth / window.innerHeight);
+  private readonly pipeline: RenderPipeline;
+  private readonly store: SettingsStore;
   private readonly input = new Input();
   private readonly audio = new AudioEngine();
   private readonly account = new AccountService();
+  private readonly loader = new TrackLoader();
+  private readonly cine = new Cinematics(this.cam.camera);
+  private readonly effects = new TireEffects();
+  private readonly sparks = new Sparks();
+  private feedback!: RaceFeedback;
   private lastTime = -1;
 
   private track!: TrackPath;
   private line!: RacingLine;
   private world: World | null = null;
+  /** Built worlds are kept (except on Low quality) so going back to a circuit is instant. */
+  private readonly worlds = new Map<TrackId, World>();
   private lighting!: Lighting;
-  private timeOfDay: TimeOfDay = 'night';
-  /** Track geometry + racing line are reused when switching back to a track. */
-  private readonly trackCache = new Map<TrackId, { track: TrackPath; line: RacingLine }>();
+  private timeOfDay: TimeOfDay = HOME_TIME;
   /** The player's real headlights (only lit after dark). */
   private readonly headlight = new THREE.SpotLight(0xfff1dc, 0, 120, 0.5, 0.6, 0.8);
   private hud!: Hud;
@@ -52,142 +63,202 @@ export class Game {
   private screens!: Screens;
   private sim!: RaceSimulation;
   private readonly carModels: CarModel[] = [];
-  /** Sim car index -> pooled model / livery index (0 is always the player's livery). */
-  private modelOf: number[] = [];
-  private readonly colors = LIVERIES.map((l) => '#' + l.color.toString(16).padStart(6, '0'));
+  private effectCars: EffectsCar[] = [];
+  private readonly colors: string[] = [];
 
   private state: State = 'home';
+  private hubPanel: HubPanel = 'race';
   private paused = false;
   private modalOpen = false;
+  private busy = false;
   private accumulator = 0;
   private countdownTime = 0;
   private lightsOn = 0;
   private lightsOutAt = 0;
-  private wrongWayTime = 0;
   /** Strongest player impact over this frame's physics steps. */
   private frameImpact = 0;
-  private driftScore = 0;
-  private driftQuiet = 0;
-  private readonly effects = new TireEffects();
-  private effectCars: EffectsCar[] = [];
   private resultsTimer = 0;
   private elapsed = 0;
+  private timeScale = 1;
+  private applied: LocalSettings;
 
   constructor(canvas: HTMLCanvasElement) {
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
-    this.renderer.setSize(window.innerWidth, window.innerHeight, false);
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
-    this.cam = new ChaseCamera(window.innerWidth / window.innerHeight);
-
-    this.composer = new EffectComposer(this.renderer);
-    this.composer.addPass(new RenderPass(this.scene, this.cam.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 2, window.innerHeight / 2), 0.7, 0.5, 0.92);
-    this.composer.addPass(this.bloom);
-    this.composer.addPass(new OutputPass());
+    this.pipeline = new RenderPipeline(canvas, this.scene, this.cam.camera, 'medium');
+    this.store = new SettingsStore(gpuName(this.pipeline.renderer));
+    this.applied = this.store.value;
+    this.pipeline.setQuality(this.applied.quality);
     window.addEventListener('resize', () => this.resize());
   }
 
   async init(): Promise<void> {
-    this.lighting = new Lighting(this.scene, this.renderer);
-    this.scene.add(this.effects.group);
+    this.lighting = new Lighting(this.scene, this.pipeline.renderer);
+    this.scene.add(this.effects.group, this.sparks.points);
     // On the front bumper, aimed down the road (so it never lights our own bodywork).
-    this.headlight.position.set(0, 0.75, 2.45);
     this.headlight.target.position.set(0, 0, 32);
+    this.loader.line(HOME_TRACK);
     await nextFrame();
 
     this.hud = new Hud(this.colors);
-    this.screens = new Screens(this.account, {
-      onRace: (settings) => void this.startRace(settings),
-      onSettingsChanged: (settings) => void this.onSettingsChanged(settings),
-      onResume: () => this.setPaused(false),
-      onRestart: () => void this.startRace(this.screens.settings),
-      onQuit: () => this.goHome(),
-      onModalChange: (open) => {
-        this.modalOpen = open;
-        if (open && (this.state === 'racing' || this.state === 'countdown') && !this.paused) this.setPaused(true, false);
+    this.feedback = new RaceFeedback(this.hud, this.audio, this.cam, this.sparks, this.store);
+    this.screens = new Screens(
+      this.account,
+      {
+        onRace: (settings) => void this.startRace(settings),
+        onSettingsChanged: (settings, car) => this.onSettingsChanged(settings, car),
+        onHubPanel: (panel) => this.onHubPanel(panel),
+        onResume: () => this.setPaused(false),
+        onRestart: () => void this.startRace(this.screens.settings),
+        onQuit: () => void this.goHome(),
+        onModalChange: (open) => {
+          this.modalOpen = open;
+          if (open && this.inRace && !this.paused) this.setPaused(true, false);
+        },
       },
-    });
+      this.store,
+      this.input,
+    );
+    this.applyLocalSettings(this.store.value, true);
+    this.store.onChange((s) => this.applyLocalSettings(s, false));
 
     // Any interaction unlocks audio (browser autoplay policy).
     const unlock = () => this.audio.unlock();
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
     window.addEventListener('blur', () => {
-      if (this.state === 'racing' || this.state === 'countdown') this.setPaused(true);
+      if (this.inRace) this.setPaused(true);
     });
 
-    await this.account.init();
+    // Fetch the profile while the homescreen scenery is being built.
+    const profile = this.account.init();
+    setLoading(`Loading ${TRACKS[HOME_TRACK].name}…`);
+    await this.loadTrack(HOME_TRACK);
+    await profile;
     this.screens.loadSettings(this.account.settings);
-    await this.loadTrack(this.screens.settings.track);
-    this.createSimulation(this.screens.settings);
-    this.applyTimeOfDay(this.screens.settings.timeOfDay);
-    this.goHome();
-
-    // Compile shaders up front so the first frames of the race don't hitch.
-    this.renderer.compile(this.scene, this.cam.camera);
+    await this.goHome(true);
+    // Racing lines for the other circuits are worked out in the background.
+    this.loader.prefetchAll();
     setLoading(null);
-    this.renderer.setAnimationLoop((time) => this.frame(time));
+    this.pipeline.renderer.setAnimationLoop((time) => this.frame(time));
+  }
+
+  private get inRace(): boolean {
+    return this.state === 'intro' || this.state === 'countdown' || this.state === 'racing';
+  }
+
+  // ---------------------------------------------------------------- settings
+
+  /** Per-device settings: quality, volumes, key bindings. */
+  private applyLocalSettings(s: LocalSettings, first: boolean): void {
+    this.audio.setVolumes(s.volume);
+    this.input.setBindings(s.bindings);
+    if (first || s.quality !== this.applied.quality) {
+      this.pipeline.setQuality(s.quality);
+      const q = this.pipeline.quality;
+      this.lighting.setShadowQuality(q.shadows, q.shadowMapSize);
+      for (const w of this.worlds.values()) w.setDetail(q.detail);
+      if (s.quality === 'low') this.trimWorlds();
+      // Shadow and light changes need shaders rebuilt.
+      this.scene.traverse((o) => {
+        const m = (o as THREE.Mesh).material;
+        if (m) for (const mat of Array.isArray(m) ? m : [m]) mat.needsUpdate = true;
+      });
+    }
+    this.applied = s;
+  }
+
+  private trimWorlds(): void {
+    for (const [id, w] of this.worlds) {
+      if (w === this.world) continue;
+      w.dispose();
+      this.worlds.delete(id);
+    }
+  }
+
+  /** Race setup / garage changes from the menus. */
+  private onSettingsChanged(settings: PlayerSettings, car: boolean): void {
+    void this.account.saveSettings(settings);
+    if (!car || this.state !== 'home') return;
+    const def = CARS[settings.car];
+    if (def.spec !== this.sim.settings.carSpec) {
+      // A different car: rebuild the field around it (parked on the grid while in the garage).
+      this.createSimulation(this.homeRaceSettings(), true);
+      if (this.hubPanel !== 'garage') this.startAttract();
+    } else {
+      this.carModels[0].build(def, carSetup(settings.car, settings.garage));
+      this.colors[this.sim.player.id] = carSetup(settings.car, settings.garage).paint;
+    }
+  }
+
+  private onHubPanel(panel: HubPanel): void {
+    const was = this.hubPanel;
+    this.hubPanel = panel;
+    if (this.state !== 'home' || !this.sim) return;
+    if (panel === 'garage' && was !== 'garage') {
+      // Park the field on the grid and show the car on a turntable.
+      this.createSimulation(this.homeRaceSettings(), true);
+    } else if (panel !== 'garage' && was === 'garage') {
+      this.startAttract();
+    }
   }
 
   // ---------------------------------------------------------------- tracks & lighting
 
   /** Build (or reuse) the circuit and swap in its scenery. */
   private async loadTrack(id: TrackId): Promise<void> {
-    if (this.world?.def.id === id) return;
+    const line = this.loader.line(id);
+    if (this.world?.def.id !== id) await this.swapWorld(id, line);
+    this.line = await line;
+  }
+
+  private async swapWorld(id: TrackId, line: Promise<RacingLine>): Promise<void> {
     const def = TRACKS[id];
-    setLoading(`Loading ${def.name}…`);
-    await nextFrame();
-    await nextFrame();
-    let cached = this.trackCache.get(id);
-    if (!cached) {
-      const track = new TrackPath(def.layout);
-      cached = { track, line: new RacingLine(track) };
-      this.trackCache.set(id, cached);
+    this.world?.group.removeFromParent();
+    let world = this.worlds.get(id);
+    const track = this.loader.track(id);
+    if (!world) {
+      setLoading(`Loading ${def.name}…`);
+      await nextFrame();
+      await nextFrame();
+      world = buildWorld(def, track, createRng(2023), this.pipeline.quality.detail);
+      this.worlds.set(id, world);
+      void line.then((l) => world!.addRacingLine(l));
     }
-    this.track = cached.track;
-    this.line = cached.line;
-    this.world?.dispose();
-    this.world = buildWorld(def, this.track, createRng(2023));
-    this.scene.add(this.world.group);
-    this.minimap = new Minimap(document.getElementById('minimap') as HTMLCanvasElement, this.track, this.colors);
+    if (this.pipeline.quality.detail < 1) this.trimWorlds();
+    this.world = world;
+    this.track = track;
+    this.scene.add(world.group);
+    this.minimap = new Minimap(document.getElementById('minimap') as HTMLCanvasElement, track, this.colors);
     this.effects.clear();
-    if (this.lastTime >= 0) {
-      // Switching mid-session: refresh lighting for the new theme, then compile its shaders.
-      this.applyTimeOfDay(this.timeOfDay);
-      this.renderer.compile(this.scene, this.cam.camera);
-      setLoading(null);
-    }
+    this.sparks.clear();
   }
 
   private applyTimeOfDay(tod: TimeOfDay): void {
     this.timeOfDay = tod;
     const theme = this.world!.def.theme;
-    const bloom = this.lighting.apply(theme, tod);
-    this.bloom.strength = bloom.strength;
-    this.bloom.radius = bloom.radius;
-    this.bloom.threshold = bloom.threshold;
+    this.pipeline.setBloom(this.lighting.apply(theme, tod));
     this.world!.setTimeOfDay(tod);
     for (const m of this.carModels) m.setLighting(tod, theme !== 'city');
     this.headlight.intensity = tod === 'night' ? (theme === 'city' ? 5 : 13) : 0;
   }
 
-  /** Homescreen changes: rebuild the backdrop for a new track / time of day, and remember them. */
-  private async onSettingsChanged(settings: PlayerSettings): Promise<void> {
-    void this.account.saveSettings(settings);
-    if (this.state !== 'home') return;
-    if (settings.track !== this.world?.def.id) {
-      await this.loadTrack(settings.track);
-      this.createSimulation(settings);
+  /** Compile shaders without blocking the page where the browser supports it. */
+  private async compile(): Promise<void> {
+    try {
+      await this.pipeline.renderer.compileAsync(this.scene, this.cam.camera);
+    } catch {
+      this.pipeline.compile();
     }
-    if (settings.timeOfDay !== this.timeOfDay) this.applyTimeOfDay(settings.timeOfDay);
   }
 
   // ---------------------------------------------------------------- race lifecycle
 
-  private createSimulation(settings: PlayerSettings): void {
+  private homeRaceSettings(): PlayerSettings {
+    return { ...this.screens.settings, laps: 99, opponents: 5, difficulty: 'normal' };
+  }
+
+  private createSimulation(settings: PlayerSettings, home = false): void {
     const total = settings.opponents + 1;
+    const car = CARS[settings.car];
     this.sim = new RaceSimulation(
       this.track,
       {
@@ -195,63 +266,143 @@ export class Game {
         opponents: settings.opponents,
         difficulty: settings.difficulty,
         playerAssist: settings.assists ? 0.7 : 0.15,
-        // Start mid-pack so there is someone to race either way.
-        playerGridSlot: Math.min(total - 1, Math.floor(total / 2) + 1),
+        // Start mid-pack so there is someone to race either way (at the front for the showroom).
+        playerGridSlot: home ? 0 : Math.min(total - 1, Math.floor(total / 2) + 1),
         seed: Math.floor(Math.random() * 1e6),
+        carSpec: car.spec,
+        aiGrip: car.aiGrip,
       },
       this.line,
     );
-    // Car meshes are pooled: livery 0 is the player's, AI take the rest in grid order.
-    let ai = 1;
-    this.modelOf = this.sim.cars.map((c) => (c.isPlayer ? 0 : ai++));
+    // One-make race: everyone drives the player's car; the player has model 0, AI the rest.
     while (this.carModels.length < total) {
-      const model = new CarModel(LIVERIES[this.carModels.length % LIVERIES.length]);
+      const model = new CarModel(car, car.setup);
       this.carModels.push(model);
       this.scene.add(model.root);
     }
+    let ai = 0;
+    this.sim.cars.forEach((c, i) => {
+      const model = this.carModels[i];
+      const setup = c.isPlayer ? carSetup(settings.car, settings.garage) : { finish: 'metallic' as const, ...AI_LIVERIES[ai++ % AI_LIVERIES.length] };
+      model.build(car, setup);
+      this.colors[c.id] = setup.paint;
+    });
     this.carModels.forEach((m, i) => {
       m.root.visible = i < total;
       m.setLighting(this.timeOfDay, this.world?.def.theme !== 'city');
     });
-    if (!this.headlight.parent) this.carModels[0].root.add(this.headlight, this.headlight.target);
-    this.effectCars = this.sim.cars.map((car, i) => ({ car, root: this.carModels[this.modelOf[i]].root }));
+    // Model order follows the car order, so the player's model is wherever the player sits.
+    const playerModel = this.playerModel;
+    playerModel.root.add(this.headlight, this.headlight.target);
+    this.headlight.position.set(0, 0.75, playerModel.frontZ + 0.25);
+    this.effectCars = this.sim.cars.map((c, i) => ({ car: c, root: this.carModels[i].root }));
     this.effects.clear();
-    this.driftScore = 0;
-    this.colors.length = 0;
-    this.sim.cars.forEach((car, i) => {
-      this.colors[car.id] = '#' + LIVERIES[this.modelOf[i] % LIVERIES.length].color.toString(16).padStart(6, '0');
-    });
+    this.feedback.reset();
     this.syncCarModels(1, 0);
   }
 
+  private get playerModel(): CarModel {
+    return this.carModels[this.sim.cars.indexOf(this.sim.player)];
+  }
+
+  /** Homescreen: the field racing round Hakone on autopilot, filmed like TV coverage. */
+  private async goHome(first = false): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
+    this.state = 'home';
+    this.paused = false;
+    this.timeScale = 1;
+    this.cine.endIntro();
+    showCinematic(null);
+    this.hud.setVisible(false);
+    this.screens.hideAll();
+    await this.loadTrack(HOME_TRACK);
+    this.applyTimeOfDay(HOME_TIME);
+    this.world!.trackVisual.setStartLights(0);
+    this.createSimulation(this.homeRaceSettings(), true);
+    if (this.hubPanel !== 'garage') this.startAttract();
+    if (first) await this.compile();
+    setLoading(null);
+    this.screens.showHome();
+    this.input.clearActions();
+    this.busy = false;
+  }
+
+  private startAttract(): void {
+    for (const car of this.sim.cars) car.autopilot = true;
+    this.sim.startRace();
+    this.cine.resetAttract(this.track, this.sim.player.proj.distance);
+  }
+
   private async startRace(settings: PlayerSettings): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
     this.audio.unlock();
     this.screens.hideAll();
+    this.feedback.quiet();
+    const fresh = !this.worlds.has(settings.track);
     await this.loadTrack(settings.track);
     this.applyTimeOfDay(settings.timeOfDay);
     this.createSimulation(settings);
+    if (fresh) await this.compile();
+    setLoading(null);
     this.cam.mode = settings.camera;
-    this.cam.snap();
-    this.state = 'countdown';
     this.paused = false;
+    this.timeScale = 1;
     this.countdownTime = 0;
     this.lightsOn = 0;
     this.lightsOutAt = 5 * LIGHT_INTERVAL + 0.6 + Math.random() * 0.9;
-    this.wrongWayTime = 0;
     this.accumulator = 0;
     this.world!.trackVisual.setStartLights(0);
-    this.hud.setVisible(true);
     this.hud.clearMessage();
     this.input.clearActions();
+
+    // Fly-in over the grid, ending in the chase camera.
+    this.cam.snap();
+    this.cam.follow(this.playerModel, 0, 0);
+    const chase = this.cam.camera.position.clone();
+    const rows = Math.ceil(this.sim.cars.length / 2);
+    this.cine.startIntro(this.track, gridSlot(this.track, rows).distance + rows * 3, this.playerModel.root, chase);
+    const def = TRACKS[settings.track];
+    showCinematic({
+      kicker: `${def.short} · ${TIME_LABEL[settings.timeOfDay]}`,
+      name: def.circuit,
+      meta: `${settings.laps} lap${settings.laps > 1 ? 's' : ''} · ${this.sim.cars.length} cars · ${CARS[settings.car].name}`,
+    });
+    this.state = 'intro';
+    this.hud.setVisible(false);
+    this.busy = false;
   }
 
-  private goHome(): void {
-    this.state = 'home';
-    this.paused = false;
-    this.hud.setVisible(false);
-    this.world!.trackVisual.setStartLights(0);
-    this.createSimulation(this.screens.settings);
-    this.screens.showHome();
+  /**
+   * Render a picture of a circuit for the track picker (`npm run previews` saves these into
+   * public/previews). Uses a pose from the intro fly-in.
+   */
+  async capturePreview(track: TrackId, tod: TimeOfDay): Promise<string> {
+    this.busy = true;
+    this.screens.hideAll();
+    await this.loadTrack(track);
+    this.applyTimeOfDay(tod);
+    this.createSimulation({ ...this.screens.settings, track, timeOfDay: tod, opponents: 7 });
+    this.cam.snap();
+    this.cam.follow(this.playerModel, 0, 0);
+    this.cine.startIntro(this.track, gridSlot(this.track, 4).distance + 12, this.playerModel.root, this.cam.camera.position.clone());
+    this.cine.updateIntro(2.2);
+    this.cine.endIntro();
+    this.world!.update(this.elapsed, 0, this.cam.camera);
+    this.lighting.follow(this.playerModel.root.position);
+    this.pipeline.setSpeedEffect(0, 0);
+    await this.compile();
+    this.pipeline.render(0);
+    return this.pipeline.renderer.domElement.toDataURL('image/jpeg', 0.82);
+  }
+
+  private beginCountdown(): void {
+    this.cine.endIntro();
+    showCinematic(null);
+    this.cam.snap();
+    this.state = 'countdown';
+    this.hud.setVisible(true);
     this.input.clearActions();
   }
 
@@ -259,7 +410,8 @@ export class Game {
     if (this.state === 'home') return;
     this.paused = paused;
     this.screens.showPause(paused && showMenu);
-    if (!paused) this.input.clearActions();
+    if (paused) this.feedback.quiet();
+    else this.input.clearActions();
   }
 
   // ---------------------------------------------------------------- main loop
@@ -271,40 +423,59 @@ export class Game {
     this.elapsed += dt;
     const controls = this.input.update();
     this.handleActions();
+    if (this.busy) {
+      this.pipeline.render(dt);
+      return;
+    }
 
-    const running = !this.paused && !this.modalOpen && this.state !== 'home';
+    const home = this.state === 'home';
+    const garage = home && this.hubPanel === 'garage';
+    const running = !this.paused && !this.modalOpen && !garage;
+    const simDt = running ? dt * this.timeScale : 0;
     if (running) {
       if (this.state === 'countdown') this.updateCountdown(dt);
-      this.accumulator += dt;
+      this.accumulator += simDt;
       const step = RaceSimulation.STEP;
+      const input = this.state === 'countdown' || this.state === 'racing' ? controls : neutralControls();
       while (this.accumulator >= step) {
         this.accumulator -= step;
-        const events = this.sim.step(this.state === 'finished' ? neutralControls() : controls);
+        const events = this.sim.step(input);
         this.frameImpact = Math.max(this.frameImpact, this.sim.player.impact);
-        this.handleEvents(events);
+        if (!home) this.handleEvents(events);
       }
-      this.updateRaceFeedback(dt);
-      this.frameImpact = 0;
     }
 
     const alpha = running ? this.accumulator / RaceSimulation.STEP : 1;
-    this.syncCarModels(alpha, dt);
-    this.effects.update(this.effectCars, running ? dt : 0, this.cam.camera, this.renderer.domElement.height);
+    this.syncCarModels(alpha, simDt);
+    this.effects.update(this.effectCars, simDt, this.cam.camera, this.pipeline.renderer.domElement.height);
+    const blur = running && !home ? this.feedback.update(this.sim, this.state === 'racing', this.frameImpact, simDt) : 0;
+    this.frameImpact = 0;
+    this.pipeline.setSpeedEffect(blur, this.elapsed);
 
+    // Camera.
     const player = this.sim.player;
-    const playerModel = this.carModels[0];
-    if (this.state === 'home') {
-      this.cam.orbit(playerModel.root.position, dt);
-      this.audio.update(this.sim.player.physics.spec.idleRpm, 0, 0, 0, false);
+    const model = this.playerModel;
+    if (!garage) this.cine.setFraming(0);
+    if (garage) {
+      this.cine.garage(model.root, dt);
+    } else if (home) {
+      this.cine.attract(this.track, model.root, player.proj.distance, dt);
+    } else if (this.state === 'intro') {
+      if (this.cine.updateIntro(running ? dt : 0)) this.beginCountdown();
+    } else if (this.state === 'finished' && this.cine.finishActive) {
+      this.timeScale = this.cine.updateFinish(model.root, running ? dt : 0);
+      if (!this.cine.finishActive) this.cam.snap();
     } else {
-      this.cam.follow(playerModel, player.physics.speed, running ? dt : 0);
-      const p = player.physics;
-      this.audio.update(p.rpm, p.throttleApplied, Math.max(p.rearSlide, p.frontSlide * 0.6), p.speed, running);
+      this.cam.follow(model, player.physics.speed, running ? dt : 0);
     }
-    this.world!.update(this.elapsed, dt, this.cam.camera);
-    this.lighting.follow(playerModel.root.position);
 
-    if (this.state !== 'home') {
+    const p = player.physics;
+    if (home || this.state === 'intro') this.audio.update(home ? p.rpm : p.spec.idleRpm, home ? 0.4 : 0, 0, home ? p.speed : 0, !garage && running);
+    else this.audio.update(p.rpm, p.throttleApplied, Math.max(p.rearSlide, p.frontSlide * 0.6), p.speed, running);
+    this.world!.update(this.elapsed, dt, this.cam.camera);
+    this.lighting.follow(model.root.position);
+
+    if (this.state === 'countdown' || this.state === 'racing' || this.state === 'finished') {
       this.hud.update(this.sim, dt);
       this.minimap.draw(this.sim);
     }
@@ -315,7 +486,7 @@ export class Game {
         this.screens.updateResults(this.resultsData());
       }
     }
-    this.composer.render(dt);
+    this.pipeline.render(dt);
     this.effects.onRendered();
   }
 
@@ -323,12 +494,19 @@ export class Game {
     const input = this.input;
     if (input.consume('controls')) this.screens.toggleControls();
     if (input.consume('mute')) this.audio.toggleMute();
-    if (this.modalOpen) {
+    if (this.modalOpen || this.busy) {
       input.clearActions();
       return;
     }
     if (this.state === 'home') {
-      if (input.consume('confirm')) void this.startRace(this.screens.settings);
+      if (input.consume('confirm') && document.activeElement?.tagName !== 'BUTTON') void this.startRace(this.screens.settings);
+      if (input.consume('pause')) this.screens.back();
+      input.clearActions();
+      return;
+    }
+    if (this.state === 'intro') {
+      if (input.consume('skip') && !this.paused) this.beginCountdown();
+      if (input.consume('pause')) this.setPaused(!this.paused);
       input.clearActions();
       return;
     }
@@ -347,6 +525,7 @@ export class Game {
       this.cam.snap();
     }
     if (input.consume('confirm') && this.screens.resultsVisible) void this.startRace(this.screens.settings);
+    input.clearActions();
   }
 
   private updateCountdown(dt: number): void {
@@ -387,6 +566,8 @@ export class Game {
     this.state = 'finished';
     this.sim.player.autopilot = true;
     this.hud.showMessage(position === 1 ? 'YOU WIN!' : `FINISHED P${position}`, 3, position <= 3 ? 'gold' : '');
+    // Slow-motion shot from beside the line, on the side the car is not on.
+    this.cine.startFinish(this.track, this.sim.player.proj.lateral > 0 ? -1 : 1);
     const me = this.sim.race.racers[this.sim.player.id];
     const settings = this.screens.settings;
     const record = {
@@ -411,60 +592,30 @@ export class Game {
             ? 'Saved on this device. Log in from the homescreen to keep your career in your account.'
             : 'Could not save this result (server unreachable).',
       );
-    }, 2500);
+    }, 3200);
   }
 
   private resultsData() {
     return { standings: this.sim.race.standings(), playerId: this.sim.player.id, colors: this.colors };
   }
 
-  /** Wrong-way warning, impacts (sound + camera shake), drift scoring. */
-  private updateRaceFeedback(dt: number): void {
-    const player = this.sim.player;
-    if (this.frameImpact > 1.5) {
-      this.audio.impact(this.frameImpact);
-      this.cam.addShake(Math.min(1, this.frameImpact / 15));
-    }
-    if (this.state !== 'racing') return;
-    const p = player.physics;
-
-    // Drift points: speed x angle while sliding; a crash during the drift loses them.
-    const angle = Math.abs(p.driftAngle);
-    if (this.frameImpact > 3) this.driftScore = 0;
-    if (p.drifting && angle > 0.2 && p.speed > 8) {
-      this.driftScore += p.speed * angle * (180 / Math.PI) * 0.5 * dt;
-      this.driftQuiet = 0;
-    } else if (this.driftScore > 0) {
-      this.driftQuiet += dt;
-      if (this.driftQuiet > 0.6) {
-        if (this.driftScore >= 100) this.hud.showMessage(`+${Math.round(this.driftScore).toLocaleString('en-US')} DRIFT`, 1.6, 'gold');
-        this.driftScore = 0;
-      }
-    }
-
-    const along = p.vx * player.proj.tx + p.vz * player.proj.tz;
-    if (along < -3) this.wrongWayTime += dt;
-    else this.wrongWayTime = Math.max(0, this.wrongWayTime - dt * 2);
-    if (this.wrongWayTime > 1.2) {
-      this.hud.showMessage('WRONG WAY', 0.3, 'warn');
-    }
-  }
-
   private syncCarModels(alpha: number, dt: number): void {
-    for (let i = 0; i < this.sim.cars.length; i++) {
-      this.carModels[this.modelOf[i]].update(this.sim.cars[i], alpha, dt);
-    }
+    for (let i = 0; i < this.sim.cars.length; i++) this.carModels[i].update(this.sim.cars[i], alpha, dt);
   }
 
   private resize(): void {
     const w = window.innerWidth;
     const h = window.innerHeight;
-    this.renderer.setSize(w, h, false);
-    this.composer.setSize(w, h);
-    this.bloom.resolution.set(w / 2, h / 2);
+    this.pipeline.resize(w, h);
     this.cam.camera.aspect = w / h;
     this.cam.camera.updateProjectionMatrix();
   }
+}
+
+function gpuName(renderer: THREE.WebGLRenderer): string {
+  const gl = renderer.getContext();
+  const info = gl.getExtension('WEBGL_debug_renderer_info');
+  return info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
 }
 
 /** Full-screen loading overlay (null hides it). */
@@ -474,6 +625,21 @@ function setLoading(text: string | null): void {
   el.classList.toggle('hidden', text === null);
   const label = el.querySelector('.muted');
   if (text && label) label.textContent = text;
+}
+
+/** Letterbox bars + title card for the race intro (null hides it). */
+function showCinematic(card: { kicker: string; name: string; meta: string } | null): void {
+  const el = document.getElementById('cinematic')!;
+  el.classList.toggle('hidden', card === null);
+  if (!card) return;
+  document.getElementById('cine-kicker')!.textContent = card.kicker;
+  document.getElementById('cine-name')!.textContent = card.name;
+  document.getElementById('cine-meta')!.textContent = card.meta;
+  // Restart the title animation.
+  const title = el.querySelector<HTMLElement>('.cine-title')!;
+  title.style.animation = 'none';
+  void title.offsetWidth;
+  title.style.animation = '';
 }
 
 function nextFrame(): Promise<void> {

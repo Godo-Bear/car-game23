@@ -124,8 +124,7 @@ export function facadeTexture(rng: () => number, style: 'office' | 'residential'
     for (let col = 0; col < cols; col++) {
       const x = col * cw;
       const y = r * rh;
-      const [mx, my, w, h] =
-        style === 'glass' ? [2, 6, cw - 4, rh - 12] : style === 'residential' ? [10, 14, cw - 20, rh - 30] : [8, 10, cw - 16, rh - 22];
+      const [mx, my, w, h] = style === 'glass' ? [2, 6, cw - 4, rh - 12] : style === 'residential' ? [10, 14, cw - 20, rh - 30] : [8, 10, cw - 16, rh - 22];
       g.fillStyle = style === 'glass' ? '#253350' : '#141a24';
       g.fillRect(x + mx, y + my, w, h);
       if (rng() < (style === 'glass' ? 0.45 : 0.38)) {
@@ -175,8 +174,25 @@ export function shopfrontTexture(rng: () => number): THREE.Texture {
   return toTexture(c, true, true);
 }
 
-const SIGN_WORDS = ['東京', 'ラーメン', 'カラオケ', '居酒屋', '寿司', 'ゲーム', 'ホテル', '焼肉', '新宿', '渋谷', '薬', '24時間', 'コーヒー', '銀座', '秋葉原', '本屋'];
-const SIGN_COLORS = ['#ff2d95', '#00e5ff', '#ffe600', '#ff6a00', '#7dff4d', '#b14dff', '#ff3b3b', '#ffffff'];
+const SIGN_WORDS = [
+  '東京',
+  'ラーメン',
+  'カラオケ',
+  '居酒屋',
+  '寿司',
+  'ゲーム',
+  'ホテル',
+  '焼肉',
+  '新宿',
+  '渋谷',
+  '薬',
+  '24時間',
+  'コーヒー',
+  '銀座',
+  '秋葉原',
+  '本屋',
+];
+export const SIGN_COLORS = ['#ff2d95', '#00e5ff', '#ffe600', '#ff6a00', '#7dff4d', '#b14dff', '#ff3b3b', '#ffffff'];
 const SIGN_FONT = '"Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", "Noto Sans JP", "Noto Sans CJK JP", sans-serif';
 
 /** Glowing vertical Japanese shop sign. */

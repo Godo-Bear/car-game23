@@ -1,15 +1,17 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { TimeOfDay } from '../../shared/api';
 import { lerp, smoothstep } from '../core/math';
 import type { TrackPath } from '../track/TrackPath';
 import type { TrackTheme } from '../track/tracks';
+import { bamboo, broadleaf, bush, cedar, contactShadowMaterial, maple, pine, sakura, sugi, swayMaterial, type TreeShape } from './foliage';
 import { GeometryBuilder } from './GeometryBuilder';
+import { groundMaterial } from './surfaces';
 import { glowTexture } from './textures';
 
 /**
  * Procedural Japanese countryside and mountains around a circuit: terrain that the road sits
- * in, lakes, cedar forests or cherry-blossom avenues, falling petals and landmarks.
+ * in, lakes, cedar forests with autumn maples or cherry-blossom avenues with pines and bamboo,
+ * falling petals and landmarks. Vegetation sways in the wind and sits on soft contact shadows.
  */
 
 type RuralTheme = Exclude<TrackTheme, 'city'>;
@@ -109,7 +111,7 @@ class RoadField {
         }
       }
     }
-    if (!isFinite(best)) {
+    if (!Number.isFinite(best)) {
       // Nothing within the search radius: fall back to an exact (coarser) scan so the distance
       // stays continuous - a jump here would put a cliff in the terrain.
       for (let k = 0; k < this.xs.length; k += 2) {
@@ -210,11 +212,16 @@ export class NatureWorld {
   private readonly lanternGlow: THREE.PointsMaterial | null = null;
   private readonly fujiMat: THREE.MeshBasicMaterial;
   private readonly fujiSnow: THREE.MeshBasicMaterial;
+  /** Instanced vegetation and its full instance count, thinned by the graphics detail level. */
+  private readonly detailMeshes: { mesh: THREE.InstancedMesh; count: number }[] = [];
+  private readonly shadowMat = contactShadowMaterial();
+  private readonly shadowGeo = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
 
   constructor(
     readonly theme: RuralTheme,
     private readonly track: TrackPath,
     rng: () => number,
+    detail = 1,
   ) {
     this.group.name = `nature-${theme}`;
     this.cfg = theme === 'mountain' ? MOUNTAIN : COUNTRYSIDE;
@@ -249,6 +256,13 @@ export class NatureWorld {
       this.petals = new FallingPetals(rng);
       this.group.add(this.petals.points);
     }
+    this.setDetail(detail);
+  }
+
+  /** 0..1: fraction of the vegetation to draw (instances are shuffled, so thinning is even). */
+  setDetail(detail: number): void {
+    for (const { mesh, count } of this.detailMeshes) mesh.count = Math.max(1, Math.floor(count * detail));
+    if (this.petals) this.petals.points.visible = detail > 0.6;
   }
 
   /** Terrain height at a world position (road-conforming). */
@@ -314,13 +328,13 @@ export class NatureWorld {
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
     geo.setIndex(new THREE.BufferAttribute(index, 1));
     geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+    const mesh = new THREE.Mesh(geo, groundMaterial({ vertexColors: true }, this.theme === 'mountain' ? 'rocky' : 'meadow'));
     mesh.receiveShadow = true;
     mesh.name = 'terrain';
     this.group.add(mesh);
 
     // Far ground so the horizon never shows the edge of the terrain.
-    const far = new THREE.Mesh(new THREE.PlaneGeometry(20000, 20000), new THREE.MeshLambertMaterial({ color: this.theme === 'mountain' ? 0x2f4a26 : 0x5d8f35 }));
+    const far = new THREE.Mesh(new THREE.PlaneGeometry(20000, 20000), groundMaterial({ color: this.theme === 'mountain' ? 0x2f4a26 : 0x5d8f35 }, 'meadow'));
     far.rotation.x = -Math.PI / 2;
     far.position.set(cx, this.cfg.waterLevel - 6, cz);
     this.group.add(far);
@@ -371,39 +385,58 @@ export class NatureWorld {
 
   // ---------- vegetation ----------
 
-  private scatter(
-    count: number,
-    pick: () => [number, number, number] | null,
-    trunk: THREE.BufferGeometry,
-    crown: THREE.BufferGeometry,
-    trunkColor: number,
-    palette: number[],
-    rng: () => number,
-  ): void {
+  /**
+   * Plant `count` copies of a tree shape at spots from `pick` (null = rejected spot): instanced
+   * trunks and crowns with per-tree colour, scale and rotation, plus a contact shadow aligned to
+   * the slope underneath each one.
+   */
+  private scatter(count: number, pick: () => [number, number, number] | null, shape: TreeShape, rng: () => number): void {
     const placed: [number, number, number][] = [];
     for (let tries = 0; tries < count * 4 && placed.length < count; tries++) {
       const p = pick();
       if (p) placed.push(p);
     }
-    const trunks = new THREE.InstancedMesh(trunk, new THREE.MeshLambertMaterial({ color: trunkColor }), placed.length);
-    const crowns = new THREE.InstancedMesh(crown, new THREE.MeshLambertMaterial({ color: 0xffffff }), placed.length);
+    if (placed.length === 0) return;
+    // Shuffle so that lowering the detail level thins every kind of placement evenly.
+    for (let i = placed.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [placed[i], placed[j]] = [placed[j], placed[i]];
+    }
+    const n = placed.length;
+    const trunks = shape.trunk ? new THREE.InstancedMesh(shape.trunk, swayMaterial({ color: shape.trunkColor }, shape.sway, 0), n) : null;
+    const crowns = new THREE.InstancedMesh(shape.crown, swayMaterial({ color: 0xffffff }, shape.sway, 0.04), n);
+    const shadows = new THREE.InstancedMesh(this.shadowGeo, this.shadowMat, n);
+    shadows.userData.noAO = true;
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
+    const tilt = new THREE.Quaternion();
     const s = new THREE.Vector3();
     const v = new THREE.Vector3();
+    const up = new THREE.Vector3(0, 1, 0);
+    const normal = new THREE.Vector3();
     const c = new THREE.Color();
     placed.forEach(([x, y, z], i) => {
       const scale = 0.75 + rng() * 0.6;
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng() * Math.PI * 2);
+      q.setFromAxisAngle(up, rng() * Math.PI * 2);
       m.compose(v.set(x, y - 0.3, z), q, s.set(scale, scale * (0.85 + rng() * 0.3), scale));
-      trunks.setMatrixAt(i, m);
+      trunks?.setMatrixAt(i, m);
       crowns.setMatrixAt(i, m);
-      crowns.setColorAt(i, c.setHex(palette[Math.floor(rng() * palette.length)]).offsetHSL(0, 0, (rng() - 0.5) * 0.06));
+      crowns.setColorAt(i, c.setHex(shape.palette[Math.floor(rng() * shape.palette.length)]).offsetHSL(0, 0, (rng() - 0.5) * 0.06));
+      // Contact shadow: follow the ground's slope so the disc doesn't cut into hillsides.
+      normal.set(this.heightAt(x - 1, z) - this.heightAt(x + 1, z), 2, this.heightAt(x, z - 1) - this.heightAt(x, z + 1)).normalize();
+      tilt.setFromUnitVectors(up, normal);
+      const r = shape.shadow * scale;
+      m.compose(v.set(x, y + 0.06, z), tilt.multiply(q), s.set(r, 1, r));
+      shadows.setMatrixAt(i, m);
     });
-    trunks.instanceMatrix.needsUpdate = true;
-    crowns.instanceMatrix.needsUpdate = true;
+    for (const mesh of [trunks, crowns, shadows]) {
+      if (!mesh) continue;
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
+      this.group.add(mesh);
+      this.detailMeshes.push({ mesh, count: n });
+    }
     if (crowns.instanceColor) crowns.instanceColor.needsUpdate = true;
-    this.group.add(trunks, crowns);
   }
 
   private randomSpot(rng: () => number, minRoad: number, maxRoad: number): [number, number, number] | null {
@@ -417,49 +450,69 @@ export class NatureWorld {
     return [x, y, z];
   }
 
+  /** A spot within `radius` of one of `centres`, at least `minRoad` from the road. */
+  private clusterSpot(rng: () => number, centres: [number, number, number][], radius: number, minRoad: number): [number, number, number] | null {
+    if (centres.length === 0) return null;
+    const centre = centres[Math.floor(rng() * centres.length)];
+    const a = rng() * Math.PI * 2;
+    const r = Math.sqrt(rng()) * radius;
+    const x = centre[0] + Math.cos(a) * r;
+    const z = centre[2] + Math.sin(a) * r;
+    if (this.field.query(x, z).d < minRoad) return null;
+    const y = this.heightAt(x, z);
+    return y > this.cfg.waterLevel + 0.6 ? [x, y, z] : null;
+  }
+
+  /** A spot just behind the barrier, `near`..`far` metres beyond it. */
+  private roadsideSpot(rng: () => number, near: number, far: number): [number, number, number] | null {
+    const S = this.track.samples;
+    const s = S[Math.floor(rng() * S.length)];
+    const side = rng() < 0.5 ? -1 : 1;
+    const lat = side * (this.track.wallOffset + near + rng() * (far - near));
+    const x = s.x + s.rx * lat;
+    const z = s.z + s.rz * lat;
+    if (this.field.query(x, z).d < this.track.wallOffset + near - 0.5) return null;
+    const y = this.heightAt(x, z);
+    return y > this.cfg.waterLevel + 0.6 ? [x, y, z] : null;
+  }
+
+  private groves(rng: () => number, count: number, minRoad: number, maxRoad: number): [number, number, number][] {
+    return Array.from({ length: count }, () => this.randomSpot(rng, minRoad, maxRoad)).filter((p): p is [number, number, number] => !!p);
+  }
+
   private buildForest(rng: () => number): void {
-    const trunk = new THREE.CylinderGeometry(0.22, 0.35, 4, 6);
-    trunk.translate(0, 2, 0);
-    const c1 = new THREE.ConeGeometry(2.4, 7.5, 8);
-    c1.translate(0, 6.5, 0);
-    const c2 = new THREE.ConeGeometry(1.7, 5.5, 8);
-    c2.translate(0, 10, 0);
-    const crown = mergeGeometries([c1, c2])!;
     const minRoad = this.track.wallOffset + 4;
+    // Cedar forest everywhere, thicker in the valleys and thinning out on high bare slopes.
     this.scatter(
-      4200,
+      3200,
       () => {
         const p = this.randomSpot(rng, minRoad, 750);
         if (!p) return null;
-        // Thicker forest in the valleys, thinning out on high bare slopes.
         const density = 0.55 + fbm(p[0] / 140, p[2] / 140, 51) * 0.6 - smoothstep(140, 210, p[1]);
         return rng() < density ? p : null;
       },
-      trunk,
-      crown,
-      0x4a3526,
-      [0x24452a, 0x2c5230, 0x1f3d26, 0x35592f],
+      cedar(),
       rng,
     );
+    // Giant sugi lining the road like an old mountain highway.
+    this.scatter(700, () => this.roadsideSpot(rng, 5, 24), sugi(), rng);
+    // Autumn maples in clusters by the road and on the lake shore.
+    const maples = [...this.groves(rng, 22, 12, 160), ...this.groves(rng, 6, 20, 400)];
+    this.scatter(420, () => this.clusterSpot(rng, maples, 26, minRoad), maple(), rng);
+    // Broadleaf trees in the low valleys.
+    this.scatter(
+      600,
+      () => {
+        const p = this.randomSpot(rng, minRoad, 500);
+        return p && p[1] < 60 ? p : null;
+      },
+      broadleaf(),
+      rng,
+    );
+    this.scatter(900, () => this.roadsideSpot(rng, 1.5, 12), bush(), rng);
   }
 
   private buildBlossoms(rng: () => number): void {
-    const trunk = new THREE.CylinderGeometry(0.2, 0.32, 3.2, 6);
-    trunk.translate(0, 1.6, 0);
-    const parts: THREE.BufferGeometry[] = [];
-    for (const [x, y, z, r] of [
-      [0, 4.3, 0, 2.6],
-      [1.5, 3.9, 0.6, 1.8],
-      [-1.3, 4.0, -0.8, 1.9],
-      [0.3, 5.2, -0.6, 1.6],
-    ]) {
-      const g = new THREE.IcosahedronGeometry(r, 1);
-      g.scale(1, 0.78, 1);
-      g.translate(x, y, z);
-      parts.push(g);
-    }
-    const sakuraCrown = mergeGeometries(parts.map((g) => g.toNonIndexed()))!;
-    const sakuraPalette = [0xf7c6d9, 0xf4b3cb, 0xfbe0ea, 0xeea6c0, 0xfad1e0];
     const avenue: [number, number, number][] = [];
     const S = this.track.samples;
     // Cherry-blossom avenues lining much of the road.
@@ -474,42 +527,39 @@ export class NatureWorld {
         if (y > this.cfg.waterLevel + 0.6 && this.field.query(x, z).d > this.track.wallOffset + 3.5) avenue.push([x, y, z]);
       }
     }
-    // Groves scattered over the hills.
-    const groves = Array.from({ length: 26 }, () => this.randomSpot(rng, 30, 650)).filter((p): p is [number, number, number] => !!p);
+    // ...and groves scattered over the hills.
+    const groves = this.groves(rng, 26, 30, 650);
     let a = 0;
-    let g = 0;
     this.scatter(
       avenue.length + groves.length * 14,
-      () => {
-        if (a < avenue.length) return avenue[a++];
-        const centre = groves[g++ % groves.length];
-        const x = centre[0] + (rng() - 0.5) * 60;
-        const z = centre[2] + (rng() - 0.5) * 60;
-        if (this.field.query(x, z).d < this.track.wallOffset + 5) return null;
-        const y = this.heightAt(x, z);
-        return y > this.cfg.waterLevel + 0.6 ? [x, y, z] : null;
-      },
-      trunk,
-      sakuraCrown,
-      0x4b3428,
-      sakuraPalette,
+      () => (a < avenue.length ? avenue[a++] : this.clusterSpot(rng, groves, 30, this.track.wallOffset + 5)),
+      sakura(),
       rng,
     );
     // Ordinary green trees in between.
-    const leafy = new THREE.IcosahedronGeometry(3, 1);
-    leafy.translate(0, 5, 0);
     this.scatter(
       900,
       () => {
         const p = this.randomSpot(rng, this.track.wallOffset + 10, 800);
         return p && fbm(p[0] / 160, p[2] / 160, 63) > -0.05 ? p : null;
       },
-      trunk.clone(),
-      leafy,
-      0x4b3428,
-      [0x3f6e2c, 0x4d7f33, 0x5c8a3a, 0x355f28],
+      broadleaf(),
       rng,
     );
+    // Black pines on the hills and around the lake.
+    const L = this.cfg.lake;
+    const shore: [number, number, number][] = Array.from({ length: 10 }, (_, k) => {
+      const ang = (k / 10) * Math.PI * 2;
+      const x = L.x + Math.cos(ang) * L.rx * 1.15;
+      const z = L.z + Math.sin(ang) * L.rz * 1.15;
+      return [x, this.heightAt(x, z), z];
+    });
+    this.scatter(260, () => this.clusterSpot(rng, shore, 30, this.track.wallOffset + 6), pine(), rng);
+    this.scatter(260, () => this.randomSpot(rng, 60, 700), pine(), rng);
+    // Bamboo groves.
+    const thickets = this.groves(rng, 14, 18, 300);
+    this.scatter(220, () => this.clusterSpot(rng, thickets, 14, this.track.wallOffset + 6), bamboo(), rng);
+    this.scatter(800, () => this.roadsideSpot(rng, 1.5, 14), bush(), rng);
   }
 
   // ---------- landmarks ----------
@@ -675,7 +725,15 @@ export class NatureWorld {
     this.group.add(new THREE.Mesh(lights.build(), light));
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(glowPos, 3));
-    const glow = new THREE.PointsMaterial({ map: glowTexture(), color: 0xffc070, size: 4, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+    const glow = new THREE.PointsMaterial({
+      map: glowTexture(),
+      color: 0xffc070,
+      size: 4,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
     this.group.add(new THREE.Points(geo, glow));
     return { light, glow };
   }

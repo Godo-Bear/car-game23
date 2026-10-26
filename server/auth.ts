@@ -90,11 +90,7 @@ export function randomSalt(): string {
 
 export async function hashPassword(password: string, saltB64: string): Promise<string> {
   const key = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', hash: 'SHA-256', salt: fromBase64(saltB64), iterations: PBKDF2_ITERATIONS },
-    key,
-    256,
-  );
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: fromBase64(saltB64), iterations: PBKDF2_ITERATIONS }, key, 256);
   return toBase64(bits);
 }
 
@@ -115,7 +111,10 @@ function sessionCookie(token: string, maxAge: number): string {
 }
 
 export async function createSession(db: D1Database, userId: number): Promise<string> {
-  const token = toBase64(crypto.getRandomValues(new Uint8Array(32))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const token = toBase64(crypto.getRandomValues(new Uint8Array(32)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
   const t = now();
   await db.batch([
     db.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(t),
@@ -137,7 +136,11 @@ function sessionToken(request: Request): string | null {
 
 export async function destroySession(db: D1Database, request: Request): Promise<void> {
   const token = sessionToken(request);
-  if (token) await db.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(await sha256Hex(token)).run();
+  if (token)
+    await db
+      .prepare('DELETE FROM sessions WHERE token_hash = ?')
+      .bind(await sha256Hex(token))
+      .run();
 }
 
 export async function currentUser(db: D1Database, request: Request): Promise<UserRow | null> {
@@ -188,7 +191,16 @@ export async function loadProfile(db: D1Database, user: UserRow): Promise<Profil
            FROM race_results WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT 5`,
       )
       .bind(user.id)
-      .all<{ track: TrackId; position: number; field_size: number; laps: number; difficulty: RaceRecord['difficulty']; total_time: number | null; best_lap: number | null; created_at: number }>(),
+      .all<{
+        track: TrackId;
+        position: number;
+        field_size: number;
+        laps: number;
+        difficulty: RaceRecord['difficulty'];
+        total_time: number | null;
+        best_lap: number | null;
+        created_at: number;
+      }>(),
     db
       .prepare('SELECT track, MIN(best_lap) AS best FROM race_results WHERE user_id = ? AND best_lap IS NOT NULL GROUP BY track')
       .bind(user.id)

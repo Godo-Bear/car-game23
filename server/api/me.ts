@@ -1,4 +1,4 @@
-import { currentUser, fail, json, loadProfile, type ApiHandler } from '../auth';
+import { type ApiHandler, currentUser, fail, json, loadProfile } from '../auth';
 
 /** GET /api/me -> the signed-in player's profile, or 401 */
 export const me: ApiHandler = async (request, env) => {

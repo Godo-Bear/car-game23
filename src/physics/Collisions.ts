@@ -24,7 +24,14 @@ function crashScrub(car: VehiclePhysics, impact: number, threshold: number, perM
  * deepest one receives a rigid-body impulse (so glancing blows also spin the car a little).
  * Returns the impact speed along the barrier normal (0 when there was no hit).
  */
-export function collideWithWalls(car: VehiclePhysics, proj: TrackProjection, wallOffset: number): number {
+/** Where a car touched the barrier this step (for sparks and scrape sounds). */
+export interface WallContact {
+  active: boolean;
+  x: number;
+  z: number;
+}
+
+export function collideWithWalls(car: VehiclePhysics, proj: TrackProjection, wallOffset: number, contact?: WallContact): number {
   const { halfLength, halfWidth, mass, inertia } = car.spec;
   const sinH = Math.sin(car.heading);
   const cosH = Math.cos(car.heading);
@@ -58,6 +65,11 @@ export function collideWithWalls(car: VehiclePhysics, proj: TrackProjection, wal
   const nz = -side * proj.rz;
   car.x += nx * worst;
   car.z += nz * worst;
+  if (contact) {
+    contact.active = true;
+    contact.x = car.x + ox;
+    contact.z = car.z + oz;
+  }
 
   const impact = applyImpulse(car, null, ox, oz, 0, 0, nx, nz, mass, inertia, WALL_RESTITUTION, WALL_FRICTION);
   crashScrub(car, impact, 1.5, 0.035, 0.65);
@@ -123,20 +135,7 @@ export function collideCars(a: VehiclePhysics, b: VehiclePhysics): number {
   b.x += nx * half;
   b.z += nz * half;
 
-  const impact = applyImpulse(
-    b,
-    a,
-    cax - b.x,
-    caz - b.z,
-    cax - a.x,
-    caz - a.z,
-    nx,
-    nz,
-    a.spec.mass,
-    a.spec.inertia,
-    CAR_RESTITUTION,
-    CAR_FRICTION,
-  );
+  const impact = applyImpulse(b, a, cax - b.x, caz - b.z, cax - a.x, caz - a.z, nx, nz, a.spec.mass, a.spec.inertia, CAR_RESTITUTION, CAR_FRICTION);
   crashScrub(a, impact, 2, 0.02, 0.4);
   crashScrub(b, impact, 2, 0.02, 0.4);
   a.syncLocalVelocity();

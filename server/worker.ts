@@ -4,7 +4,7 @@ import { me } from './api/me';
 import { races } from './api/races';
 import { register } from './api/register';
 import { settings } from './api/settings';
-import { fail, type ApiHandler, type Env } from './auth';
+import { type ApiHandler, type Env, fail } from './auth';
 import { ensureSchema } from './schema';
 
 const routes: Record<string, Partial<Record<string, ApiHandler>>> = {

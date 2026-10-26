@@ -65,7 +65,7 @@ export class ChaseCamera {
       const fz = Math.cos(this.yaw);
       const p = root.position;
       const target = this.tmp.set(p.x - fx * cfg.dist, p.y + cfg.height, p.z - fz * cfg.dist);
-      if (!isFinite(this.pos.x)) this.pos.copy(target);
+      if (!Number.isFinite(this.pos.x)) this.pos.copy(target);
       // Stiff horizontally so the car stays framed, softer vertically over crests.
       this.pos.x = target.x;
       this.pos.z = target.z;

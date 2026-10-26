@@ -3,11 +3,20 @@
 A Forza-inspired 3D racing game set in Japan — city streets, a mountain pass and cherry-blossom
 countryside, by day, at sunset or at night — running in the browser and hosted on Cloudflare.
 
-- **Core racing loop:** standing start with F1-style start lights, lap counting, live positions, lap
-  timing, 3–7 AI opponents, results screen.
+- **Core racing loop:** cinematic fly-in over the grid, F1-style start lights, lap counting, live
+  positions, lap timing, 3–7 AI opponents, a slow-motion trackside finish shot and a results screen.
+- **Menu hub (Dirt 5 style):** *Race* (circuit cards with preview pictures, time of day, laps,
+  opponents, difficulty), *Garage*, *Career* and *Settings* tabs over a live homescreen: the field
+  racing over the Hakone pass on a sunny day, filmed with TV-style camera shots.
+- **Garage:** five cars with their own handling and body — Kaze GT (all-rounder), Shiro Type-H
+  (hot hatch), Yama R4 (rally special), Oni 86R (drift coupe) and Raijin V12 (hypercar). Customise
+  paint colour and finish (gloss / metallic / pearl / matte), livery (racing stripes, side stripe,
+  two-tone, race livery), accent colour, rim colour and race number; saved per car to your account.
+  Races are one-make: the AI drive the same car in team colours.
 - **Vehicle physics:** semi-simulation bicycle model — tyre slip, weight transfer, 6-speed automatic
   gearbox, handbrake drifting with skid marks and tyre smoke, stability control, slipstream, and
-  crashes that cost real speed.
+  crashes that cost real speed. High-speed drifts are assisted: the car carves toward where it is
+  pointing instead of sliding wide into the barrier.
 - **Three circuits:**
   - **Tokyo** — 2.48 km *Shinjuku–Bay Street Circuit*: neon towers, a Shibuya scramble chicane, an
     elevated Shuto-style expressway, Tokyo Tower, Skytree and Rainbow Bridge.
@@ -18,10 +27,22 @@ countryside, by day, at sunset or at night — running in the browser and hosted
     avenues with falling petals, a lake with a five-storey pagoda, and a torii gate over the start.
 - **Time of day:** day, sunset or night on any circuit — sky, sun position, shadows, fog, street
   lamps, lit windows, neon and headlights all change (Mt. Fuji is on the horizon everywhere).
+- **Graphics:** MSAA anti-aliasing (FXAA on Low), real-time ambient occlusion on High plus baked
+  contact shadows under trees and buildings, world-space terrain detail (grass, rock on slopes),
+  varied asphalt with rubbered-in racing line, rain-soaked Tokyo streets at night with puddles and
+  neon/lamp reflections, trees that sway in the wind (cedar, sugi, maple, pine, bamboo, sakura).
+- **Speed & impact feedback:** speed blur and speed lines above ~180 km/h, kerb rumble and camera
+  shake, sparks and grinding when scraping a barrier, impact thuds.
+- **Settings:** graphics quality Low / Medium / High (auto-detected), speed blur and camera shake
+  toggles, master / engine / effects volume, and fully rebindable keyboard controls with
+  **Reset binds**. Stored per device.
 - **HUD:** speed (KM/H), gear + RPM, position, lap, current/last/best lap time, standings, minimap.
 - **Accounts:** log in / create an account from the homescreen; career stats, best lap per circuit,
-  recent races and race settings are saved to your account (Cloudflare D1). Without an account,
-  progress is kept as a guest profile on the device.
+  recent races, race settings and your garage are saved to your account (Cloudflare D1). Without an
+  account, progress is kept as a guest profile on the device.
+- **Fast loading:** racing lines are computed in a Web Worker while the scenery builds (and cached
+  on the device), built circuits are kept for instant switching, and shaders compile
+  asynchronously.
 
 ## Engine / framework choice
 
@@ -40,41 +61,57 @@ runs at a fixed 120 Hz, and is covered by unit tests — including a headless 8-
 ## Project structure
 
 ```
-├── index.html                  # Canvas + HUD + homescreen/login/controls/pause/results markup
+├── index.html                  # Canvas + HUD + menu hub / garage / settings / pause / results markup
 ├── src/
 │   ├── main.ts                 # Entry point (WebGL2 check, boots Game)
 │   ├── styles.css              # UI styling
-│   ├── game/Game.ts            # State machine (home → countdown → racing → finished), main loop, rendering
+│   ├── game/
+│   │   ├── Game.ts             # State machine (home → intro → countdown → racing → finished), main loop
+│   │   ├── Cinematics.ts       # Grid fly-in, homescreen TV shots, garage turntable, slow-mo finish
+│   │   ├── RaceFeedback.ts     # Impacts, kerb rumble/shake, scrapes + sparks, drift points, wrong way
+│   │   └── TrackLoader.ts      # Track + racing-line cache (Web Worker, device cache)
+│   ├── render/RenderPipeline.ts # Renderer, MSAA/FXAA, ambient occlusion, bloom, speed blur, quality levels
 │   ├── track/
 │   │   ├── tracks.ts           # Circuit registry (theme, names)
 │   │   ├── tokyoCircuit.ts     # Tokyo layout (corner points, radii, elevation)
 │   │   ├── circuits.ts         # Hakone and Sakura Valley layouts
 │   │   ├── TrackPath.ts        # Centre-line sampling, projection (lap distance / lateral offset)
-│   │   └── TrackMesh.ts        # Road, barriers, catch fences, kerbs, expressway deck, start gantry
+│   │   ├── TrackMesh.ts        # Road, barriers, catch fences, kerbs, rubber line, start gantry
+│   │   └── racingLine.worker.ts # Racing-line relaxation off the main thread
 │   ├── physics/
-│   │   ├── VehiclePhysics.ts   # Car model: tyres, gearbox, brakes, handbrake, ESC
-│   │   └── Collisions.ts       # Barrier + car-to-car impulses, crash speed loss
+│   │   ├── VehiclePhysics.ts   # Car model: tyres, gearbox, brakes, handbrake, drift assist, ESC
+│   │   └── Collisions.ts       # Barrier + car-to-car impulses, crash speed loss, contact points
 │   ├── ai/
 │   │   ├── RacingLine.ts       # Minimum-curvature racing line + speed profile
 │   │   └── AIDriver.ts         # Pure-pursuit driver, overtaking, stuck recovery
 │   ├── race/
 │   │   ├── RaceManager.ts      # Laps, lap times, positions (reverse-proof)
 │   │   └── RaceSimulation.ts   # Fixed-step world update shared by game and tests
-│   ├── vehicles/CarModel.ts    # Procedural car mesh: spinning/steering wheels, body roll, lights
+│   ├── vehicles/
+│   │   ├── cars.ts             # The garage: car specs, bodies, stats, default paint jobs
+│   │   ├── CarModel.ts         # Procedural cars + liveries: spinning/steering wheels, body roll, lights
+│   │   ├── TireEffects.ts      # Skid marks + tyre smoke
+│   │   └── Sparks.ts           # Barrier-scrape sparks
 │   ├── world/
 │   │   ├── World.ts            # Builds the scenery for a circuit
 │   │   ├── City.ts             # Procedural Tokyo: buildings, neon, lamps, landmarks
 │   │   ├── Nature.ts           # Terrain, lakes, forests, cherry blossoms, petals, pagoda, Fuji
+│   │   ├── foliage.ts          # Tree shapes, wind sway, contact shadows
+│   │   ├── surfaces.ts         # Terrain/road detail, wet asphalt, light reflections
 │   │   ├── Lighting.ts         # Sky, sun/moon, fog, shadows and reflections per time of day
 │   │   └── textures.ts         # Canvas-generated textures
-│   ├── camera/ChaseCamera.ts   # Chase / far chase / bonnet cams + homescreen orbit
-│   ├── core/                   # Input (keyboard + gamepad), synthesised audio, math
-│   ├── ui/                     # HUD, minimap, menus
+│   ├── camera/ChaseCamera.ts   # Chase / far chase / bonnet cams
+│   ├── core/                   # Input (rebindable keys + gamepad), settings store, audio, math
+│   ├── ui/                     # HUD, minimap, menu hub, garage, settings window
 │   └── account/                # Client for the accounts API (with guest fallback)
 ├── server/                     # Cloudflare Worker: /api/* accounts, sessions, stats, settings
-├── shared/api.ts               # Types shared by client and Worker
+├── shared/api.ts               # Types + validation shared by client and Worker
 ├── migrations/                 # D1 schema (applied automatically by the Worker)
-├── tests/                      # Vitest: track, physics, collisions, race rules, full AI race
+├── public/previews/            # Track-picker pictures (rendered by `npm run previews`)
+├── scripts/render-previews.mjs # Renders those pictures from the game itself
+├── tests/                      # Vitest: track, physics (incl. drift), collisions, races for every car
+├── biome.json                  # Lint + format rules
+├── .github/workflows/ci.yml    # CI: lint, tests, type-check + build
 ├── wrangler.jsonc              # Cloudflare Workers config (static assets + API + D1)
 └── docs/DEPLOY_CLOUDFLARE.md   # Hosting guide
 ```
@@ -87,13 +124,19 @@ Requires Node.js 22+.
 npm install
 npm run dev        # http://localhost:5173 — game with hot reload (guest profile, no accounts)
 npm run dev:full   # http://localhost:8787 — full stack: real Worker + local D1, accounts work
-npm test           # unit tests incl. a headless 8-car race
+npm test           # unit tests incl. headless races on every circuit and with every car
+npm run lint       # Biome lint + format check (npm run format fixes)
 npm run build      # type-check + production build into dist/
+npm run previews   # re-render public/previews/*.jpg (needs `npm run dev` running + Playwright)
 ```
 
-Add `?debug` to the URL to expose the game object as `window.game` in the console.
+In development (`npm run dev`), add `?debug` to the URL to expose the game object as `window.game`
+in the console. GitHub Actions runs lint, tests and the build on every push and pull request.
 
 ## Controls
+
+Every keyboard control can be changed in **Settings → Controls** (click a key, press the new one;
+right-click clears it; **Reset binds** restores these defaults).
 
 | Action | Keyboard | Gamepad |
 | --- | --- | --- |
@@ -103,8 +146,10 @@ Add `?debug` to the URL to expose the game object as `window.game` in the consol
 | Handbrake / drift | `Space` | A / Cross |
 | Change camera | `C` | Y / Triangle |
 | Reset car to track | `R` | View / Share |
-| Pause | `Esc` / `P` | Menu / Options |
-| Show controls | `H` (or the **?** / **Controls** buttons) | |
+| Pause / back | `Esc` / `P` | Menu / Options |
+| Skip intro | any key | any button |
+| Controls & settings | `H` (or the **?** button) | |
+| Browse cars (garage) | `←` `→` / `Q` `E` | |
 | Mute | `M` | |
 
 ## Deploying to Cloudflare

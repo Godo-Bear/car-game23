@@ -1,21 +1,28 @@
 import { clamp } from './math';
+import type { Volumes } from './Settings';
 
 /**
  * Fully synthesised audio (no sound files): engine note driven by RPM and throttle,
- * tyre squeal from slip, wind at speed, impact thuds and countdown beeps.
+ * tyre squeal from slip, wind at speed, kerb rumble, barrier scrapes, impact thuds and countdown
+ * beeps. Engine and effects run through separate buses so they have their own volume sliders.
  * The AudioContext is created on the first user gesture, as browsers require.
  */
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private master!: GainNode;
+  private engineBus!: GainNode;
+  private fxBus!: GainNode;
   private engineGain!: GainNode;
   private engineFilter!: BiquadFilterNode;
   private osc1!: OscillatorNode;
   private osc2!: OscillatorNode;
   private screechGain!: GainNode;
   private windGain!: GainNode;
+  private rumbleGain!: GainNode;
+  private scrapeGain!: GainNode;
   private noise!: AudioBuffer;
   private muted = false;
+  private volumes: Volumes = { master: 0.8, engine: 0.8, effects: 0.8 };
 
   get isMuted(): boolean {
     return this.muted;
@@ -32,8 +39,12 @@ export class AudioEngine {
     const ctx = new AC();
     this.ctx = ctx;
     this.master = ctx.createGain();
-    this.master.gain.value = this.muted ? 0 : 0.7;
     this.master.connect(ctx.destination);
+    this.engineBus = ctx.createGain();
+    this.engineBus.connect(this.master);
+    this.fxBus = ctx.createGain();
+    this.fxBus.connect(this.master);
+    this.applyVolumes(0);
 
     // Engine: two detuned oscillators through a waveshaper and a throttle-controlled low-pass.
     this.engineFilter = ctx.createBiquadFilter();
@@ -57,7 +68,7 @@ export class AudioEngine {
     o2gain.gain.value = 0.35;
     this.osc1.connect(shaper);
     this.osc2.connect(o2gain).connect(shaper);
-    shaper.connect(this.engineFilter).connect(this.engineGain).connect(this.master);
+    shaper.connect(this.engineFilter).connect(this.engineGain).connect(this.engineBus);
     this.osc1.start();
     this.osc2.start();
 
@@ -75,7 +86,7 @@ export class AudioEngine {
     band.Q.value = 6;
     this.screechGain = ctx.createGain();
     this.screechGain.gain.value = 0;
-    screech.connect(band).connect(this.screechGain).connect(this.master);
+    screech.connect(band).connect(this.screechGain).connect(this.fxBus);
     screech.start();
 
     const wind = ctx.createBufferSource();
@@ -86,13 +97,54 @@ export class AudioEngine {
     low.frequency.value = 500;
     this.windGain = ctx.createGain();
     this.windGain.gain.value = 0;
-    wind.connect(low).connect(this.windGain).connect(this.master);
+    wind.connect(low).connect(this.windGain).connect(this.fxBus);
     wind.start();
+
+    // Kerb rumble: low-frequency thrum (pulsed by the caller as the wheels cross the stripes).
+    this.rumbleGain = ctx.createGain();
+    this.rumbleGain.gain.value = 0;
+    this.loop(ctx, 'lowpass', 140, 1).connect(this.rumbleGain).connect(this.fxBus);
+    // Barrier scrape: harsh high band of noise.
+    this.scrapeGain = ctx.createGain();
+    this.scrapeGain.gain.value = 0;
+    this.loop(ctx, 'bandpass', 3200, 1.5).connect(this.scrapeGain).connect(this.fxBus);
+  }
+
+  private loop(ctx: AudioContext, type: BiquadFilterType, freq: number, q: number): BiquadFilterNode {
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.loop = true;
+    src.playbackRate.value = 0.5 + Math.random() * 0.5;
+    const filter = ctx.createBiquadFilter();
+    filter.type = type;
+    filter.frequency.value = freq;
+    filter.Q.value = q;
+    src.connect(filter);
+    src.start();
+    return filter;
+  }
+
+  setVolumes(v: Volumes): void {
+    this.volumes = { ...v };
+    this.applyVolumes(0.05);
+  }
+
+  private applyVolumes(ramp: number): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const set = (node: GainNode, value: number) => {
+      if (ramp > 0) node.gain.setTargetAtTime(value, ctx.currentTime, ramp);
+      else node.gain.value = value;
+    };
+    // Squared so the sliders feel even (loudness is roughly logarithmic).
+    set(this.master, this.muted ? 0 : 1.1 * this.volumes.master ** 2);
+    set(this.engineBus, this.volumes.engine ** 2 * 1.56);
+    set(this.fxBus, this.volumes.effects ** 2 * 1.56);
   }
 
   setMuted(muted: boolean): void {
     this.muted = muted;
-    if (this.ctx) this.master.gain.setTargetAtTime(muted ? 0 : 0.7, this.ctx.currentTime, 0.05);
+    this.applyVolumes(0.05);
   }
 
   toggleMute(): boolean {
@@ -115,6 +167,15 @@ export class AudioEngine {
     this.windGain.gain.setTargetAtTime(active ? clamp(speed / 75, 0, 1) ** 2 * 0.18 : 0, t, 0.1);
   }
 
+  /** Continuous surface sounds: `kerb` and `scrape` are 0..1 intensities. */
+  surface(kerb: number, scrape: number): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.rumbleGain.gain.setTargetAtTime(kerb * 0.5, t, 0.03);
+    this.scrapeGain.gain.setTargetAtTime(scrape * 0.16, t, 0.04);
+  }
+
   impact(strength: number): void {
     const ctx = this.ctx;
     if (!ctx || strength < 1) return;
@@ -127,7 +188,7 @@ export class AudioEngine {
     const t = ctx.currentTime;
     g.gain.setValueAtTime(clamp(strength / 12, 0.08, 0.9), t);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
-    src.connect(lp).connect(g).connect(this.master);
+    src.connect(lp).connect(g).connect(this.fxBus);
     src.start(t, Math.random());
     src.stop(t + 0.4);
   }
@@ -142,7 +203,7 @@ export class AudioEngine {
     const t = ctx.currentTime;
     g.gain.setValueAtTime(0.25, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + (high ? 0.6 : 0.25));
-    o.connect(g).connect(this.master);
+    o.connect(g).connect(this.fxBus);
     o.start(t);
     o.stop(t + 0.65);
   }

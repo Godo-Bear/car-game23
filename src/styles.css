@@ -50,7 +50,10 @@ button {
   border-radius: 10px;
   padding: 10px 16px;
   cursor: pointer;
-  transition: background 0.15s, transform 0.1s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    transform 0.1s,
+    border-color 0.15s;
 }
 button:hover {
   background: rgba(255, 255, 255, 0.16);
@@ -194,16 +197,6 @@ kbd {
   color: #d6d8ea;
   letter-spacing: 0.08em;
 }
-.home-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
-  gap: 20px;
-  max-width: 980px;
-  margin-top: auto;
-}
-.screen footer {
-  font-size: 14px;
-}
 
 .profile-head {
   display: flex;
@@ -286,24 +279,6 @@ kbd {
   background: var(--accent-2);
   color: #031018;
 }
-.seg.tracks {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
-  width: 100%;
-}
-.seg.tracks button {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 10px 6px;
-  text-align: center;
-}
-.seg.tracks small {
-  font-weight: 600;
-  font-size: 11px;
-  opacity: 0.8;
-}
 .track-blurb {
   margin: 8px 2px 4px;
   min-height: 2.4em;
@@ -316,9 +291,114 @@ kbd {
   letter-spacing: 0.08em;
   padding: 14px;
 }
-.setup-panel > .secondary {
-  width: 100%;
+.row.two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   margin-top: 10px;
+}
+.row.end {
+  justify-content: flex-end;
+}
+
+/* ---------- Settings ---------- */
+.settings-panel {
+  width: min(760px, calc(100vw - 32px));
+}
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.settings-head h2 {
+  margin: 0;
+}
+.tabs {
+  display: inline-flex;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 3px;
+}
+.tabs button {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 7px 14px;
+}
+.tabs button.active {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--text);
+}
+.pane {
+  min-height: 240px;
+  padding-top: 6px;
+}
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-size: 15px;
+}
+.toggle input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent-2);
+}
+.slider {
+  display: grid;
+  grid-template-columns: 1fr 2fr 3ch;
+  align-items: center;
+  gap: 12px;
+  color: var(--text);
+}
+.slider input {
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent-2);
+  background: none;
+  border: none;
+}
+.slider output {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  text-align: right;
+}
+.bind-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.bind-table td {
+  padding: 4px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 14px;
+}
+.bind-table td:not(:first-child) {
+  width: 92px;
+}
+.bind-key {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+  border-radius: 8px;
+  border-bottom-width: 3px;
+}
+.bind-key.empty {
+  color: var(--muted);
+}
+.bind-key.listening {
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+  animation: pulse 1s ease-in-out infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.55;
+  }
 }
 
 .modal {
@@ -376,7 +456,7 @@ input {
   padding: 10px 12px;
   font-size: 13px;
 }
-.switch a {
+.switch .link-btn {
   color: var(--accent-2);
 }
 
@@ -674,5 +754,338 @@ input {
   }
   .stats {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ---------- Homescreen hub (race / garage / career) ---------- */
+.hub {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: clamp(12px, 2.5vw, 32px);
+  overflow-y: auto;
+  /* Keep the 3D scene visible on the right; darken behind the panels on the left. */
+  background: linear-gradient(90deg, rgba(8, 10, 18, 0.72) 0%, rgba(8, 10, 18, 0.35) 42%, rgba(8, 10, 18, 0) 70%);
+}
+.hub-top {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.hub-brand {
+  font-size: clamp(20px, 2.6vw, 30px);
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 0.02em;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+}
+.hub-brand span {
+  color: var(--accent);
+}
+.hub-tabs {
+  display: flex;
+  gap: 4px;
+  background: rgba(10, 12, 22, 0.7);
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  padding: 4px;
+  backdrop-filter: blur(10px);
+}
+.hub-tabs button {
+  border: none;
+  background: transparent;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-style: italic;
+  font-size: 15px;
+  padding: 10px 18px;
+  color: var(--muted);
+}
+.hub-tabs button.active {
+  background: linear-gradient(135deg, var(--accent), #ff7a3d);
+  color: #fff;
+}
+.profile-chip {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  background: rgba(10, 12, 22, 0.7);
+  padding: 6px 14px 6px 6px;
+  border-radius: 999px;
+}
+.profile-chip .avatar {
+  width: 36px;
+  height: 36px;
+  font-size: 16px;
+}
+.profile-chip small {
+  display: block;
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--muted);
+}
+.avatar.big {
+  width: 56px;
+  height: 56px;
+}
+.hub-panel {
+  width: min(560px, 100%);
+}
+.hub-foot {
+  margin-top: auto;
+  font-size: 13px;
+}
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0 4px;
+  color: var(--accent-2);
+}
+
+/* Track cards with preview pictures */
+.track-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.track-card {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  border-radius: 12px;
+  border: 2px solid transparent;
+  background: linear-gradient(160deg, #26304a, #10131f);
+  text-align: left;
+}
+.track-card img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s;
+}
+.track-card:hover img {
+  transform: scale(1.05);
+}
+.track-card .label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 18px 8px 7px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.85));
+  display: flex;
+  flex-direction: column;
+}
+.track-card .label small {
+  font-weight: 600;
+  font-size: 11px;
+  color: #d6d8ea;
+}
+.track-card.active {
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 3px rgba(25, 211, 255, 0.25);
+}
+.event-car {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* Garage */
+.car-switch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.car-switch .icon-btn {
+  font-size: 26px;
+  width: 44px;
+  height: 44px;
+}
+.car-title {
+  flex: 1;
+  text-align: center;
+}
+.car-title small {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--accent-2);
+  font-weight: 700;
+  font-size: 12px;
+}
+.car-title h2 {
+  margin: 2px 0 0;
+  font-size: 30px;
+}
+.car-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin: 8px 0;
+}
+.car-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.25);
+}
+.car-dots span.on {
+  background: var(--accent-2);
+}
+.car-stats {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 14px;
+}
+.car-stats .stat {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  align-items: center;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.car-stats .bar {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.car-stats .bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-2), #7b5cff);
+  transition: width 0.3s;
+}
+.garage-tabs {
+  margin: 4px 0 12px;
+}
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.swatch {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+}
+.swatch.active {
+  border-color: #fff;
+  box-shadow: 0 0 0 3px var(--accent-2);
+}
+.swatch-pick {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red);
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+}
+.swatch-pick input {
+  position: absolute;
+  inset: -8px;
+  width: 48px;
+  height: 48px;
+  opacity: 0;
+  cursor: pointer;
+  padding: 0;
+}
+.seg.wrap {
+  display: flex;
+  flex-wrap: wrap;
+}
+.number-pick input {
+  width: 120px;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+/* Cinematic intro */
+.cinematic {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  pointer-events: none;
+}
+.cinematic .bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 11vh;
+  background: #000;
+  transition: transform 0.6s ease;
+}
+.cinematic .bar.top {
+  top: 0;
+}
+.cinematic .bar.bottom {
+  bottom: 0;
+}
+.cine-title {
+  position: absolute;
+  left: clamp(16px, 5vw, 64px);
+  bottom: calc(11vh + 28px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.7);
+  animation: cine-in 0.9s ease both 0.4s;
+}
+.cine-title small {
+  color: var(--accent-2);
+  letter-spacing: 0.25em;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.cine-title b {
+  font-size: clamp(30px, 5vw, 60px);
+  font-style: italic;
+}
+.cine-title span {
+  color: #d6d8ea;
+  letter-spacing: 0.08em;
+}
+.cine-skip {
+  position: absolute;
+  right: 24px;
+  bottom: calc(11vh - 30px);
+  color: #aaa;
+  font-size: 13px;
+}
+@keyframes cine-in {
+  from {
+    opacity: 0;
+    transform: translateX(-30px);
+  }
+}
+
+@media (max-width: 640px) {
+  .track-cards {
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+  }
+  .hub-tabs button {
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+  .profile-chip small {
+    display: none;
   }
 }

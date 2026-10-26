@@ -1,12 +1,11 @@
+import type { Difficulty } from '../../shared/api';
 import { AIDriver, type AIProfile, type TrafficCar } from '../ai/AIDriver';
 import { RacingLine } from '../ai/RacingLine';
 import { clamp, createRng } from '../core/math';
-import { collideCars, collideWithWalls } from '../physics/Collisions';
-import { neutralControls, VehiclePhysics, type VehicleControls } from '../physics/VehiclePhysics';
-import { createProjection, TrackPath, type TrackLayout, type TrackProjection } from '../track/TrackPath';
-import { RaceManager, type RaceEvent } from './RaceManager';
-
-import type { Difficulty } from '../../shared/api';
+import { collideCars, collideWithWalls, type WallContact } from '../physics/Collisions';
+import { neutralControls, SPORTS_CAR, type VehicleControls, VehiclePhysics, type VehicleSpec } from '../physics/VehiclePhysics';
+import { createProjection, type TrackLayout, TrackPath, type TrackProjection } from '../track/TrackPath';
+import { type RaceEvent, RaceManager } from './RaceManager';
 
 export type { Difficulty };
 
@@ -19,6 +18,10 @@ export interface RaceSettings {
   /** Player's stability-control strength, 0..1. */
   playerAssist: number;
   seed: number;
+  /** The car everyone drives (one-make race). */
+  carSpec: VehicleSpec;
+  /** AI cornering speed scale for that car. */
+  aiGrip: number;
 }
 
 export const DEFAULT_SETTINGS: RaceSettings = {
@@ -28,6 +31,8 @@ export const DEFAULT_SETTINGS: RaceSettings = {
   playerGridSlot: 4,
   playerAssist: 0.7,
   seed: 23,
+  carSpec: SPORTS_CAR,
+  aiGrip: 1,
 };
 
 /** AI tuning per difficulty: [min, max] cornering grip (g), braking (m/s^2), engine power scale. */
@@ -47,7 +52,19 @@ export function gridSlot(track: TrackPath, slot: number): { distance: number; la
   };
 }
 
-export const DRIVER_NAMES = ['K. Takeda', 'R. Sato', 'M. Ishikawa', 'Y. Mori', 'H. Nakamura', 'S. Fujita', 'A. Kimura', 'T. Ono', 'N. Hayashi', 'D. Ueda', 'E. Kobayashi'];
+export const DRIVER_NAMES = [
+  'K. Takeda',
+  'R. Sato',
+  'M. Ishikawa',
+  'Y. Mori',
+  'H. Nakamura',
+  'S. Fujita',
+  'A. Kimura',
+  'T. Ono',
+  'N. Hayashi',
+  'D. Ueda',
+  'E. Kobayashi',
+];
 
 export interface SimCar {
   id: number;
@@ -61,6 +78,8 @@ export interface SimCar {
   controls: VehicleControls;
   /** Strongest impact this frame (m/s), for sound and camera shake. */
   impact: number;
+  /** Barrier contact during the latest step. */
+  wall: WallContact;
   stuckTime: number;
   /** 0..1 strength of the tow from a car ahead. */
   slipstream: number;
@@ -101,10 +120,10 @@ export class RaceSimulation {
     let aiIndex = 0;
     for (let slot = 0; slot < total; slot++) {
       const isPlayer = slot === playerSlot;
-      const physics = new VehiclePhysics();
+      const physics = new VehiclePhysics(s.carSpec);
       // Pace is shuffled across the grid so quicker drivers have to work their way forward.
       const profile: AIProfile = {
-        cornerGrip: tuning.grip[0] + (tuning.grip[1] - tuning.grip[0]) * (isPlayer ? 0.5 : rng()),
+        cornerGrip: (tuning.grip[0] + (tuning.grip[1] - tuning.grip[0]) * (isPlayer ? 0.5 : rng())) * s.aiGrip,
         brakeDecel: tuning.brake,
         laneBias: (rng() - 0.5) * 1.2,
         aggression: 0.4 + rng() * 0.6,
@@ -127,6 +146,7 @@ export class RaceSimulation {
         autopilot: false,
         controls: neutralControls(),
         impact: 0,
+        wall: { active: false, x: 0, z: 0 },
         stuckTime: 0,
         slipstream: 0,
         prevX: 0,
@@ -186,12 +206,13 @@ export class RaceSimulation {
     for (const car of this.cars) {
       this.savePrev(car);
       car.impact = 0;
+      car.wall.active = false;
     }
 
     if (this.phase === 'grid') {
       // Cars are held on the brakes; let the player blip the throttle for the sound.
       const p = this.player.physics;
-      p.rpm += ((p.spec.idleRpm + playerInput.throttle * 6200 - p.rpm) * Math.min(1, dt * 8));
+      p.rpm += (p.spec.idleRpm + playerInput.throttle * 6200 - p.rpm) * Math.min(1, dt * 8);
       p.throttleApplied = playerInput.throttle;
       return [];
     }
@@ -227,11 +248,9 @@ export class RaceSimulation {
     for (const car of this.cars) {
       const ph = car.physics;
       this.track.project(ph.x, ph.z, car.proj.index, car.proj);
-      const hit = collideWithWalls(ph, car.proj, this.track.wallOffset);
-      if (hit > 0) {
-        car.impact = Math.max(car.impact, hit);
-        this.track.project(ph.x, ph.z, car.proj.index, car.proj);
-      }
+      const hit = collideWithWalls(ph, car.proj, this.track.wallOffset, car.wall);
+      car.impact = Math.max(car.impact, hit);
+      if (car.wall.active) this.track.project(ph.x, ph.z, car.proj.index, car.proj);
       ph.y = car.proj.y;
       this.updateStuck(car, dt);
     }

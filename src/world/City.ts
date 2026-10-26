@@ -3,14 +3,8 @@ import type { TimeOfDay } from '../../shared/api';
 import { BARRIER_THICKNESS, SIDEWALK_WIDTH } from '../track/TrackMesh';
 import type { TrackPath } from '../track/TrackPath';
 import { GeometryBuilder } from './GeometryBuilder';
-import {
-  billboardTexture,
-  facadeTexture,
-  glowTexture,
-  neonSignTexture,
-  shopfrontTexture,
-  type FacadeTextures,
-} from './textures';
+import { applyContactShading, type StreakLight } from './surfaces';
+import { billboardTexture, type FacadeTextures, facadeTexture, glowTexture, neonSignTexture, SIGN_COLORS, shopfrontTexture } from './textures';
 
 /**
  * Procedural Tokyo: dense blocks of lit buildings, protruding neon signs, rooftop billboards,
@@ -49,6 +43,8 @@ const STYLES: Style[] = ['office', 'residential', 'glass', 'old'];
 
 export class City {
   readonly group = new THREE.Group();
+  /** Neon signs close enough to the circuit to reflect in the wet road at night. */
+  readonly streakLights: StreakLight[] = [];
   private readonly beacon: THREE.MeshBasicMaterial;
   private readonly flicker: THREE.MeshBasicMaterial[] = [];
   private readonly rng: () => number;
@@ -73,15 +69,17 @@ export class City {
       let best = Infinity;
       let bx = 0;
       let bz = 0;
+      let by = 0;
       for (const s of coarse) {
         const d = (s.x - x) ** 2 + (s.z - z) ** 2;
         if (d < best) {
           best = d;
           bx = s.x;
           bz = s.z;
+          by = s.y;
         }
       }
-      return { d: Math.sqrt(best), nx: bx - x, nz: bz - z };
+      return { d: Math.sqrt(best), nx: bx - x, nz: bz - z, bx, by, bz };
     };
 
     const facades: Record<Style, FacadeTextures> = {
@@ -115,7 +113,7 @@ export class City {
         if (Math.hypot(cx - TOKYO_TOWER.x, cz - TOKYO_TOWER.z) < 70) continue;
         let w = 13 + rng() * 15;
         let d = 13 + rng() * 15;
-        const { d: dist, nx, nz } = distToTrack(cx, cz);
+        const { d: dist, nx, nz, bx, by, bz } = distToTrack(cx, cz);
         const r = Math.hypot(w, d) / 2;
         if (dist - r < clearance) {
           const maxR = dist - clearance;
@@ -185,6 +183,19 @@ export class City {
             signs[tex].quad([a[0], y0, a[1]], [c[0], y0, c[1]], [c[0], y0 + signH, c[1]], [a[0], y0 + signH, a[1]], 0, 0, 1, 1, undefined, flip);
           q(p0, p1, false);
           q(p1, p0, false);
+          if (dist - r < 30) {
+            // Its reflection starts at the near road edge, between the sign and the centre line.
+            const len = Math.hypot(nx, nz) || 1;
+            const edge = track.wallOffset - 0.8;
+            this.streakLights.push({
+              x: bx - (nx / len) * edge,
+              y: by,
+              z: bz - (nz / len) * edge,
+              color: new THREE.Color(SIGN_COLORS[(tex * 3) % SIGN_COLORS.length]).multiplyScalar(0.55),
+              width: 1.2,
+              length: 18,
+            });
+          }
         }
 
         if (rng() < 0.22 && h < 45 && h > 12) {
@@ -220,6 +231,7 @@ export class City {
         emissive: 0xffffff,
         emissiveIntensity: 0.7,
       });
+      applyContactShading(mat);
       this.facadeMats.push(mat);
       this.group.add(new THREE.Mesh(builders[style].build(), mat));
     }
@@ -271,13 +283,13 @@ export class City {
     const glowGeo = new THREE.BufferGeometry();
     glowGeo.setAttribute('position', new THREE.Float32BufferAttribute(glowPositions, 3));
     const glowMat = new THREE.PointsMaterial({
-        map: glowTexture(),
-        color: 0xffd9a8,
-        size: 7,
-        transparent: true,
-        opacity: 0.55,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
+      map: glowTexture(),
+      color: 0xffd9a8,
+      size: 7,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
     });
     this.glows.push({ mat: glowMat, opacity: { night: 0.55, sunset: 0.35, day: 0 } });
     const glow = new THREE.Points(glowGeo, glowMat);
@@ -322,7 +334,12 @@ export class City {
       new THREE.Color(0.95, 0.3, 0.1),
     );
     const white = this.glowing(orange.clone(), new THREE.Color(2.2, 2.0, 1.8), new THREE.Color(1.3, 1.1, 1.0), new THREE.Color(0.9, 0.9, 0.88));
-    const solid = this.glowing(new THREE.MeshBasicMaterial({ fog: false }), new THREE.Color(2.4, 1.3, 0.5), new THREE.Color(1.4, 0.8, 0.4), new THREE.Color(0.75, 0.72, 0.68));
+    const solid = this.glowing(
+      new THREE.MeshBasicMaterial({ fog: false }),
+      new THREE.Color(2.4, 1.3, 0.5),
+      new THREE.Color(1.4, 0.8, 0.4),
+      new THREE.Color(0.75, 0.72, 0.68),
+    );
     const sections: [number, number, number, number, THREE.Material][] = [
       // y0, height, bottom radius, top radius
       [0, 70, 42, 20, orange],
@@ -369,7 +386,12 @@ export class City {
     const m = new THREE.Mesh(body, mat);
     m.position.y = 170;
     tree.add(m);
-    const ringMat = this.glowing(new THREE.MeshBasicMaterial({ fog: false }), new THREE.Color(1.6, 1.3, 2.6), new THREE.Color(1.1, 1.0, 1.4), new THREE.Color(0.78, 0.8, 0.84));
+    const ringMat = this.glowing(
+      new THREE.MeshBasicMaterial({ fog: false }),
+      new THREE.Color(1.6, 1.3, 2.6),
+      new THREE.Color(1.1, 1.0, 1.4),
+      new THREE.Color(0.78, 0.8, 0.84),
+    );
     for (const [y, r, h] of [
       [345, 19, 14],
       [430, 12, 8],
@@ -385,10 +407,7 @@ export class City {
   }
 
   private buildBay(): void {
-    const water = new THREE.Mesh(
-      new THREE.PlaneGeometry(9000, 4000),
-      new THREE.MeshStandardMaterial({ color: 0x07101e, roughness: 0.08, metalness: 0.7 }),
-    );
+    const water = new THREE.Mesh(new THREE.PlaneGeometry(9000, 4000), new THREE.MeshStandardMaterial({ color: 0x07101e, roughness: 0.08, metalness: 0.7 }));
     water.rotation.x = -Math.PI / 2;
     water.position.set(0, -1.2, BAY_Z + 2000);
     this.group.add(water);
@@ -399,7 +418,12 @@ export class City {
     // Rainbow Bridge: towers, deck and "pearl necklace" cable lights.
     const bridge = new THREE.Group();
     bridge.position.set(700, 0, BAY_Z + 650);
-    const white = this.glowing(new THREE.MeshBasicMaterial({ fog: false }), new THREE.Color(1.6, 1.6, 1.7), new THREE.Color(1.2, 1.1, 1.1), new THREE.Color(0.85, 0.87, 0.9));
+    const white = this.glowing(
+      new THREE.MeshBasicMaterial({ fog: false }),
+      new THREE.Color(1.6, 1.6, 1.7),
+      new THREE.Color(1.2, 1.1, 1.1),
+      new THREE.Color(0.85, 0.87, 0.9),
+    );
     const deck = new THREE.Mesh(new THREE.BoxGeometry(1100, 4, 22), new THREE.MeshLambertMaterial({ color: 0x8a8d96 }));
     deck.position.y = 50;
     bridge.add(deck);
@@ -430,7 +454,15 @@ export class City {
     for (let x = -550; x <= 550; x += 18) pts.push(x, 53, 0);
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-    const pearls = new THREE.PointsMaterial({ map: glowTexture(), color: 0xeaf4ff, size: 9, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+    const pearls = new THREE.PointsMaterial({
+      map: glowTexture(),
+      color: 0xeaf4ff,
+      size: 9,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      fog: false,
+    });
     this.glows.push({ mat: pearls, opacity: { night: 1, sunset: 0.6, day: 0 } });
     bridge.add(new THREE.Points(geo, pearls));
     this.group.add(bridge);

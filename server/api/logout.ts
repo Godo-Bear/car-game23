@@ -1,4 +1,4 @@
-import { CLEAR_SESSION_COOKIE, checkWrite, destroySession, json, type ApiHandler } from '../auth';
+import { type ApiHandler, CLEAR_SESSION_COOKIE, checkWrite, destroySession, json } from '../auth';
 
 /** POST /api/logout -> clears the session */
 export const logout: ApiHandler = async (request, env) => {

@@ -10,12 +10,16 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc --noEmit -p server",
-    "deploy": "npm run build && wrangler deploy"
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "deploy": "npm run build && wrangler deploy",
+    "previews": "node scripts/render-previews.mjs"
   },
   "dependencies": {
     "three": "^0.186.1"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.15",
     "@cloudflare/workers-types": "^5.20261026.1",
     "@types/three": "^0.186.0",
     "typescript": "^7.0.2",

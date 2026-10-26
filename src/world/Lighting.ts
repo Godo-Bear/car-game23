@@ -144,6 +144,8 @@ export class Lighting {
   private readonly skies = new Map<TimeOfDay, THREE.Texture>();
   private readonly envs = new Map<string, THREE.Texture>();
   private readonly pmrem: THREE.PMREMGenerator;
+  private shadowsAllowed = true;
+  private presetShadows = true;
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -152,7 +154,7 @@ export class Lighting {
     this.pmrem = new THREE.PMREMGenerator(renderer);
     this.hemi = new THREE.HemisphereLight();
     this.sun = new THREE.DirectionalLight();
-    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.mapSize.set(1024, 1024);
     const cam = this.sun.shadow.camera;
     cam.left = cam.bottom = -SHADOW_EXTENT;
     cam.right = cam.top = SHADOW_EXTENT;
@@ -161,7 +163,17 @@ export class Lighting {
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.04;
     scene.add(this.hemi, this.sun, this.sun.target);
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  }
+
+  /** Graphics quality: whether the sun casts shadows, and how sharp they are. */
+  setShadowQuality(enabled: boolean, mapSize: number): void {
+    this.shadowsAllowed = enabled;
+    if (this.sun.shadow.mapSize.x !== mapSize) {
+      this.sun.shadow.mapSize.set(mapSize, mapSize);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+    }
+    this.sun.castShadow = enabled && this.presetShadows;
   }
 
   /** Apply a time of day for a track theme. Returns the bloom settings to use. */
@@ -184,8 +196,8 @@ export class Lighting {
     // Low sunset sun still lights from a usable angle so the road isn't black.
     if (this.sunDir.y < 0.25) this.sunDir.y = 0.25;
     this.sunDir.normalize();
-    this.sun.castShadow = p.shadows;
-    this.renderer.shadowMap.enabled = true;
+    this.presetShadows = p.shadows;
+    this.sun.castShadow = p.shadows && this.shadowsAllowed;
     this.renderer.toneMappingExposure = p.exposure;
     return p.bloom;
   }

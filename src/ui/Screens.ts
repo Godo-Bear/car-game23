@@ -1,10 +1,13 @@
-import { ApiError, type AccountService } from '../account/AccountService';
-import { GAMEPAD_BINDINGS, KEY_BINDINGS } from '../core/Input';
+import type { PlayerSettings, TrackId } from '../../shared/api';
+import { type AccountService, ApiError } from '../account/AccountService';
+import type { Input } from '../core/Input';
+import type { SettingsStore } from '../core/Settings';
 import { formatTime, type RacerState } from '../race/RaceManager';
 import { TrackPath } from '../track/TrackPath';
-import { TRACKS } from '../track/tracks';
-import type { TrackId } from '../../shared/api';
-import type { PlayerSettings } from '../../shared/api';
+import { TRACKS, type TrackTheme } from '../track/tracks';
+import { CARS } from '../vehicles/cars';
+import { GarageScreen } from './GarageScreen';
+import { SettingsPanel, type SettingsTab } from './SettingsPanel';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -16,11 +19,17 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   camera: 'chase',
   track: 'tokyo',
   timeOfDay: 'night',
+  car: 'gt',
+  garage: {},
 };
+
+export type HubPanel = 'race' | 'garage' | 'career';
 
 export interface ScreenHandlers {
   onRace(settings: PlayerSettings): void;
-  onSettingsChanged(settings: PlayerSettings): void;
+  /** Race setup or car changed (already applied to `settings`); `car` is true for garage changes. */
+  onSettingsChanged(settings: PlayerSettings, car: boolean): void;
+  onHubPanel(panel: HubPanel): void;
   onResume(): void;
   onRestart(): void;
   onQuit(): void;
@@ -36,44 +45,67 @@ export interface ResultsData {
 
 type AuthMode = 'login' | 'register';
 
+const THEME_LABEL: Record<TrackTheme, string> = { city: 'City streets', mountain: 'Mountain pass', countryside: 'Countryside' };
+
 /** Owns every menu/overlay outside the in-race HUD. */
 export class Screens {
   settings: PlayerSettings = { ...DEFAULT_PLAYER_SETTINGS };
+  panelName: HubPanel = 'race';
   private authMode: AuthMode = 'login';
-  private controlsReturnTo: 'none' | 'pause' = 'none';
+  private settingsReturnTo: 'none' | 'pause' = 'none';
+  private readonly panel: SettingsPanel;
+  private readonly garage: GarageScreen;
 
   constructor(
     private readonly account: AccountService,
     private readonly handlers: ScreenHandlers,
+    store: SettingsStore,
+    private readonly input: Input,
   ) {
-    this.buildControlsTables();
+    this.panel = new SettingsPanel(store, input, (open) => {
+      if (!open && this.settingsReturnTo === 'pause') this.showPause(true);
+      if (!open) this.settingsReturnTo = 'none';
+      this.handlers.onModalChange(this.isModalOpen);
+    });
+    this.garage = new GarageScreen(
+      () => this.settings,
+      (patch) => this.update(patch, true),
+    );
+    this.buildTrackCards();
     this.wire();
     account.onChange(() => this.renderProfile());
   }
 
   // ---------- visibility ----------
   get isModalOpen(): boolean {
-    return ['modal-auth', 'modal-controls'].some((id) => !$(id).classList.contains('hidden'));
+    return !$('modal-auth').classList.contains('hidden') || this.panel.isOpen;
   }
 
   get homeVisible(): boolean {
     return !$('screen-home').classList.contains('hidden');
   }
 
-  get controlsOpen(): boolean {
-    return !$('modal-controls').classList.contains('hidden');
-  }
-
-  showHome(): void {
+  showHome(panel: HubPanel = this.panelName): void {
     this.hideAll();
     $('screen-home').classList.remove('hidden');
-    this.renderProfile();
-    this.renderSettings();
-    $('btn-race').focus({ preventScroll: true });
+    this.showPanel(panel);
+    this.render();
+  }
+
+  showPanel(panel: HubPanel): void {
+    this.panelName = panel;
+    document.querySelectorAll<HTMLElement>('.hub-tabs [data-panel]').forEach((b) => {
+      b.classList.toggle('active', b.dataset.panel === panel);
+      b.setAttribute('aria-selected', String(b.dataset.panel === panel));
+    });
+    document.querySelectorAll<HTMLElement>('.hub-panel').forEach((p) => p.classList.toggle('hidden', p.dataset.panel !== panel));
+    if (panel === 'garage') this.garage.render();
+    if (panel === 'race') $('btn-race').focus({ preventScroll: true });
+    this.handlers.onHubPanel(panel);
   }
 
   hideAll(): void {
-    for (const id of ['screen-home', 'screen-pause', 'screen-results', 'modal-auth', 'modal-controls']) $(id).classList.add('hidden');
+    for (const id of ['screen-home', 'screen-pause', 'screen-results', 'modal-auth', 'modal-settings']) $(id).classList.add('hidden');
     this.handlers.onModalChange(false);
   }
 
@@ -82,30 +114,36 @@ export class Screens {
     if (show) $('btn-resume').focus({ preventScroll: true });
   }
 
-  openControls(fromPause = false): void {
-    this.controlsReturnTo = fromPause ? 'pause' : 'none';
+  openSettings(tab: SettingsTab): void {
+    const fromPause = !$('screen-pause').classList.contains('hidden');
+    this.settingsReturnTo = fromPause ? 'pause' : 'none';
     if (fromPause) $('screen-pause').classList.add('hidden');
-    $('modal-controls').classList.remove('hidden');
-    $('controls-close').focus({ preventScroll: true });
-    this.handlers.onModalChange(true);
+    this.panel.open(tab);
   }
 
-  closeControls(): void {
-    $('modal-controls').classList.add('hidden');
-    if (this.controlsReturnTo === 'pause') this.showPause(true);
-    this.controlsReturnTo = 'none';
-    this.handlers.onModalChange(this.isModalOpen);
-  }
-
+  /** H key / ? button: open on the Controls tab, or close if already open. */
   toggleControls(): void {
-    if (this.controlsOpen) this.closeControls();
-    else this.openControls(!$('screen-pause').classList.contains('hidden'));
+    if (this.panel.isOpen) this.panel.close();
+    else this.openSettings('controls');
+  }
+
+  /** Esc on the homescreen: back to the Race tab. Returns false if there was nothing to go back from. */
+  back(): boolean {
+    if (!this.homeVisible || this.panelName === 'race') return false;
+    this.showPanel('race');
+    return true;
   }
 
   /** Settings from the account (or guest profile) merged over defaults. */
   loadSettings(saved: Partial<PlayerSettings>): void {
-    this.settings = { ...DEFAULT_PLAYER_SETTINGS, ...saved };
-    this.renderSettings();
+    this.settings = { ...DEFAULT_PLAYER_SETTINGS, ...saved, garage: { ...saved.garage } };
+    this.render();
+  }
+
+  private update(patch: Partial<PlayerSettings>, car: boolean): void {
+    this.settings = { ...this.settings, ...patch };
+    this.render();
+    this.handlers.onSettingsChanged(this.settings, car);
   }
 
   // ---------- results ----------
@@ -144,32 +182,47 @@ export class Screens {
     table.innerHTML = `<tr><th>Pos</th><th>Driver</th><th>Time</th><th>Best lap</th></tr>${rows.join('')}`;
   }
 
-  // ---------- profile ----------
+  // ---------- rendering ----------
+  private render(): void {
+    this.renderProfile();
+    this.renderEvent();
+    this.garage.render();
+  }
+
   private renderProfile(): void {
     const a = this.account;
-    $('profile-name').textContent = a.displayName;
-    $('profile-avatar').textContent = a.displayName.slice(0, 1).toUpperCase();
-    $('profile-status').textContent = a.signedIn
-      ? 'Signed in · career saved to your account'
+    const status = a.signedIn
+      ? 'Signed in · career saved online'
       : a.backend === 'online'
         ? 'Log in to save your career online'
         : 'Progress saved on this device';
+    for (const prefix of ['profile', 'career']) {
+      $(`${prefix}-name`).textContent = a.displayName;
+      $(`${prefix}-avatar`).textContent = a.displayName.slice(0, 1).toUpperCase();
+      $(`${prefix}-status`).textContent = status;
+    }
     const s = a.stats;
     $('stat-races').textContent = String(s.races);
     $('stat-wins').textContent = String(s.wins);
     $('stat-podiums').textContent = String(s.podiums);
-    // Lap times only compare on the same circuit, so show the selected track's best.
-    const track = TRACKS[this.settings.track];
-    const best = s.bestLaps[track.id];
-    $('stat-best').textContent = best === undefined ? '--' : formatTime(best);
-    $('stat-best-label').textContent = `Best · ${track.short}`;
-    const list = $('recent-races');
-    list.replaceChildren(
+    $('stat-laps').textContent = String(s.totalLaps);
+    $('best-laps').replaceChildren(
+      ...Object.values(TRACKS).map((t) => {
+        const li = document.createElement('li');
+        const best = s.bestLaps[t.id];
+        li.append(
+          Object.assign(document.createElement('span'), { textContent: t.name }),
+          Object.assign(document.createElement('span'), { textContent: best === undefined ? '--' : formatTime(best) }),
+        );
+        return li;
+      }),
+    );
+    $('recent-races').replaceChildren(
       ...(a.recent.length
         ? a.recent.map((r) => {
             const li = document.createElement('li');
             const left = document.createElement('span');
-            left.textContent = `${TRACKS[r.track ?? 'tokyo'].name} · P${r.position}/${r.fieldSize} · ${r.laps} lap${r.laps > 1 ? 's' : ''} · ${r.difficulty}`;
+            left.textContent = `${TRACKS[r.track ?? 'tokyo'].short} · P${r.position}/${r.fieldSize} · ${r.laps} lap${r.laps > 1 ? 's' : ''} · ${r.difficulty}`;
             const right = document.createElement('span');
             right.textContent = r.bestLap === null ? '--' : formatTime(r.bestLap);
             li.append(left, right);
@@ -182,15 +235,43 @@ export class Screens {
     $('btn-logout').classList.toggle('hidden', !a.signedIn);
   }
 
-  private renderSettings(): void {
-    const track = TRACKS[this.settings.track];
+  private buildTrackCards(): void {
+    $('track-cards').replaceChildren(
+      ...Object.values(TRACKS).map((t) => {
+        const b = document.createElement('button');
+        b.className = 'track-card';
+        b.dataset.value = t.id;
+        const img = document.createElement('img');
+        img.alt = '';
+        img.decoding = 'async';
+        img.addEventListener('error', () => (img.style.visibility = 'hidden'));
+        img.addEventListener('load', () => (img.style.visibility = ''));
+        const label = document.createElement('span');
+        label.className = 'label';
+        label.innerHTML = `<b>${t.short}</b><small>${THEME_LABEL[t.theme]} · ${trackLengthKm(t.id).toFixed(2)} km</small>`;
+        b.append(img, label);
+        b.addEventListener('click', () => this.update({ track: t.id }, false));
+        return b;
+      }),
+    );
+  }
+
+  private renderEvent(): void {
+    const s = this.settings;
+    const track = TRACKS[s.track];
     $('track-blurb').textContent = track.blurb;
-    const tod = { day: 'Day race', sunset: 'Sunset race', night: 'Night race' }[this.settings.timeOfDay];
-    $('brand-subtitle').textContent = `${track.circuit} · ${trackLengthKm(track.id).toFixed(2)} km · ${tod}`;
-    this.renderProfile();
-    document.querySelectorAll<HTMLElement>('.seg').forEach((seg) => {
+    document.querySelectorAll<HTMLButtonElement>('#track-cards .track-card').forEach((b) => {
+      const active = b.dataset.value === s.track;
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-pressed', String(active));
+      const img = b.querySelector('img')!;
+      const src = `previews/${b.dataset.value}-${s.timeOfDay}.jpg`;
+      if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+    });
+    $('event-car-name').textContent = CARS[s.car].name;
+    document.querySelectorAll<HTMLElement>('.seg[data-setting]').forEach((seg) => {
       const key = seg.dataset.setting as keyof PlayerSettings;
-      const current = String(this.settings[key]);
+      const current = String(s[key]);
       seg.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
         const active = b.dataset.value === current;
         b.classList.toggle('active', active);
@@ -212,7 +293,7 @@ export class Screens {
     const offline = this.account.backend !== 'online';
     $('auth-offline').textContent =
       this.account.backend === 'no-database'
-        ? "The game server is running, but its account database isn't connected yet (D1 binding \"DB\" in wrangler.jsonc). Your progress is saved on this device until then."
+        ? 'The game server is running, but its account database isn\'t connected yet (D1 binding "DB" in wrangler.jsonc). Your progress is saved on this device until then.'
         : 'Online accounts need the Cloudflare backend (see docs/DEPLOY_CLOUDFLARE.md). Until then your progress is saved as a guest on this device.';
     $('auth-offline').classList.toggle('hidden', !offline);
     $<HTMLButtonElement>('auth-submit').disabled = offline;
@@ -244,6 +325,7 @@ export class Screens {
       if (this.authMode === 'register') await this.account.register(username, password);
       else await this.account.login(username, password);
       this.loadSettings(this.account.settings);
+      this.handlers.onSettingsChanged(this.settings, true);
       this.closeAuth();
     } catch (e) {
       error.textContent = e instanceof ApiError ? e.message : 'Something went wrong. Please try again.';
@@ -255,15 +337,21 @@ export class Screens {
   // ---------- wiring ----------
   private wire(): void {
     $('btn-race').addEventListener('click', () => this.handlers.onRace(this.settings));
-    $('btn-controls').addEventListener('click', () => this.openControls());
-    $('btn-hud-controls').addEventListener('click', () => this.openControls());
-    $('btn-pause-controls').addEventListener('click', () => this.openControls(true));
-    $('controls-close').addEventListener('click', () => this.closeControls());
+    $('btn-garage-race').addEventListener('click', () => this.handlers.onRace(this.settings));
+    $('btn-event-garage').addEventListener('click', () => this.showPanel('garage'));
+    document
+      .querySelectorAll<HTMLElement>('.hub-tabs [data-panel]')
+      .forEach((b) => b.addEventListener('click', () => this.showPanel(b.dataset.panel as HubPanel)));
+    $('profile-chip').addEventListener('click', () => this.showPanel('career'));
+    $('btn-settings').addEventListener('click', () => this.openSettings('graphics'));
+    $('btn-hud-controls').addEventListener('click', () => this.openSettings('controls'));
+    $('btn-pause-settings').addEventListener('click', () => this.openSettings('graphics'));
     $('btn-login').addEventListener('click', () => this.openAuth('login'));
     $('btn-register').addEventListener('click', () => this.openAuth('register'));
     $('btn-logout').addEventListener('click', async () => {
       await this.account.logout();
       this.loadSettings(this.account.settings);
+      this.handlers.onSettingsChanged(this.settings, true);
     });
     $('auth-cancel').addEventListener('click', () => this.closeAuth());
     $('auth-switch').addEventListener('click', (e) => {
@@ -280,37 +368,30 @@ export class Screens {
     $('btn-again').addEventListener('click', () => this.handlers.onRestart());
     $('btn-home').addEventListener('click', () => this.handlers.onQuit());
 
-    document.querySelectorAll<HTMLElement>('.seg').forEach((seg) => {
+    document.querySelectorAll<HTMLElement>('.seg[data-setting]').forEach((seg) => {
       seg.addEventListener('click', (e) => {
         const button = (e.target as HTMLElement).closest('button');
         if (!button?.dataset.value) return;
         const key = seg.dataset.setting as keyof PlayerSettings;
         const raw = button.dataset.value;
         const value = raw === 'true' ? true : raw === 'false' ? false : /^\d+$/.test(raw) ? Number(raw) : raw;
-        this.settings = { ...this.settings, [key]: value } as PlayerSettings;
-        this.renderSettings();
-        this.handlers.onSettingsChanged(this.settings);
+        this.update({ [key]: value } as Partial<PlayerSettings>, false);
       });
     });
 
-    // Escape closes the topmost modal.
-    window.addEventListener('keydown', (e) => {
-      if (e.code !== 'Escape') return;
-      if (!$('modal-auth').classList.contains('hidden')) {
+    // Escape closes the topmost modal (and doesn't also count as "pause").
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        if (e.code !== 'Escape') return;
+        if (!$('modal-auth').classList.contains('hidden')) this.closeAuth();
+        else if (this.panel.isOpen) this.panel.close();
+        else return;
         e.stopImmediatePropagation();
-        this.closeAuth();
-      } else if (this.controlsOpen) {
-        e.stopImmediatePropagation();
-        this.closeControls();
-      }
-    }, true);
-  }
-
-  private buildControlsTables(): void {
-    $('controls-keyboard').innerHTML = KEY_BINDINGS.map(
-      (b) => `<tr><td>${b.action}</td><td>${b.keys.map((k) => `<kbd>${k}</kbd>`).join(' ')}</td></tr>`,
-    ).join('');
-    $('controls-gamepad').innerHTML = GAMEPAD_BINDINGS.map((b) => `<tr><td>${b.action}</td><td>${b.button}</td></tr>`).join('');
+        this.input.clearActions();
+      },
+      true,
+    );
   }
 }
 

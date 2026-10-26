@@ -177,7 +177,10 @@ export class TrackPath {
     }
     this.samples = samples;
 
-    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    let minX = Infinity,
+      maxX = -Infinity,
+      minZ = Infinity,
+      maxZ = -Infinity;
     for (const s of samples) {
       minX = Math.min(minX, s.x);
       maxX = Math.max(maxX, s.x);

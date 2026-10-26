@@ -1,5 +1,5 @@
-import { DIFFICULTIES, TRACK_IDS, type RaceRecord } from '../../shared/api';
-import { checkWrite, currentUser, fail, json, loadProfile, now, readJson, type ApiHandler } from '../auth';
+import { DIFFICULTIES, type RaceRecord, TRACK_IDS } from '../../shared/api';
+import { type ApiHandler, checkWrite, currentUser, fail, json, loadProfile, now, readJson } from '../auth';
 
 const isInt = (v: unknown, lo: number, hi: number): v is number => Number.isInteger(v) && (v as number) >= lo && (v as number) <= hi;
 const isTime = (v: unknown, lo: number, hi: number): v is number | null => v === null || (typeof v === 'number' && v >= lo && v <= hi);
@@ -37,7 +37,9 @@ export const races: ApiHandler = async (request, env) => {
   const win = r.position === 1 ? 1 : 0;
   await db.batch([
     db
-      .prepare('INSERT INTO race_results (user_id, track, position, field_size, laps, difficulty, total_time, best_lap, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .prepare(
+        'INSERT INTO race_results (user_id, track, position, field_size, laps, difficulty, total_time, best_lap, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      )
       .bind(user.id, r.track, r.position, r.fieldSize, r.laps, r.difficulty, r.totalTime, r.bestLap, t),
     db
       .prepare(
