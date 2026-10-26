@@ -6,7 +6,9 @@ import { neutralControls, VehiclePhysics, type VehicleControls } from '../physic
 import { createProjection, TrackPath, type TrackLayout, type TrackProjection } from '../track/TrackPath';
 import { RaceManager, type RaceEvent } from './RaceManager';
 
-export type Difficulty = 'easy' | 'normal' | 'hard';
+import type { Difficulty } from '../../shared/api';
+
+export type { Difficulty };
 
 export interface RaceSettings {
   laps: number;
@@ -34,6 +36,16 @@ const DIFFICULTY_TUNING: Record<Difficulty, { grip: [number, number]; brake: num
   normal: { grip: [1.14, 1.24], brake: 9, power: 0.97 },
   hard: { grip: [1.24, 1.32], brake: 10, power: 1.0 },
 };
+
+/** Grid slot k: two staggered columns behind the start line. */
+export function gridSlot(track: TrackPath, slot: number): { distance: number; lateral: number } {
+  const row = Math.floor(slot / 2);
+  const right = slot % 2 === 1;
+  return {
+    distance: track.length - (10 + row * 12 + (right ? 6 : 0)),
+    lateral: right ? 3.2 : -3.2,
+  };
+}
 
 export const DRIVER_NAMES = ['K. Takeda', 'R. Sato', 'M. Ishikawa', 'Y. Mori', 'H. Nakamura', 'S. Fujita', 'A. Kimura', 'T. Ono', 'N. Hayashi', 'D. Ueda', 'E. Kobayashi'];
 
@@ -131,14 +143,8 @@ export class RaceSimulation {
     return this.cars.find((c) => c.isPlayer)!;
   }
 
-  /** Grid slot k: two staggered columns behind the start line. */
   gridPosition(slot: number): { distance: number; lateral: number } {
-    const row = Math.floor(slot / 2);
-    const right = slot % 2 === 1;
-    return {
-      distance: this.track.length - (10 + row * 12 + (right ? 6 : 0)),
-      lateral: right ? 3.2 : -3.2,
-    };
+    return gridSlot(this.track, slot);
   }
 
   private placeOnGrid(): RaceManager {

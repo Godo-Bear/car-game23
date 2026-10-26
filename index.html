@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Tokyo Circuit Racer - a 3D street racing game set on a night-time Tokyo circuit." />
+    <meta name="theme-color" content="#0b0a14" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <title>Tokyo Circuit Racer</title>
+  </head>
+  <body>
+    <canvas id="game" aria-label="Race view"></canvas>
+    <div id="loading" class="loading">
+      <div class="loading-title">TOKYO <span>CIRCUIT</span> RACER</div>
+      <div class="loading-bar"><div></div></div>
+      <div class="muted">Building Tokyo…</div>
+    </div>
+
+    <!-- In-race HUD -->
+    <div id="hud" class="hud hidden">
+      <div class="hud-top-left">
+        <div class="hud-box">
+          <span class="label">POS</span><span id="hud-pos" class="big">1</span><span id="hud-pos-total" class="small">/8</span>
+        </div>
+        <div class="hud-box">
+          <span class="label">LAP</span><span id="hud-lap" class="big">1</span><span id="hud-lap-total" class="small">/3</span>
+        </div>
+      </div>
+      <ol id="hud-standings" class="standings"></ol>
+      <div class="hud-top-right">
+        <div class="time-row current"><span>LAP</span><b id="hud-time-lap">0:00.000</b></div>
+        <div class="time-row"><span>LAST</span><b id="hud-time-last">--:--.---</b></div>
+        <div class="time-row"><span>BEST</span><b id="hud-time-best">--:--.---</b></div>
+        <div class="time-row"><span>RACE</span><b id="hud-time-race">0:00.000</b></div>
+      </div>
+      <div class="hud-buttons">
+        <button id="btn-hud-controls" class="icon-btn" title="Controls (H)" aria-label="Show controls">?</button>
+        <button id="btn-hud-pause" class="icon-btn" title="Pause (Esc)" aria-label="Pause">❚❚</button>
+      </div>
+      <div id="hud-message" class="hud-message"></div>
+      <canvas id="minimap" class="minimap" width="440" height="440"></canvas>
+      <div class="speedo">
+        <div class="rpm"><div id="hud-rpm"></div></div>
+        <div class="speed-row"><span id="hud-speed">0</span><span class="unit">KM/H</span></div>
+        <div class="gear">GEAR <b id="hud-gear">N</b><span id="hud-tow" class="tow">SLIPSTREAM</span></div>
+      </div>
+    </div>
+
+    <!-- Homescreen -->
+    <section id="screen-home" class="screen hidden">
+      <header class="brand">
+        <h1>TOKYO <span>CIRCUIT</span> RACER</h1>
+        <p>Shinjuku–Bay Street Circuit · 2.48 km · Night race</p>
+      </header>
+      <div class="home-grid">
+        <div class="panel profile-panel">
+          <div class="profile-head">
+            <div class="avatar" id="profile-avatar">G</div>
+            <div>
+              <div id="profile-name" class="profile-name">Guest</div>
+              <div id="profile-status" class="muted">Progress saved on this device</div>
+            </div>
+          </div>
+          <div class="stats">
+            <div><b id="stat-races">0</b><span>Races</span></div>
+            <div><b id="stat-wins">0</b><span>Wins</span></div>
+            <div><b id="stat-podiums">0</b><span>Podiums</span></div>
+            <div><b id="stat-best">--</b><span>Best lap</span></div>
+          </div>
+          <h3>Recent races</h3>
+          <ul id="recent-races" class="recent"></ul>
+          <div class="row">
+            <button id="btn-login">Log in</button>
+            <button id="btn-register" class="secondary">Create account</button>
+            <button id="btn-logout" class="secondary hidden">Log out</button>
+          </div>
+        </div>
+        <div class="panel setup-panel">
+          <h2>Race setup</h2>
+          <div class="setting">
+            <span>Laps</span>
+            <div class="seg" data-setting="laps"><button data-value="1">1</button><button data-value="3">3</button><button data-value="5">5</button></div>
+          </div>
+          <div class="setting">
+            <span>Opponents</span>
+            <div class="seg" data-setting="opponents"><button data-value="3">3</button><button data-value="5">5</button><button data-value="7">7</button></div>
+          </div>
+          <div class="setting">
+            <span>Difficulty</span>
+            <div class="seg" data-setting="difficulty"><button data-value="easy">Easy</button><button data-value="normal">Normal</button><button data-value="hard">Hard</button></div>
+          </div>
+          <div class="setting">
+            <span>Stability assist</span>
+            <div class="seg" data-setting="assists"><button data-value="true">On</button><button data-value="false">Off</button></div>
+          </div>
+          <button id="btn-race" class="primary race-btn">RACE ▶</button>
+          <button id="btn-controls" class="secondary">🎮 Controls</button>
+        </div>
+      </div>
+      <footer class="muted">Press <kbd>Enter</kbd> to race · <kbd>H</kbd> shows the controls any time</footer>
+    </section>
+
+    <!-- Login / create account -->
+    <div id="modal-auth" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+      <form id="auth-form" class="panel narrow" novalidate>
+        <h2 id="auth-title">Log in</h2>
+        <label>Username
+          <input id="auth-username" name="username" autocomplete="username" maxlength="20" spellcheck="false" />
+        </label>
+        <label>Password
+          <input id="auth-password" name="password" type="password" autocomplete="current-password" maxlength="128" />
+        </label>
+        <p id="auth-hint" class="muted small-text">3-20 letters, numbers or _ · password at least 8 characters</p>
+        <p id="auth-error" class="error" role="alert"></p>
+        <p id="auth-offline" class="notice hidden">
+          Online accounts need the Cloudflare backend (see <code>docs/DEPLOY_CLOUDFLARE.md</code>). Until then your progress is saved as a guest on this device.
+        </p>
+        <div class="row">
+          <button type="submit" class="primary" id="auth-submit">Log in</button>
+          <button type="button" class="secondary" id="auth-cancel">Cancel</button>
+        </div>
+        <p class="muted switch"><a href="#" id="auth-switch">Need an account? Create one</a></p>
+      </form>
+    </div>
+
+    <!-- Controls -->
+    <div id="modal-controls" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="controls-title">
+      <div class="panel">
+        <h2 id="controls-title">Controls</h2>
+        <div class="controls-grid">
+          <div>
+            <h3>Keyboard</h3>
+            <table id="controls-keyboard"></table>
+          </div>
+          <div>
+            <h3>Gamepad</h3>
+            <table id="controls-gamepad"></table>
+          </div>
+        </div>
+        <ul class="tips muted">
+          <li>Brake before the corner, then turn in — braking with full lock unsettles the car.</li>
+          <li>Tap the handbrake to rotate the car through the Shiodome hairpin.</li>
+          <li>Hitting the barriers costs a lot of speed. Follow a car closely for a slipstream tow.</li>
+        </ul>
+        <button id="controls-close" class="primary">Got it</button>
+      </div>
+    </div>
+
+    <!-- Pause -->
+    <div id="screen-pause" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="panel menu narrow">
+        <h2>Paused</h2>
+        <button id="btn-resume" class="primary">Resume</button>
+        <button id="btn-restart">Restart race</button>
+        <button id="btn-pause-controls">Controls</button>
+        <button id="btn-quit" class="secondary">Quit to home</button>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div id="screen-results" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="panel">
+        <h2 id="results-title">Finished</h2>
+        <table id="results-table" class="results"></table>
+        <p id="results-saved" class="muted"></p>
+        <div class="row">
+          <button id="btn-again" class="primary">Race again</button>
+          <button id="btn-home" class="secondary">Home</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

@@ -1,4 +1,4 @@
-import type { TrackLayout } from './TrackPath';
+import type { TrackLayout, TrackPath } from './TrackPath';
 
 /**
  * "Shinjuku–Bay Street Circuit" — a fictional ~2.6 km Tokyo street circuit, driven clockwise.
@@ -33,3 +33,20 @@ export const TOKYO_CIRCUIT: TrackLayout = {
     { x: -300, z: 150, radius: 25 }, // K  Shibuya chicane (right)
   ],
 };
+
+/** Shibuya-style zebra crossings on the J-K chicane straight, as lap distances. */
+export function tokyoCircuitLandmarks(track: TrackPath): { crossings: number[] } {
+  const distanceNear = (x: number, z: number) => {
+    let best = 0;
+    let bestD = Infinity;
+    for (const s of track.samples) {
+      const d = (s.x - x) ** 2 + (s.z - z) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        best = s.dist;
+      }
+    }
+    return best;
+  };
+  return { crossings: [distanceNear(-218, 150), distanceNear(-262, 150)] };
+}
