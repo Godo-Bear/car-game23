@@ -1,5 +1,5 @@
 /** Shared helpers for the account API handlers in server/api. */
-import type { CareerStats, ProfileResponse, RaceRecord } from '../shared/api';
+import type { CareerStats, ProfileResponse, RaceRecord, TrackId } from '../shared/api';
 
 export interface Env {
   /** Cloudflare D1 database for accounts (binding configured in wrangler.jsonc). */
@@ -177,24 +177,31 @@ export async function clearFailedLogins(db: D1Database, username: string): Promi
 }
 
 export async function loadProfile(db: D1Database, user: UserRow): Promise<ProfileResponse> {
-  const [statsRow, recent] = await Promise.all([
+  const [statsRow, recent, best] = await Promise.all([
     db
       .prepare('SELECT races, wins, podiums, best_lap, total_laps FROM stats WHERE user_id = ?')
       .bind(user.id)
       .first<{ races: number; wins: number; podiums: number; best_lap: number | null; total_laps: number }>(),
     db
       .prepare(
-        `SELECT position, field_size, laps, difficulty, total_time, best_lap, created_at
+        `SELECT track, position, field_size, laps, difficulty, total_time, best_lap, created_at
            FROM race_results WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT 5`,
       )
       .bind(user.id)
-      .all<{ position: number; field_size: number; laps: number; difficulty: RaceRecord['difficulty']; total_time: number | null; best_lap: number | null; created_at: number }>(),
+      .all<{ track: TrackId; position: number; field_size: number; laps: number; difficulty: RaceRecord['difficulty']; total_time: number | null; best_lap: number | null; created_at: number }>(),
+    db
+      .prepare('SELECT track, MIN(best_lap) AS best FROM race_results WHERE user_id = ? AND best_lap IS NOT NULL GROUP BY track')
+      .bind(user.id)
+      .all<{ track: TrackId; best: number }>(),
   ]);
+  const bestLaps: Partial<Record<TrackId, number>> = {};
+  for (const row of best.results) bestLaps[row.track] = row.best;
   const stats: CareerStats = {
     races: statsRow?.races ?? 0,
     wins: statsRow?.wins ?? 0,
     podiums: statsRow?.podiums ?? 0,
     bestLap: statsRow?.best_lap ?? null,
+    bestLaps,
     totalLaps: statsRow?.total_laps ?? 0,
   };
   let settings = {};
@@ -209,6 +216,7 @@ export async function loadProfile(db: D1Database, user: UserRow): Promise<Profil
     stats,
     settings,
     recent: recent.results.map((r) => ({
+      track: r.track,
       position: r.position,
       fieldSize: r.field_size,
       laps: r.laps,

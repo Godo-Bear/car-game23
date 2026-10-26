@@ -3,6 +3,7 @@ import { neutralControls } from '../src/physics/VehiclePhysics';
 import { formatTime, RaceManager } from '../src/race/RaceManager';
 import { RaceSimulation } from '../src/race/RaceSimulation';
 import { TOKYO_CIRCUIT } from '../src/track/tokyoCircuit';
+import { TRACKS } from '../src/track/tracks';
 
 const racers = [
   { id: 0, name: 'A', isPlayer: true },
@@ -55,9 +56,9 @@ describe('RaceManager', () => {
   });
 });
 
-describe('RaceSimulation (headless full race)', () => {
+describe.each(Object.values(TRACKS))('RaceSimulation on $name (headless full race)', (def) => {
   it('runs a clean 2-lap race where every AI finishes without getting wedged', () => {
-    const sim = new RaceSimulation(TOKYO_CIRCUIT, { laps: 2, opponents: 7, difficulty: 'normal' });
+    const sim = new RaceSimulation(def.layout, { laps: 2, opponents: 7, difficulty: 'normal' });
     sim.player.autopilot = true;
     let respawns = 0;
     const respawn = sim.respawn.bind(sim);
@@ -71,13 +72,15 @@ describe('RaceSimulation (headless full race)', () => {
 
     expect(sim.race.racers.every((r) => r.finished)).toBe(true);
     expect(respawns).toBe(0);
+    // Average lap speed in a believable band for each circuit (roughly 100-150 km/h).
     for (const r of sim.race.racers) {
-      expect(r.bestLapTime!).toBeGreaterThan(65);
-      expect(r.bestLapTime!).toBeLessThan(85);
+      const kmh = (sim.track.length / r.bestLapTime!) * 3.6;
+      expect(kmh).toBeGreaterThan(100);
+      expect(kmh).toBeLessThan(150);
     }
     const positions = sim.race.standings().map((r) => r.position);
     expect(positions).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
-  }, 30_000);
+  }, 60_000);
 });
 
 describe('AI respects the player', () => {

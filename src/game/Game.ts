@@ -3,7 +3,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import type { PlayerSettings } from '../../shared/api';
+import type { PlayerSettings, TimeOfDay, TrackId } from '../../shared/api';
 import { AccountService } from '../account/AccountService';
 import { RacingLine } from '../ai/RacingLine';
 import { ChaseCamera, type CameraMode } from '../camera/ChaseCamera';
@@ -12,17 +12,16 @@ import { Input } from '../core/Input';
 import { createRng } from '../core/math';
 import { neutralControls } from '../physics/VehiclePhysics';
 import { formatTime, type RaceEvent } from '../race/RaceManager';
-import { gridSlot, RaceSimulation } from '../race/RaceSimulation';
-import { tokyoCircuitLandmarks, TOKYO_CIRCUIT } from '../track/tokyoCircuit';
-import { buildTrackVisual, type TrackVisual } from '../track/TrackMesh';
+import { RaceSimulation } from '../race/RaceSimulation';
 import { TrackPath } from '../track/TrackPath';
+import { TRACKS } from '../track/tracks';
 import { Hud } from '../ui/Hud';
 import { Minimap } from '../ui/Minimap';
 import { Screens } from '../ui/Screens';
 import { CarModel, LIVERIES } from '../vehicles/CarModel';
 import { TireEffects, type EffectsCar } from '../vehicles/TireEffects';
-import { City, placeLamps } from '../world/City';
-import { setupEnvironment } from '../world/Environment';
+import { Lighting } from '../world/Lighting';
+import { buildWorld, type World } from '../world/World';
 
 type State = 'home' | 'countdown' | 'racing' | 'finished';
 
@@ -41,8 +40,13 @@ export class Game {
 
   private track!: TrackPath;
   private line!: RacingLine;
-  private trackVisual!: TrackVisual;
-  private city!: City;
+  private world: World | null = null;
+  private lighting!: Lighting;
+  private timeOfDay: TimeOfDay = 'night';
+  /** Track geometry + racing line are reused when switching back to a track. */
+  private readonly trackCache = new Map<TrackId, { track: TrackPath; line: RacingLine }>();
+  /** The player's real headlights (only lit after dark). */
+  private readonly headlight = new THREE.SpotLight(0xfff1dc, 0, 120, 0.5, 0.6, 0.8);
   private hud!: Hud;
   private minimap!: Minimap;
   private screens!: Screens;
@@ -86,32 +90,19 @@ export class Game {
   }
 
   async init(): Promise<void> {
-    const rng = createRng(2023);
-    setupEnvironment(this.scene, this.renderer, rng);
-    await nextFrame();
-
-    this.track = new TrackPath(TOKYO_CIRCUIT);
-    this.line = new RacingLine(this.track);
-    const lamps = placeLamps(this.track);
-    const marks = tokyoCircuitLandmarks(this.track);
-    this.trackVisual = buildTrackVisual(this.track, rng, {
-      gridSlots: Array.from({ length: 12 }, (_, i) => gridSlot(this.track, i)),
-      lamps,
-      crossings: marks.crossings,
-    });
-    this.scene.add(this.trackVisual.group);
-    await nextFrame();
-    this.city = new City(this.track, lamps, rng);
-    this.scene.add(this.city.group);
+    this.lighting = new Lighting(this.scene, this.renderer);
     this.scene.add(this.effects.group);
+    // On the front bumper, aimed down the road (so it never lights our own bodywork).
+    this.headlight.position.set(0, 0.75, 2.45);
+    this.headlight.target.position.set(0, 0, 32);
+    await nextFrame();
 
     this.hud = new Hud(this.colors);
-    this.minimap = new Minimap(document.getElementById('minimap') as HTMLCanvasElement, this.track, this.colors);
     this.screens = new Screens(this.account, {
-      onRace: (settings) => this.startRace(settings),
-      onSettingsChanged: (settings) => void this.account.saveSettings(settings),
+      onRace: (settings) => void this.startRace(settings),
+      onSettingsChanged: (settings) => void this.onSettingsChanged(settings),
       onResume: () => this.setPaused(false),
-      onRestart: () => this.startRace(this.screens.settings),
+      onRestart: () => void this.startRace(this.screens.settings),
       onQuit: () => this.goHome(),
       onModalChange: (open) => {
         this.modalOpen = open;
@@ -129,13 +120,68 @@ export class Game {
 
     await this.account.init();
     this.screens.loadSettings(this.account.settings);
+    await this.loadTrack(this.screens.settings.track);
     this.createSimulation(this.screens.settings);
+    this.applyTimeOfDay(this.screens.settings.timeOfDay);
     this.goHome();
 
     // Compile shaders up front so the first frames of the race don't hitch.
     this.renderer.compile(this.scene, this.cam.camera);
-    document.getElementById('loading')?.remove();
+    setLoading(null);
     this.renderer.setAnimationLoop((time) => this.frame(time));
+  }
+
+  // ---------------------------------------------------------------- tracks & lighting
+
+  /** Build (or reuse) the circuit and swap in its scenery. */
+  private async loadTrack(id: TrackId): Promise<void> {
+    if (this.world?.def.id === id) return;
+    const def = TRACKS[id];
+    setLoading(`Loading ${def.name}…`);
+    await nextFrame();
+    await nextFrame();
+    let cached = this.trackCache.get(id);
+    if (!cached) {
+      const track = new TrackPath(def.layout);
+      cached = { track, line: new RacingLine(track) };
+      this.trackCache.set(id, cached);
+    }
+    this.track = cached.track;
+    this.line = cached.line;
+    this.world?.dispose();
+    this.world = buildWorld(def, this.track, createRng(2023));
+    this.scene.add(this.world.group);
+    this.minimap = new Minimap(document.getElementById('minimap') as HTMLCanvasElement, this.track, this.colors);
+    this.effects.clear();
+    if (this.lastTime >= 0) {
+      // Switching mid-session: refresh lighting for the new theme, then compile its shaders.
+      this.applyTimeOfDay(this.timeOfDay);
+      this.renderer.compile(this.scene, this.cam.camera);
+      setLoading(null);
+    }
+  }
+
+  private applyTimeOfDay(tod: TimeOfDay): void {
+    this.timeOfDay = tod;
+    const theme = this.world!.def.theme;
+    const bloom = this.lighting.apply(theme, tod);
+    this.bloom.strength = bloom.strength;
+    this.bloom.radius = bloom.radius;
+    this.bloom.threshold = bloom.threshold;
+    this.world!.setTimeOfDay(tod);
+    for (const m of this.carModels) m.setLighting(tod, theme !== 'city');
+    this.headlight.intensity = tod === 'night' ? (theme === 'city' ? 5 : 13) : 0;
+  }
+
+  /** Homescreen changes: rebuild the backdrop for a new track / time of day, and remember them. */
+  private async onSettingsChanged(settings: PlayerSettings): Promise<void> {
+    void this.account.saveSettings(settings);
+    if (this.state !== 'home') return;
+    if (settings.track !== this.world?.def.id) {
+      await this.loadTrack(settings.track);
+      this.createSimulation(settings);
+    }
+    if (settings.timeOfDay !== this.timeOfDay) this.applyTimeOfDay(settings.timeOfDay);
   }
 
   // ---------------------------------------------------------------- race lifecycle
@@ -163,7 +209,11 @@ export class Game {
       this.carModels.push(model);
       this.scene.add(model.root);
     }
-    this.carModels.forEach((m, i) => (m.root.visible = i < total));
+    this.carModels.forEach((m, i) => {
+      m.root.visible = i < total;
+      m.setLighting(this.timeOfDay, this.world?.def.theme !== 'city');
+    });
+    if (!this.headlight.parent) this.carModels[0].root.add(this.headlight, this.headlight.target);
     this.effectCars = this.sim.cars.map((car, i) => ({ car, root: this.carModels[this.modelOf[i]].root }));
     this.effects.clear();
     this.driftScore = 0;
@@ -174,9 +224,11 @@ export class Game {
     this.syncCarModels(1, 0);
   }
 
-  private startRace(settings: PlayerSettings): void {
+  private async startRace(settings: PlayerSettings): Promise<void> {
     this.audio.unlock();
     this.screens.hideAll();
+    await this.loadTrack(settings.track);
+    this.applyTimeOfDay(settings.timeOfDay);
     this.createSimulation(settings);
     this.cam.mode = settings.camera;
     this.cam.snap();
@@ -187,7 +239,7 @@ export class Game {
     this.lightsOutAt = 5 * LIGHT_INTERVAL + 0.6 + Math.random() * 0.9;
     this.wrongWayTime = 0;
     this.accumulator = 0;
-    this.trackVisual.setStartLights(0);
+    this.world!.trackVisual.setStartLights(0);
     this.hud.setVisible(true);
     this.hud.clearMessage();
     this.input.clearActions();
@@ -197,7 +249,7 @@ export class Game {
     this.state = 'home';
     this.paused = false;
     this.hud.setVisible(false);
-    this.trackVisual.setStartLights(0);
+    this.world!.trackVisual.setStartLights(0);
     this.createSimulation(this.screens.settings);
     this.screens.showHome();
     this.input.clearActions();
@@ -249,7 +301,8 @@ export class Game {
       const p = player.physics;
       this.audio.update(p.rpm, p.throttleApplied, Math.max(p.rearSlide, p.frontSlide * 0.6), p.speed, running);
     }
-    this.city.update(this.elapsed);
+    this.world!.update(this.elapsed, dt, this.cam.camera);
+    this.lighting.follow(playerModel.root.position);
 
     if (this.state !== 'home') {
       this.hud.update(this.sim, dt);
@@ -275,7 +328,7 @@ export class Game {
       return;
     }
     if (this.state === 'home') {
-      if (input.consume('confirm')) this.startRace(this.screens.settings);
+      if (input.consume('confirm')) void this.startRace(this.screens.settings);
       input.clearActions();
       return;
     }
@@ -293,7 +346,7 @@ export class Game {
       this.sim.respawn(this.sim.player);
       this.cam.snap();
     }
-    if (input.consume('confirm') && this.screens.resultsVisible) this.startRace(this.screens.settings);
+    if (input.consume('confirm') && this.screens.resultsVisible) void this.startRace(this.screens.settings);
   }
 
   private updateCountdown(dt: number): void {
@@ -301,14 +354,14 @@ export class Game {
     const lights = Math.min(5, Math.floor(this.countdownTime / LIGHT_INTERVAL));
     if (lights !== this.lightsOn && this.countdownTime < this.lightsOutAt) {
       this.lightsOn = lights;
-      this.trackVisual.setStartLights(lights);
+      this.world!.trackVisual.setStartLights(lights);
       if (lights > 0) {
         this.audio.beep(false);
         this.hud.showMessage('●'.repeat(lights) + '○'.repeat(5 - lights), 5, 'lights');
       }
     }
     if (this.countdownTime >= this.lightsOutAt) {
-      this.trackVisual.setStartLights(0);
+      this.world!.trackVisual.setStartLights(0);
       this.audio.beep(true);
       this.hud.showMessage('GO!', 1.2, 'go');
       this.state = 'racing';
@@ -337,6 +390,7 @@ export class Game {
     const me = this.sim.race.racers[this.sim.player.id];
     const settings = this.screens.settings;
     const record = {
+      track: settings.track,
       position,
       fieldSize: this.sim.cars.length,
       laps: settings.laps,
@@ -411,6 +465,15 @@ export class Game {
     this.cam.camera.aspect = w / h;
     this.cam.camera.updateProjectionMatrix();
   }
+}
+
+/** Full-screen loading overlay (null hides it). */
+function setLoading(text: string | null): void {
+  const el = document.getElementById('loading');
+  if (!el) return;
+  el.classList.toggle('hidden', text === null);
+  const label = el.querySelector('.muted');
+  if (text && label) label.textContent = text;
 }
 
 function nextFrame(): Promise<void> {

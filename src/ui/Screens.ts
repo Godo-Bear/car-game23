@@ -1,6 +1,9 @@
 import { ApiError, type AccountService } from '../account/AccountService';
 import { GAMEPAD_BINDINGS, KEY_BINDINGS } from '../core/Input';
 import { formatTime, type RacerState } from '../race/RaceManager';
+import { TrackPath } from '../track/TrackPath';
+import { TRACKS } from '../track/tracks';
+import type { TrackId } from '../../shared/api';
 import type { PlayerSettings } from '../../shared/api';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -11,6 +14,8 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   difficulty: 'normal',
   assists: true,
   camera: 'chase',
+  track: 'tokyo',
+  timeOfDay: 'night',
 };
 
 export interface ScreenHandlers {
@@ -153,14 +158,18 @@ export class Screens {
     $('stat-races').textContent = String(s.races);
     $('stat-wins').textContent = String(s.wins);
     $('stat-podiums').textContent = String(s.podiums);
-    $('stat-best').textContent = s.bestLap === null ? '--' : formatTime(s.bestLap);
+    // Lap times only compare on the same circuit, so show the selected track's best.
+    const track = TRACKS[this.settings.track];
+    const best = s.bestLaps[track.id];
+    $('stat-best').textContent = best === undefined ? '--' : formatTime(best);
+    $('stat-best-label').textContent = `Best · ${track.short}`;
     const list = $('recent-races');
     list.replaceChildren(
       ...(a.recent.length
         ? a.recent.map((r) => {
             const li = document.createElement('li');
             const left = document.createElement('span');
-            left.textContent = `P${r.position}/${r.fieldSize} · ${r.laps} lap${r.laps > 1 ? 's' : ''} · ${r.difficulty}`;
+            left.textContent = `${TRACKS[r.track ?? 'tokyo'].name} · P${r.position}/${r.fieldSize} · ${r.laps} lap${r.laps > 1 ? 's' : ''} · ${r.difficulty}`;
             const right = document.createElement('span');
             right.textContent = r.bestLap === null ? '--' : formatTime(r.bestLap);
             li.append(left, right);
@@ -174,6 +183,11 @@ export class Screens {
   }
 
   private renderSettings(): void {
+    const track = TRACKS[this.settings.track];
+    $('track-blurb').textContent = track.blurb;
+    const tod = { day: 'Day race', sunset: 'Sunset race', night: 'Night race' }[this.settings.timeOfDay];
+    $('brand-subtitle').textContent = `${track.circuit} · ${trackLengthKm(track.id).toFixed(2)} km · ${tod}`;
+    this.renderProfile();
     document.querySelectorAll<HTMLElement>('.seg').forEach((seg) => {
       const key = seg.dataset.setting as keyof PlayerSettings;
       const current = String(this.settings[key]);
@@ -302,4 +316,14 @@ export class Screens {
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+}
+
+const lengths = new Map<TrackId, number>();
+function trackLengthKm(id: TrackId): number {
+  let km = lengths.get(id);
+  if (km === undefined) {
+    km = new TrackPath(TRACKS[id].layout).length / 1000;
+    lengths.set(id, km);
+  }
+  return km;
 }

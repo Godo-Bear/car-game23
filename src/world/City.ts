@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { TimeOfDay } from '../../shared/api';
 import { BARRIER_THICKNESS, SIDEWALK_WIDTH } from '../track/TrackMesh';
 import type { TrackPath } from '../track/TrackPath';
 import { GeometryBuilder } from './GeometryBuilder';
@@ -51,6 +52,18 @@ export class City {
   private readonly beacon: THREE.MeshBasicMaterial;
   private readonly flicker: THREE.MeshBasicMaterial[] = [];
   private readonly rng: () => number;
+  // Things whose glow depends on the time of day.
+  private readonly facadeMats: THREE.MeshLambertMaterial[] = [];
+  private readonly lit: { mat: THREE.MeshBasicMaterial; colors: Record<TimeOfDay, THREE.Color> }[] = [];
+  private readonly glows: { mat: THREE.PointsMaterial; opacity: Record<TimeOfDay, number> }[] = [];
+  private signLevel = 1.9;
+  private nightLights = true;
+
+  /** Register a self-lit material: full brightness at night, dimmer (or just painted) by day. */
+  private glowing<T extends THREE.MeshBasicMaterial>(mat: T, night: THREE.Color, sunset: THREE.Color, day: THREE.Color): T {
+    this.lit.push({ mat, colors: { night, sunset, day } });
+    return mat;
+  }
 
   constructor(track: TrackPath, lamps: Lamp[], rng: () => number) {
     this.group.name = 'city';
@@ -207,22 +220,26 @@ export class City {
         emissive: 0xffffff,
         emissiveIntensity: 0.7,
       });
+      this.facadeMats.push(mat);
       this.group.add(new THREE.Mesh(builders[style].build(), mat));
     }
     this.group.add(new THREE.Mesh(roofs.build(), new THREE.MeshLambertMaterial({ color: 0x24252b })));
     this.beacon = new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 0.1, 0.1) });
     this.group.add(new THREE.Mesh(beacons.build(), this.beacon));
     const shopTex = shopfrontTexture(rng);
-    this.group.add(new THREE.Mesh(shops.build(), new THREE.MeshBasicMaterial({ map: shopTex, color: new THREE.Color(1.3, 1.3, 1.3) })));
+    const grey = (v: number) => new THREE.Color(v, v, v);
+    const shopMat = this.glowing(new THREE.MeshBasicMaterial({ map: shopTex }), grey(1.3), grey(1.15), grey(0.95));
+    this.group.add(new THREE.Mesh(shops.build(), shopMat));
     signs.forEach((g, i) => {
       if (g.isEmpty) return;
-      const mat = new THREE.MeshBasicMaterial({ map: neonSignTexture(i), color: new THREE.Color(1.9, 1.9, 1.9) });
+      const mat = this.glowing(new THREE.MeshBasicMaterial({ map: neonSignTexture(i) }), grey(1.9), grey(1.45), grey(1.05));
       if (i % 5 === 2) this.flicker.push(mat);
       this.group.add(new THREE.Mesh(g.build(), mat));
     });
     boards.forEach((g, i) => {
       if (g.isEmpty) return;
-      this.group.add(new THREE.Mesh(g.build(), new THREE.MeshBasicMaterial({ map: billboardTexture(i), color: new THREE.Color(1.35, 1.35, 1.35) })));
+      const mat = this.glowing(new THREE.MeshBasicMaterial({ map: billboardTexture(i) }), grey(1.35), grey(1.15), grey(0.95));
+      this.group.add(new THREE.Mesh(g.build(), mat));
     });
 
     this.buildLamps(track, lamps);
@@ -249,12 +266,11 @@ export class City {
       glowPositions.push(lamp.x, lamp.y - 0.4, lamp.z);
     }
     this.group.add(new THREE.Mesh(poles.build(), new THREE.MeshStandardMaterial({ color: 0x3a3d44, metalness: 0.6, roughness: 0.5 })));
-    this.group.add(new THREE.Mesh(heads.build(), new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 3.4, 2.4) })));
+    const headMat = this.glowing(new THREE.MeshBasicMaterial(), new THREE.Color(4, 3.4, 2.4), new THREE.Color(3, 2.5, 1.8), new THREE.Color(0.55, 0.55, 0.52));
+    this.group.add(new THREE.Mesh(heads.build(), headMat));
     const glowGeo = new THREE.BufferGeometry();
     glowGeo.setAttribute('position', new THREE.Float32BufferAttribute(glowPositions, 3));
-    const glow = new THREE.Points(
-      glowGeo,
-      new THREE.PointsMaterial({
+    const glowMat = new THREE.PointsMaterial({
         map: glowTexture(),
         color: 0xffd9a8,
         size: 7,
@@ -262,8 +278,9 @@ export class City {
         opacity: 0.55,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
-      }),
-    );
+    });
+    this.glows.push({ mat: glowMat, opacity: { night: 0.55, sunset: 0.35, day: 0 } });
+    const glow = new THREE.Points(glowGeo, glowMat);
     this.group.add(glow);
   }
 
@@ -297,10 +314,15 @@ export class City {
     const tower = new THREE.Group();
     tower.position.set(TOKYO_TOWER.x, 0, TOKYO_TOWER.z);
     const lattice = this.latticeTexture();
-    const orange = new THREE.MeshBasicMaterial({ map: lattice, color: new THREE.Color(2.6, 0.75, 0.15), transparent: true, alphaTest: 0.4, side: THREE.DoubleSide, fog: false });
-    const white = orange.clone();
-    white.color = new THREE.Color(2.2, 2.0, 1.8);
-    const solid = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 1.3, 0.5), fog: false });
+    // Lit orange at night ("Landmark Light"), international-orange and white paint by day.
+    const orange = this.glowing(
+      new THREE.MeshBasicMaterial({ map: lattice, transparent: true, alphaTest: 0.4, side: THREE.DoubleSide, fog: false }),
+      new THREE.Color(2.6, 0.75, 0.15),
+      new THREE.Color(1.6, 0.5, 0.16),
+      new THREE.Color(0.95, 0.3, 0.1),
+    );
+    const white = this.glowing(orange.clone(), new THREE.Color(2.2, 2.0, 1.8), new THREE.Color(1.3, 1.1, 1.0), new THREE.Color(0.9, 0.9, 0.88));
+    const solid = this.glowing(new THREE.MeshBasicMaterial({ fog: false }), new THREE.Color(2.4, 1.3, 0.5), new THREE.Color(1.4, 0.8, 0.4), new THREE.Color(0.75, 0.72, 0.68));
     const sections: [number, number, number, number, THREE.Material][] = [
       // y0, height, bottom radius, top radius
       [0, 70, 42, 20, orange],
@@ -335,14 +357,19 @@ export class City {
     const tree = new THREE.Group();
     tree.position.set(SKYTREE.x, 0, SKYTREE.z);
     const lattice = this.latticeTexture();
-    const mat = new THREE.MeshBasicMaterial({ map: lattice, color: new THREE.Color(0.7, 1.1, 2.4), transparent: true, alphaTest: 0.4, side: THREE.DoubleSide, fog: false });
+    const mat = this.glowing(
+      new THREE.MeshBasicMaterial({ map: lattice, transparent: true, alphaTest: 0.4, side: THREE.DoubleSide, fog: false }),
+      new THREE.Color(0.7, 1.1, 2.4),
+      new THREE.Color(0.9, 0.85, 1.2),
+      new THREE.Color(0.82, 0.86, 0.9),
+    );
     const body = new THREE.CylinderGeometry(9, 34, 340, 12, 1, true);
     const uv = body.getAttribute('uv') as THREE.BufferAttribute;
     for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 14, uv.getY(i) * 40);
     const m = new THREE.Mesh(body, mat);
     m.position.y = 170;
     tree.add(m);
-    const ringMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 1.3, 2.6), fog: false });
+    const ringMat = this.glowing(new THREE.MeshBasicMaterial({ fog: false }), new THREE.Color(1.6, 1.3, 2.6), new THREE.Color(1.1, 1.0, 1.4), new THREE.Color(0.78, 0.8, 0.84));
     for (const [y, r, h] of [
       [345, 19, 14],
       [430, 12, 8],
@@ -372,7 +399,7 @@ export class City {
     // Rainbow Bridge: towers, deck and "pearl necklace" cable lights.
     const bridge = new THREE.Group();
     bridge.position.set(700, 0, BAY_Z + 650);
-    const white = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 1.6, 1.7), fog: false });
+    const white = this.glowing(new THREE.MeshBasicMaterial({ fog: false }), new THREE.Color(1.6, 1.6, 1.7), new THREE.Color(1.2, 1.1, 1.1), new THREE.Color(0.85, 0.87, 0.9));
     const deck = new THREE.Mesh(new THREE.BoxGeometry(1100, 4, 22), new THREE.MeshLambertMaterial({ color: 0x8a8d96 }));
     deck.position.y = 50;
     bridge.add(deck);
@@ -403,20 +430,27 @@ export class City {
     for (let x = -550; x <= 550; x += 18) pts.push(x, 53, 0);
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-    bridge.add(
-      new THREE.Points(
-        geo,
-        new THREE.PointsMaterial({ map: glowTexture(), color: 0xeaf4ff, size: 9, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }),
-      ),
-    );
+    const pearls = new THREE.PointsMaterial({ map: glowTexture(), color: 0xeaf4ff, size: 9, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+    this.glows.push({ mat: pearls, opacity: { night: 1, sunset: 0.6, day: 0 } });
+    bridge.add(new THREE.Points(geo, pearls));
     this.group.add(bridge);
   }
 
+  setTimeOfDay(tod: TimeOfDay): void {
+    const windows = { night: 0.7, sunset: 0.4, day: 0.04 }[tod];
+    for (const m of this.facadeMats) m.emissiveIntensity = windows;
+    for (const { mat, colors } of this.lit) mat.color.copy(colors[tod]);
+    for (const { mat, opacity } of this.glows) mat.opacity = opacity[tod];
+    this.signLevel = { night: 1.9, sunset: 1.45, day: 1.05 }[tod];
+    this.nightLights = tod !== 'day';
+  }
+
   update(time: number): void {
-    const on = Math.sin(time * 2.4) > 0.55;
+    const on = this.nightLights && Math.sin(time * 2.4) > 0.55;
     this.beacon.color.setRGB(on ? 6 : 0.3, on ? 0.15 : 0.01, on ? 0.15 : 0.01);
     for (const m of this.flicker) {
-      const v = this.rng() < 0.04 ? 0.6 : 1.9;
+      // Neon tubes only visibly flicker once they're the brightest thing around.
+      const v = this.nightLights && this.rng() < 0.04 ? this.signLevel * 0.3 : this.signLevel;
       m.color.setRGB(v, v, v);
     }
   }

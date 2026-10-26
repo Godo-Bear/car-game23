@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { TimeOfDay } from '../../shared/api';
 import { mod } from '../core/math';
 import { GeometryBuilder } from '../world/GeometryBuilder';
 import {
@@ -7,13 +8,16 @@ import {
   checkerTexture,
   fenceTexture,
   ROAD_TEXTURE_LENGTH,
+  ruralAsphaltTexture,
   sidewalkTexture,
 } from '../world/textures';
 import type { TrackPath } from './TrackPath';
+import type { TrackTheme } from './tracks';
 
 type V3 = [number, number, number];
 
 export interface TrackVisualOptions {
+  theme: TrackTheme;
   gridSlots: { distance: number; lateral: number }[];
   /** World positions of street lamps (used to bake light pools into the road). */
   lamps: { x: number; z: number; index: number }[];
@@ -25,7 +29,15 @@ export interface TrackVisual {
   group: THREE.Group;
   /** 0 = all off, 1..5 = that many red lights lit, -1 = go (off). */
   setStartLights(count: number): void;
+  /** Street-light pools on the road only show after dark. */
+  setTimeOfDay(tod: TimeOfDay): void;
 }
+
+const BANNER_SUBTITLE: Record<TrackTheme, string> = {
+  city: '東京 ストリート サーキット',
+  mountain: '箱根 峠 · HAKONE PASS',
+  countryside: '桜 バレー · SAKURA VALLEY',
+};
 
 const BARRIER_HEIGHT = 1.05;
 export const BARRIER_THICKNESS = 0.5;
@@ -39,6 +51,7 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
   const S = track.samples;
   const hw = track.halfWidth;
   const wall = track.wallOffset;
+  const city = opts.theme === 'city';
 
   const at = (i: number, lateral: number, dy = 0): V3 => {
     const s = S[mod(i, n)];
@@ -51,6 +64,7 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
   const road = new GeometryBuilder(true);
   const lampColor = new THREE.Color();
   const lightAt = (x: number, z: number, i: number): THREE.Color => {
+    if (!city) return lampColor.setRGB(1, 1, 1).clone();
     let b = 0.42;
     for (const lamp of opts.lamps) {
       let di = Math.abs(lamp.index - i);
@@ -76,13 +90,12 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
     road.triangle(a, a + 1, a + 2);
     road.triangle(a + 1, a + 3, a + 2);
   }
-  const asphalt = asphaltTexture(rng);
+  const asphalt = city ? asphaltTexture(rng) : ruralAsphaltTexture(rng, opts.theme === 'mountain' ? 'yellow' : 'dashed');
   asphalt.wrapS = THREE.ClampToEdgeWrapping;
-  const roadMesh = new THREE.Mesh(
-    road.build(),
-    new THREE.MeshStandardMaterial({ map: asphalt, vertexColors: true, roughness: 0.82, metalness: 0.05 }),
-  );
+  const roadMaterial = new THREE.MeshStandardMaterial({ map: asphalt, vertexColors: city, roughness: 0.82, metalness: 0.05 });
+  const roadMesh = new THREE.Mesh(road.build(), roadMaterial);
   roadMesh.name = 'road';
+  roadMesh.receiveShadow = true;
   group.add(roadMesh);
 
   // ---------- Barriers, catch fence, sidewalks, curbs ----------
@@ -91,6 +104,8 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
   const sidewalk = new GeometryBuilder();
   const curbs = new GeometryBuilder(true);
   const deck = new GeometryBuilder();
+  const rail = new GeometryBuilder();
+  const posts = new GeometryBuilder();
   const concrete = new THREE.Color(0.42, 0.42, 0.45);
   const red = new THREE.Color(0.75, 0.05, 0.05);
   const white = new THREE.Color(0.92, 0.92, 0.92);
@@ -102,7 +117,23 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
     const outside = corner ? Math.sign(-s0.curvature) || 1 : 0; // right (+1) for left-handers
     const elevated = s0.y > 1.5 || s1.y > 1.5;
 
-    for (const side of [-1, 1]) {
+    if (!city) {
+      for (const side of [-1, 1]) {
+        // Guardrail (W-beam) on posts; the physics barrier is its inner face.
+        const r = side * wall;
+        const inward: V3 = [-side * s0.rx, 0, -side * s0.rz];
+        facing(rail, at(i, r, 0.45), at(i + 1, r, 0.45), at(i + 1, r, 0.85), at(i, r, 0.85), inward);
+        facing(rail, at(i, r, 0.45), at(i + 1, r, 0.45), at(i + 1, r, 0.85), at(i, r, 0.85), [-inward[0], 0, -inward[2]]);
+        if (i % 2 === 0) {
+          const pp = at(i, side * (wall + 0.15));
+          posts.box(pp[0], pp[1] - 0.4, pp[2], 0.12, 1.25, 0.12, s0.heading);
+        }
+        // Road edge skirt so the terrain never shows a gap under the asphalt.
+        facing(deck, at(i, side * wall, -1.6), at(i + 1, side * wall, -1.6), at(i + 1, side * wall, 0), at(i, side * wall, 0), [side * s0.rx, 0, side * s0.rz]);
+      }
+    }
+
+    for (const side of city ? [-1, 1] : []) {
       const stripe = corner && side === outside ? (Math.floor(i / 2) % 2 ? red : white) : concrete;
       const inner = side * wall;
       const outer = side * (wall + BARRIER_THICKNESS);
@@ -137,26 +168,36 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
     }
   }
 
-  group.add(new THREE.Mesh(barrier.build(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 })));
-  const fenceTex = fenceTexture();
-  group.add(
-    new THREE.Mesh(
-      fence.build(),
-      new THREE.MeshBasicMaterial({ map: fenceTex, color: 0x9aa0ad, transparent: true, alphaTest: 0.3, side: THREE.DoubleSide, depthWrite: false }),
-    ),
-  );
-  group.add(new THREE.Mesh(sidewalk.build(), new THREE.MeshStandardMaterial({ map: sidewalkTexture(rng), roughness: 0.9 })));
-  group.add(new THREE.Mesh(curbs.build(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 })));
+  if (city) {
+    group.add(new THREE.Mesh(barrier.build(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 })));
+    const fenceTex = fenceTexture();
+    group.add(
+      new THREE.Mesh(
+        fence.build(),
+        new THREE.MeshBasicMaterial({ map: fenceTex, color: 0x9aa0ad, transparent: true, alphaTest: 0.3, side: THREE.DoubleSide, depthWrite: false }),
+      ),
+    );
+    const walk = new THREE.Mesh(sidewalk.build(), new THREE.MeshStandardMaterial({ map: sidewalkTexture(rng), roughness: 0.9 }));
+    walk.receiveShadow = true;
+    group.add(walk);
+  } else {
+    const railColor = opts.theme === 'mountain' ? 0xb7bcc4 : 0xf0f0ea;
+    group.add(new THREE.Mesh(rail.build(), new THREE.MeshStandardMaterial({ color: railColor, metalness: 0.55, roughness: 0.35 })));
+    group.add(new THREE.Mesh(posts.build(), new THREE.MeshStandardMaterial({ color: 0x8a8f96, metalness: 0.5, roughness: 0.5 })));
+  }
+  const kerbs = new THREE.Mesh(curbs.build(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }));
+  kerbs.receiveShadow = true;
+  group.add(kerbs);
 
-  // ---------- Expressway pillars ----------
+  // ---------- Expressway pillars (city only; elsewhere the road sits on terrain) ----------
   for (let i = 0; i < n; i += 12) {
     const s = S[i];
-    if (s.y < 2.5) continue;
+    if (!city || s.y < 2.5) continue;
     const h = s.y - 1.1;
     deck.box(s.x, 0, s.z, 3.2, h, 1.8, s.heading);
     deck.box(s.x, h - 1.2, s.z, (wall + BARRIER_THICKNESS + SIDEWALK_WIDTH) * 2, 1.2, 1.6, s.heading);
   }
-  group.add(new THREE.Mesh(deck.build(), new THREE.MeshStandardMaterial({ color: 0x5f6168, roughness: 0.9 })));
+  group.add(new THREE.Mesh(deck.build(), new THREE.MeshStandardMaterial({ color: city ? 0x5f6168 : 0x4a4740, roughness: 0.9 })));
 
   // ---------- Start / finish line and grid boxes ----------
   const paint = new GeometryBuilder();
@@ -187,23 +228,58 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
   facing(checker, at(0, -hw, 0.032), at(0, hw, 0.032), at(1, hw, 0.032), at(1, -hw, 0.032), [0, 1, 0], undefined, 0, 0, 1, 1);
   group.add(new THREE.Mesh(checker.build(), new THREE.MeshStandardMaterial({ map: checkerTexture(), roughness: 0.6 })));
 
-  // ---------- Start gantry with five start lights ----------
+  // ---------- Start gantry with five start lights (a torii gate in the countryside) ----------
   const gantry = new THREE.Group();
   gantry.position.set(start.x, start.y, start.z);
   gantry.rotation.y = start.heading;
   const steel = new THREE.MeshStandardMaterial({ color: 0x2a2c33, metalness: 0.6, roughness: 0.4 });
   const span = wall + 1.4;
-  for (const side of [-1, 1]) {
-    const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.6, 8, 0.6), steel);
-    pillar.position.set(side * span, 4, 0);
-    gantry.add(pillar);
+  let bannerY = 7.15;
+  if (opts.theme === 'countryside') {
+    const vermilion = new THREE.MeshStandardMaterial({ color: 0xd8341f, roughness: 0.55 });
+    const black = new THREE.MeshStandardMaterial({ color: 0x1a1414, roughness: 0.6 });
+    for (const side of [-1, 1]) {
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 9, 16), vermilion);
+      pillar.position.set(side * span, 4.5, 0);
+      gantry.add(pillar);
+      const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.7, 16), black);
+      foot.position.set(side * span, 0.35, 0);
+      gantry.add(foot);
+    }
+    const nuki = new THREE.Mesh(new THREE.BoxGeometry(span * 2 + 1.6, 0.7, 0.55), vermilion);
+    nuki.position.set(0, 6.9, 0);
+    gantry.add(nuki);
+    const kasagi = new THREE.Mesh(new THREE.BoxGeometry(span * 2 + 4.2, 0.8, 1.0), vermilion);
+    kasagi.position.set(0, 8.9, 0);
+    gantry.add(kasagi);
+    const top = new THREE.Mesh(new THREE.BoxGeometry(span * 2 + 4.8, 0.45, 1.2), black);
+    top.position.set(0, 9.5, 0);
+    gantry.add(top);
+    // Upswept tips of the top beam.
+    for (const side of [-1, 1]) {
+      const tip = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.45, 1.2), black);
+      tip.position.set(side * (span + 2.6), 9.75, 0);
+      tip.rotation.z = side * 0.28;
+      gantry.add(tip);
+    }
+    bannerY = 7.95;
+  } else {
+    for (const side of [-1, 1]) {
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.6, 8, 0.6), steel);
+      pillar.position.set(side * span, 4, 0);
+      gantry.add(pillar);
+    }
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(span * 2 + 0.6, 1.9, 0.7), steel);
+    beam.position.set(0, 7.1, 0);
+    gantry.add(beam);
   }
-  const beam = new THREE.Mesh(new THREE.BoxGeometry(span * 2 + 0.6, 1.9, 0.7), steel);
-  beam.position.set(0, 7.1, 0);
-  gantry.add(beam);
-  const banner = new THREE.Mesh(new THREE.PlaneGeometry(span * 1.6, span * 1.6 * (160 / 1024)), new THREE.MeshBasicMaterial({ map: bannerTexture() }));
+  const bannerWidth = Math.min(span * 1.6, 15);
+  const banner = new THREE.Mesh(
+    new THREE.PlaneGeometry(bannerWidth, bannerWidth * (160 / 1024)),
+    new THREE.MeshBasicMaterial({ map: bannerTexture(BANNER_SUBTITLE[opts.theme]) }),
+  );
   banner.rotation.y = Math.PI;
-  banner.position.set(0, 7.15, -0.37);
+  banner.position.set(0, bannerY, -0.37);
   gantry.add(banner);
   const backBanner = banner.clone();
   backBanner.rotation.y = 0;
@@ -216,11 +292,12 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
     const x = (k - 2) * 1.25;
     const box = new THREE.Mesh(housing, steel);
     box.position.set(x, 5.6, 0);
+    if (opts.theme === 'countryside') box.position.y = 5.9;
     gantry.add(box);
     const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.08, 0.0, 0.0) });
     const lamp = new THREE.Mesh(lightGeo, mat);
     lamp.rotation.y = Math.PI;
-    lamp.position.set(x, 5.6, -0.16);
+    lamp.position.set(x, box.position.y, -0.16);
     gantry.add(lamp);
     lightMats.push(mat);
   }
@@ -233,6 +310,11 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
         if (count > k) m.color.setRGB(9, 0.25, 0.15);
         else m.color.setRGB(0.08, 0, 0);
       });
+    },
+    setTimeOfDay(tod: TimeOfDay) {
+      if (!city) return;
+      roadMaterial.vertexColors = tod !== 'day';
+      roadMaterial.needsUpdate = true;
     },
   };
 }

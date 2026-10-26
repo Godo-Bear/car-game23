@@ -286,6 +286,28 @@ kbd {
   background: var(--accent-2);
   color: #031018;
 }
+.seg.tracks {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  width: 100%;
+}
+.seg.tracks button {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 6px;
+  text-align: center;
+}
+.seg.tracks small {
+  font-weight: 600;
+  font-size: 11px;
+  opacity: 0.8;
+}
+.track-blurb {
+  margin: 8px 2px 4px;
+  min-height: 2.4em;
+}
 .race-btn {
   width: 100%;
   margin-top: 14px;

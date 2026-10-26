@@ -50,7 +50,7 @@
     <section id="screen-home" class="screen hidden">
       <header class="brand">
         <h1>TOKYO <span>CIRCUIT</span> RACER</h1>
-        <p>Shinjuku–Bay Street Circuit · 2.48 km · Night race</p>
+        <p id="brand-subtitle">Shinjuku–Bay Street Circuit · 2.48 km · Night race</p>
       </header>
       <div class="home-grid">
         <div class="panel profile-panel">
@@ -65,7 +65,7 @@
             <div><b id="stat-races">0</b><span>Races</span></div>
             <div><b id="stat-wins">0</b><span>Wins</span></div>
             <div><b id="stat-podiums">0</b><span>Podiums</span></div>
-            <div><b id="stat-best">--</b><span>Best lap</span></div>
+            <div><b id="stat-best">--</b><span id="stat-best-label">Best lap</span></div>
           </div>
           <h3>Recent races</h3>
           <ul id="recent-races" class="recent"></ul>
@@ -77,6 +77,16 @@
         </div>
         <div class="panel setup-panel">
           <h2>Race setup</h2>
+          <div class="seg tracks" data-setting="track" role="group" aria-label="Track">
+            <button data-value="tokyo"><b>Tokyo</b><small>City</small></button>
+            <button data-value="hakone"><b>Hakone</b><small>Mountains</small></button>
+            <button data-value="sakura"><b>Sakura Valley</b><small>Countryside</small></button>
+          </div>
+          <p id="track-blurb" class="muted small-text track-blurb"></p>
+          <div class="setting">
+            <span>Time of day</span>
+            <div class="seg" data-setting="timeOfDay"><button data-value="day">Day</button><button data-value="sunset">Sunset</button><button data-value="night">Night</button></div>
+          </div>
           <div class="setting">
             <span>Laps</span>
             <div class="seg" data-setting="laps"><button data-value="1">1</button><button data-value="3">3</button><button data-value="5">5</button></div>

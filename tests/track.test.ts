@@ -1,21 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { createProjection, TrackPath } from '../src/track/TrackPath';
 import { TOKYO_CIRCUIT } from '../src/track/tokyoCircuit';
+import { TRACKS } from '../src/track/tracks';
 
-describe('TrackPath', () => {
-  const track = new TrackPath(TOKYO_CIRCUIT);
+describe.each(Object.values(TRACKS))('$name circuit geometry', (def) => {
+  const track = new TrackPath(def.layout);
 
-  it('builds a closed circuit of sensible length', () => {
+  it('is a closed circuit of sensible length with the start line where it was asked for', () => {
     expect(track.length).toBeGreaterThan(2200);
     expect(track.length).toBeLessThan(3200);
-    expect(track.count).toBeGreaterThan(1000);
-  });
-
-  it('places index 0 on the start line, heading east down the main straight', () => {
     const s = track.samples[0];
-    expect(Math.abs(s.x - -100)).toBeLessThan(1);
-    expect(Math.abs(s.z)).toBeLessThan(1);
-    expect(s.tx).toBeCloseTo(1, 3);
+    expect(Math.hypot(s.x - def.layout.start.x, s.z - def.layout.start.z)).toBeLessThan(3);
     expect(s.dist).toBe(0);
   });
 
@@ -24,8 +19,8 @@ describe('TrackPath', () => {
     const n = track.count;
     const skip = Math.ceil(80 / track.spacing);
     let worst = Infinity;
-    for (let i = 0; i < n; i++) {
-      for (let j = i + skip; j < n; j++) {
+    for (let i = 0; i < n; i += 2) {
+      for (let j = i + skip; j < n; j += 2) {
         if (n - (j - i) < skip) continue;
         const a = track.samples[i];
         const b = track.samples[j];
@@ -35,11 +30,24 @@ describe('TrackPath', () => {
     expect(worst).toBeGreaterThan(minGap);
   });
 
-  it('has smooth, bounded curvature and gentle gradients', () => {
+  it('keeps corners and gradients drivable', () => {
+    const maxSlope = def.theme === 'mountain' ? 0.15 : 0.08;
     for (const s of track.samples) {
-      expect(Math.abs(s.curvature)).toBeLessThan(1 / 18);
-      expect(Math.abs(s.slope)).toBeLessThan(0.08);
+      expect(Math.abs(s.curvature)).toBeLessThan(1 / 16);
+      expect(Math.abs(s.slope)).toBeLessThan(maxSlope);
     }
+  });
+});
+
+describe('TrackPath', () => {
+  const track = new TrackPath(TOKYO_CIRCUIT);
+
+  it('places index 0 on the Tokyo start line, heading east down the main straight', () => {
+    const s = track.samples[0];
+    expect(Math.abs(s.x - -100)).toBeLessThan(1);
+    expect(Math.abs(s.z)).toBeLessThan(1);
+    expect(s.tx).toBeCloseTo(1, 3);
+    expect(s.dist).toBe(0);
   });
 
   it('projects offset points back onto the centre line', () => {

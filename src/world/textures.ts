@@ -234,7 +234,40 @@ export function billboardTexture(index: number): THREE.Texture {
   return toTexture(c);
 }
 
-export function bannerTexture(): THREE.Texture {
+/**
+ * Two-lane rural road: solid white edge lines and either a yellow no-overtaking centre line
+ * (mountain pass) or a dashed white one (countryside).
+ */
+export function ruralAsphaltTexture(rng: () => number, centre: 'yellow' | 'dashed'): THREE.Texture {
+  const [c, g] = canvas(512, 512);
+  g.fillStyle = '#34353a';
+  g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 9000; i++) {
+    const v = 36 + rng() * 44;
+    g.fillStyle = `rgba(${v},${v},${v + 3},${0.25 + rng() * 0.35})`;
+    g.fillRect(rng() * 512, rng() * 512, 1 + rng() * 2, 1 + rng() * 2);
+  }
+  // Patched/repaired strips give it a lived-in look.
+  for (let i = 0; i < 6; i++) {
+    g.fillStyle = `rgba(20,20,22,${0.15 + rng() * 0.15})`;
+    g.fillRect(rng() * 400, rng() * 512, 40 + rng() * 120, 6 + rng() * 30);
+  }
+  const px = 512 / 14;
+  g.fillStyle = '#e6e6de';
+  g.fillRect(0.3 * px, 0, 0.16 * px, 512);
+  g.fillRect(512 - 0.46 * px, 0, 0.16 * px, 512);
+  if (centre === 'yellow') {
+    g.fillStyle = '#e8b417';
+    g.fillRect(256 - 0.22 * px, 0, 0.14 * px, 512);
+    g.fillRect(256 + 0.08 * px, 0, 0.14 * px, 512);
+  } else {
+    g.fillStyle = '#e6e6de';
+    g.fillRect(256 - 0.07 * px, 0, 0.14 * px, (512 / ROAD_TEXTURE_LENGTH) * 5);
+  }
+  return toTexture(c, true, true);
+}
+
+export function bannerTexture(subtitle = '東京 ストリート サーキット'): THREE.Texture {
   const [c, g] = canvas(1024, 160);
   g.fillStyle = '#0b0b12';
   g.fillRect(0, 0, 1024, 160);
@@ -248,67 +281,8 @@ export function bannerTexture(): THREE.Texture {
   g.fillText('START  ·  FINISH', 512, 70);
   g.font = `700 30px ${SIGN_FONT}`;
   g.fillStyle = '#ffccd2';
-  g.fillText('東京 ストリート サーキット', 512, 128);
+  g.fillText(subtitle, 512, 128);
   return toTexture(c);
-}
-
-/** Equirectangular night sky with city glow, stars, a moon and a faint Mt. Fuji silhouette. */
-export function skyTexture(rng: () => number): THREE.Texture {
-  const [c, g] = canvas(2048, 1024);
-  const grad = g.createLinearGradient(0, 0, 0, 1024);
-  grad.addColorStop(0, '#020309');
-  grad.addColorStop(0.32, '#0a0c22');
-  grad.addColorStop(0.44, '#241a44');
-  grad.addColorStop(0.5, '#5a2c5c');
-  grad.addColorStop(0.52, '#1a1224');
-  grad.addColorStop(1, '#07060b');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 2048, 1024);
-  for (let i = 0; i < 900; i++) {
-    const y = rng() * 420;
-    const a = (1 - y / 420) * (0.3 + rng() * 0.7);
-    g.fillStyle = `rgba(255,255,255,${a})`;
-    const s = rng() < 0.05 ? 2 : 1;
-    g.fillRect(rng() * 2048, y, s, s);
-  }
-  // Moon
-  // three.js equirect: u = atan2(z, x) / 2PI + 0.5, so u = 0.75 looks south (+z).
-  const mx = 1500;
-  const my = 380;
-  const halo = g.createRadialGradient(mx, my, 0, mx, my, 90);
-  halo.addColorStop(0, 'rgba(220,230,255,0.35)');
-  halo.addColorStop(1, 'rgba(220,230,255,0)');
-  g.fillStyle = halo;
-  g.fillRect(mx - 90, my - 90, 180, 180);
-  g.fillStyle = '#eef2ff';
-  g.beginPath();
-  g.arc(mx, my, 16, 0, Math.PI * 2);
-  g.fill();
-  // Mt. Fuji to the south-west (u = 0.875), visible from the elevated expressway.
-  const fx = 1792;
-  const base = 512;
-  g.fillStyle = '#1d1630';
-  g.beginPath();
-  g.moveTo(fx - 260, base);
-  g.lineTo(fx - 40, base - 70);
-  g.lineTo(fx + 40, base - 70);
-  g.lineTo(fx + 260, base);
-  g.closePath();
-  g.fill();
-  g.fillStyle = 'rgba(200,205,230,0.45)';
-  g.beginPath();
-  g.moveTo(fx - 70, base - 52);
-  g.lineTo(fx - 40, base - 70);
-  g.lineTo(fx + 40, base - 70);
-  g.lineTo(fx + 70, base - 52);
-  g.lineTo(fx + 30, base - 58);
-  g.lineTo(fx, base - 50);
-  g.lineTo(fx - 30, base - 58);
-  g.closePath();
-  g.fill();
-  const t = toTexture(c);
-  t.mapping = THREE.EquirectangularReflectionMapping;
-  return t;
 }
 
 export function glowTexture(): THREE.Texture {

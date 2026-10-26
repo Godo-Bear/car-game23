@@ -11,7 +11,7 @@ interface GuestData {
   recent: RaceRecord[];
 }
 
-const emptyStats = (): CareerStats => ({ races: 0, wins: 0, podiums: 0, bestLap: null, totalLaps: 0 });
+const emptyStats = (): CareerStats => ({ races: 0, wins: 0, podiums: 0, bestLap: null, bestLaps: {}, totalLaps: 0 });
 
 export class ApiError extends Error {
   constructor(
@@ -154,6 +154,8 @@ export class AccountService {
     if (result.position === 1) s.wins++;
     if (result.position <= 3) s.podiums++;
     if (result.bestLap !== null && (s.bestLap === null || result.bestLap < s.bestLap)) s.bestLap = result.bestLap;
+    const trackBest = s.bestLaps[result.track];
+    if (result.bestLap !== null && (trackBest === undefined || result.bestLap < trackBest)) s.bestLaps[result.track] = result.bestLap;
     s.totalLaps += result.laps;
     this.guest.recent = [{ ...result, createdAt: Math.floor(Date.now() / 1000) }, ...this.guest.recent].slice(0, 5);
     saveGuest(this.guest);
@@ -167,7 +169,11 @@ function loadGuest(): GuestData {
     const raw = localStorage.getItem(GUEST_KEY);
     if (raw) {
       const data = JSON.parse(raw) as Partial<GuestData>;
-      return { stats: { ...emptyStats(), ...data.stats }, settings: data.settings ?? {}, recent: data.recent ?? [] };
+      const stats = { ...emptyStats(), ...data.stats };
+      // Guest results from before multiple circuits were all on the Tokyo circuit.
+      if (stats.bestLap !== null && stats.bestLaps.tokyo === undefined && !data.stats?.bestLaps) stats.bestLaps = { tokyo: stats.bestLap };
+      const recent = (data.recent ?? []).map((r) => ({ ...r, track: r.track ?? 'tokyo' }));
+      return { stats, settings: data.settings ?? {}, recent };
     }
   } catch {
     // Storage blocked (private mode etc.) - fall through to a fresh profile.

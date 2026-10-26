@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { TimeOfDay } from '../../shared/api';
 import { damp, lerp, wrapAngle } from '../core/math';
 import type { SimCar } from '../race/RaceSimulation';
 
@@ -245,6 +246,7 @@ export class CarModel {
     const add = (geo: THREE.BufferGeometry, mat: THREE.Material, parent: THREE.Object3D, x = 0, y = 0, z = 0) => {
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(x, y, z);
+      mesh.castShadow = !(mat instanceof THREE.MeshBasicMaterial);
       parent.add(mesh);
       return mesh;
     };
@@ -360,7 +362,10 @@ export class CarModel {
     this.reverseMat.color.setRGB(p.gear < 0 ? 4 : 0.2, p.gear < 0 ? 4 : 0.2, p.gear < 0 ? 4 : 0.2);
   }
 
-  setBeamVisible(v: boolean): void {
-    this.beam.visible = v;
+  /** Headlight pools on the road from dusk; brighter on unlit country roads. */
+  setLighting(tod: TimeOfDay, unlitRoads: boolean): void {
+    const material = this.beam.material as THREE.MeshBasicMaterial;
+    this.beam.visible = tod !== 'day';
+    material.opacity = tod === 'sunset' ? 0.07 : unlitRoads ? 0.22 : 0.13;
   }
 }

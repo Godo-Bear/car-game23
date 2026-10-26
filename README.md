@@ -1,20 +1,27 @@
 # Tokyo Circuit Racer
 
-A Forza-inspired 3D street racing game set on a night-time Tokyo circuit, running in the browser
-and hosted on Cloudflare.
+A Forza-inspired 3D racing game set in Japan — city streets, a mountain pass and cherry-blossom
+countryside, by day, at sunset or at night — running in the browser and hosted on Cloudflare.
 
 - **Core racing loop:** standing start with F1-style start lights, lap counting, live positions, lap
   timing, 3–7 AI opponents, results screen.
 - **Vehicle physics:** semi-simulation bicycle model — tyre slip, weight transfer, 6-speed automatic
   gearbox, handbrake drifting with skid marks and tyre smoke, stability control, slipstream, and
   crashes that cost real speed.
-- **Tokyo:** a 2.48 km *Shinjuku–Bay Street Circuit* — main straight under neon towers, a Shibuya
-  scramble chicane, an elevated Shuto-style expressway along the bay, and Tokyo Tower, Skytree and
-  Rainbow Bridge on the skyline.
+- **Three circuits:**
+  - **Tokyo** — 2.48 km *Shinjuku–Bay Street Circuit*: neon towers, a Shibuya scramble chicane, an
+    elevated Shuto-style expressway, Tokyo Tower, Skytree and Rainbow Bridge.
+  - **Hakone** — 2.87 km mountain pass (touge): a ladder of hairpin switchbacks climbing through
+    cedar forest, a ridge road and a long descent to the lake with its floating torii; guardrails
+    and hairpin chevrons.
+  - **Sakura Valley** — 2.59 km fast countryside circuit through rolling grassland, cherry-blossom
+    avenues with falling petals, a lake with a five-storey pagoda, and a torii gate over the start.
+- **Time of day:** day, sunset or night on any circuit — sky, sun position, shadows, fog, street
+  lamps, lit windows, neon and headlights all change (Mt. Fuji is on the horizon everywhere).
 - **HUD:** speed (KM/H), gear + RPM, position, lap, current/last/best lap time, standings, minimap.
-- **Accounts:** log in / create an account from the homescreen; career stats, recent races and race
-  settings are saved to your account (Cloudflare D1). Without an account, progress is kept as a
-  guest profile on the device.
+- **Accounts:** log in / create an account from the homescreen; career stats, best lap per circuit,
+  recent races and race settings are saved to your account (Cloudflare D1). Without an account,
+  progress is kept as a guest profile on the device.
 
 ## Engine / framework choice
 
@@ -39,7 +46,9 @@ runs at a fixed 120 Hz, and is covered by unit tests — including a headless 8-
 │   ├── styles.css              # UI styling
 │   ├── game/Game.ts            # State machine (home → countdown → racing → finished), main loop, rendering
 │   ├── track/
-│   │   ├── tokyoCircuit.ts     # The circuit layout (corner points, radii, elevation)
+│   │   ├── tracks.ts           # Circuit registry (theme, names)
+│   │   ├── tokyoCircuit.ts     # Tokyo layout (corner points, radii, elevation)
+│   │   ├── circuits.ts         # Hakone and Sakura Valley layouts
 │   │   ├── TrackPath.ts        # Centre-line sampling, projection (lap distance / lateral offset)
 │   │   └── TrackMesh.ts        # Road, barriers, catch fences, kerbs, expressway deck, start gantry
 │   ├── physics/
@@ -52,7 +61,12 @@ runs at a fixed 120 Hz, and is covered by unit tests — including a headless 8-
 │   │   ├── RaceManager.ts      # Laps, lap times, positions (reverse-proof)
 │   │   └── RaceSimulation.ts   # Fixed-step world update shared by game and tests
 │   ├── vehicles/CarModel.ts    # Procedural car mesh: spinning/steering wheels, body roll, lights
-│   ├── world/                  # Procedural Tokyo: buildings, neon signs, landmarks, sky, textures
+│   ├── world/
+│   │   ├── World.ts            # Builds the scenery for a circuit
+│   │   ├── City.ts             # Procedural Tokyo: buildings, neon, lamps, landmarks
+│   │   ├── Nature.ts           # Terrain, lakes, forests, cherry blossoms, petals, pagoda, Fuji
+│   │   ├── Lighting.ts         # Sky, sun/moon, fog, shadows and reflections per time of day
+│   │   └── textures.ts         # Canvas-generated textures
 │   ├── camera/ChaseCamera.ts   # Chase / far chase / bonnet cams + homescreen orbit
 │   ├── core/                   # Input (keyboard + gamepad), synthesised audio, math
 │   ├── ui/                     # HUD, minimap, menus
@@ -101,6 +115,6 @@ GitHub): build command `npm run build`, deploy command `npx wrangler deploy`, Wo
 
 ## 3D assets
 
-Everything — cars, buildings, signs, landmarks, textures, sound — is generated in code, so the game
-has no external asset files and no licensing to track. `CarModel` and `City` are isolated so
+Everything — cars, buildings, terrain, trees, signs, landmarks, sky, textures, sound — is generated
+in code, so the game has no external asset files and no licensing to track. `CarModel` and `City` are isolated so
 real glTF models (e.g. licensed Tokyo buildings or vehicles) can be swapped in later.
