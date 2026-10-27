@@ -130,11 +130,11 @@
             <label class="number-pick">Race number <input type="number" id="car-number" min="1" max="99" inputmode="numeric" /></label>
           </section>
           <section data-cpane="plate" class="hidden">
-            <div class="plate-row">
-              <label>Region <select id="plate-region"></select></label>
-              <label>Kana <select id="plate-kana"></select></label>
-              <label>Number <input type="number" id="plate-number" min="1" max="9999" inputmode="numeric" /></label>
-            </div>
+            <label class="plate-pick"
+              >Your plate
+              <input type="text" id="plate-text" autocomplete="off" spellcheck="false" autocapitalize="characters" placeholder="TOKYO" />
+            </label>
+            <p class="muted small-text">Up to 8 letters, numbers, spaces or dashes.</p>
             <button type="button" id="plate-random" class="secondary">🎲 Random plate</button>
           </section>
           <div class="row">

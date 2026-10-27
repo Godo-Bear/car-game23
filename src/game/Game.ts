@@ -17,8 +17,8 @@ import { Hud } from '../ui/Hud';
 import { Minimap } from '../ui/Minimap';
 import { type HubPanel, Screens } from '../ui/Screens';
 import { CarModel } from '../vehicles/CarModel';
-import { AI_LIVERIES, CARS, carSetup, randomPlate } from '../vehicles/cars';
-import { loadCarAsset, onCarAssetLoaded, preloadCarAssets } from '../vehicles/importedCars';
+import { AI_LIVERIES, aiField, CARS, carSetup, randomPlate } from '../vehicles/cars';
+import { loadCarAsset, loadCarAssets, onCarAssetLoaded } from '../vehicles/importedCars';
 import { Sparks } from '../vehicles/Sparks';
 import { type EffectsCar, TireEffects } from '../vehicles/TireEffects';
 import { Lighting } from '../world/Lighting';
@@ -146,7 +146,7 @@ export class Game {
     await this.goHome(true);
     // Racing lines for the other circuits are worked out in the background.
     this.loader.prefetchAll();
-    preloadCarAssets();
+    void loadCarAssets();
     setLoading(null);
     this.pipeline.renderer.setAnimationLoop((time) => this.frame(time));
   }
@@ -272,6 +272,9 @@ export class Game {
   private createSimulation(settings: PlayerSettings, home = false): void {
     const total = settings.opponents + 1;
     const car = CARS[settings.car];
+    const seed = Math.floor(Math.random() * 1e6);
+    // A mixed field: the AI drive every car in the garage (a few the same as the player's).
+    const field = aiField(settings.car, settings.opponents, seed);
     this.sim = new RaceSimulation(
       this.track,
       {
@@ -281,25 +284,26 @@ export class Game {
         playerAssist: settings.assists ? 0.7 : 0.15,
         // Start mid-pack so there is someone to race either way (at the front for the showroom).
         playerGridSlot: home ? 0 : Math.min(total - 1, Math.floor(total / 2) + 1),
-        seed: Math.floor(Math.random() * 1e6),
+        seed,
         carSpec: car.spec,
         aiGrip: car.aiGrip,
+        aiCars: field.map((f) => ({ spec: f.car.spec, aiGrip: f.car.aiGrip, power: f.power })),
       },
       this.line,
     );
-    // One-make race: everyone drives the player's car; the player has model 0, AI the rest.
     while (this.carModels.length < total) {
       const model = new CarModel(car, car.setup);
       this.carModels.push(model);
       this.scene.add(model.root);
     }
+    // AI cars come in grid order, as the simulation hands them out.
     let ai = 0;
     this.sim.cars.forEach((c, i) => {
-      const model = this.carModels[i];
+      const def = c.isPlayer ? car : field[ai].car;
       const setup = c.isPlayer
         ? carSetup(settings.car, settings.garage)
         : { finish: 'metallic' as const, plate: randomPlate(i + 1), ...AI_LIVERIES[ai++ % AI_LIVERIES.length] };
-      model.build(car, setup);
+      this.carModels[i].build(def, setup);
       this.colors[c.id] = setup.paint;
     });
     this.carModels.forEach((m, i) => {
@@ -356,7 +360,7 @@ export class Game {
     this.screens.hideAll();
     this.feedback.quiet();
     const fresh = !this.worlds.has(settings.track);
-    await Promise.all([this.loadTrack(settings.track), loadCarAsset(settings.car)]);
+    await Promise.all([this.loadTrack(settings.track), loadCarAssets()]);
     this.applyTimeOfDay(settings.timeOfDay);
     this.createSimulation(settings);
     if (fresh) await this.compile();

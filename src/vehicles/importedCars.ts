@@ -179,9 +179,9 @@ export function loadCarAsset(id: CarId): Promise<CarAsset | null> {
   return promise;
 }
 
-/** Start loading every car model in the background. */
-export function preloadCarAssets(): void {
-  for (const id of Object.keys(CAR_MODELS) as CarId[]) void loadCarAsset(id);
+/** Load every car model (the race field can include any car). */
+export async function loadCarAssets(): Promise<void> {
+  await Promise.all((Object.keys(CAR_MODELS) as CarId[]).map(loadCarAsset));
 }
 
 interface Piece {

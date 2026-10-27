@@ -1111,31 +1111,31 @@ input {
   pointer-events: none;
 }
 
-.plate-row {
-  display: grid;
-  grid-template-columns: 1.4fr 0.8fr 1fr;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-.plate-row label {
+.plate-pick {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   font-size: 12px;
   color: var(--muted);
 }
-.plate-row select,
-.plate-row input {
-  font: inherit;
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid var(--panel-border);
+/* Looks like the plate it makes. */
+.plate-pick input {
+  font:
+    700 26px / 1.2 'Arial Narrow',
+    'Roboto Condensed',
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-transform: uppercase;
+  color: #111317;
+  background: #f4f4ee;
+  border: 3px solid #1b1d22;
   border-radius: 8px;
-  padding: 8px;
+  padding: 6px 10px;
   width: 100%;
+  max-width: 280px;
 }
-.plate-row option {
-  color: #111;
+.plate-pick + p {
+  margin: 6px 0 10px;
 }

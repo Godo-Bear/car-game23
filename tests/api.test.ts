@@ -5,19 +5,24 @@ const base = { paint: '#1e88ff', finish: 'metallic', pattern: 'stripes', accent:
 
 describe('car setup validation', () => {
   it('accepts a full setup with a plate', () => {
-    const plate = { region: '品川', kana: 'さ', number: 8686 };
-    expect(cleanCarSetup({ ...base, plate })).toEqual({ ...base, plate });
+    expect(cleanCarSetup({ ...base, plate: 'JAYDEN1' })).toEqual({ ...base, plate: 'JAYDEN1' });
   });
 
   it('keeps paint jobs saved before plates existed, with the default plate', () => {
     expect(cleanCarSetup(base)?.plate).toEqual(DEFAULT_PLATE);
   });
 
-  it('rejects plates that could not exist', () => {
-    expect(cleanPlate({ region: '東京', kana: 'さ', number: 1 })).toBeNull(); // not a plate region
-    expect(cleanPlate({ region: '品川', kana: 'お', number: 1 })).toBeNull(); // never issued
-    expect(cleanPlate({ region: '品川', kana: 'さ', number: 10000 })).toBeNull();
-    expect(cleanPlate({ region: '品川', kana: 'さ', number: 0 })).toBeNull();
-    expect(cleanPlate({ region: '品川', kana: 'さ', number: 12.5 })).toBeNull();
+  it('tidies typed plates', () => {
+    expect(cleanPlate('  jayden   1 ')).toBe('JAYDEN 1');
+    expect(cleanPlate('go-fast!!')).toBe('GO-FAST');
+    expect(cleanPlate('ABCDEFGHIJK')).toBe('ABCDEFGH'); // 8 characters at most
+  });
+
+  it('rejects plates with nothing usable', () => {
+    expect(cleanPlate('')).toBeNull();
+    expect(cleanPlate('!?*')).toBeNull();
+    expect(cleanPlate(1234)).toBeNull();
+    // A Japanese plate saved by the previous version: the default takes its place.
+    expect(cleanCarSetup({ ...base, plate: { region: '品川', kana: 'さ', number: 1 } })?.plate).toBe(DEFAULT_PLATE);
   });
 });

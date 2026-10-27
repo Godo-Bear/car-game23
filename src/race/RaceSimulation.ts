@@ -18,10 +18,19 @@ export interface RaceSettings {
   /** Player's stability-control strength, 0..1. */
   playerAssist: number;
   seed: number;
-  /** The car everyone drives (one-make race). */
+  /** The player's car. */
   carSpec: VehicleSpec;
   /** AI cornering speed scale for that car. */
   aiGrip: number;
+  /** What each AI driver races, in grid order; anyone left over drives the player's car. */
+  aiCars: AICar[];
+}
+
+export interface AICar {
+  spec: VehicleSpec;
+  aiGrip: number;
+  /** Engine scale on top of the difficulty's. */
+  power: number;
 }
 
 export const DEFAULT_SETTINGS: RaceSettings = {
@@ -33,6 +42,7 @@ export const DEFAULT_SETTINGS: RaceSettings = {
   seed: 23,
   carSpec: SPORTS_CAR,
   aiGrip: 1,
+  aiCars: [],
 };
 
 /** AI tuning per difficulty: [min, max] cornering grip (g), braking (m/s^2), engine power scale. */
@@ -120,10 +130,11 @@ export class RaceSimulation {
     let aiIndex = 0;
     for (let slot = 0; slot < total; slot++) {
       const isPlayer = slot === playerSlot;
-      const physics = new VehiclePhysics(s.carSpec);
+      const car = (!isPlayer && s.aiCars[aiIndex]) || { spec: s.carSpec, aiGrip: s.aiGrip, power: 1 };
+      const physics = new VehiclePhysics(car.spec);
       // Pace is shuffled across the grid so quicker drivers have to work their way forward.
       const profile: AIProfile = {
-        cornerGrip: (tuning.grip[0] + (tuning.grip[1] - tuning.grip[0]) * (isPlayer ? 0.5 : rng())) * s.aiGrip,
+        cornerGrip: (tuning.grip[0] + (tuning.grip[1] - tuning.grip[0]) * (isPlayer ? 0.5 : rng())) * car.aiGrip,
         brakeDecel: tuning.brake,
         laneBias: (rng() - 0.5) * 1.2,
         aggression: 0.4 + rng() * 0.6,
@@ -132,7 +143,7 @@ export class RaceSimulation {
         physics.stabilityAssist = s.playerAssist;
       } else {
         physics.stabilityAssist = 0.9;
-        physics.powerScale = tuning.power;
+        physics.powerScale = tuning.power * car.power;
       }
       const name = isPlayer ? 'YOU' : DRIVER_NAMES[aiIndex % DRIVER_NAMES.length];
       if (!isPlayer) aiIndex++;

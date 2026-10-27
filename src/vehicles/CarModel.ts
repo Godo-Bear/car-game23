@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { CarSetup, Plate, TimeOfDay } from '../../shared/api';
+import type { CarSetup, TimeOfDay } from '../../shared/api';
 import { damp, lerp, wrapAngle } from '../core/math';
 import type { SimCar } from '../race/RaceSimulation';
 import type { BodyDef, CarDef } from './cars';
@@ -332,38 +332,30 @@ function numberTexture(num: number, ring: string): THREE.Texture {
   return tex;
 }
 
-/** A Japanese private-car plate: white with green characters. */
-function plateTexture(plate: Plate, classNo: string): THREE.Texture {
+/** A personalised plate: black characters on white, squeezed to fit like real plate lettering. */
+function plateTexture(text: string): THREE.Texture {
   const c = document.createElement('canvas');
   c.width = 256;
   c.height = 128;
   const g = c.getContext('2d')!;
-  g.fillStyle = '#f3f3ec';
+  g.fillStyle = '#f4f4ee';
   g.beginPath();
   g.roundRect(2, 2, 252, 124, 10);
   g.fill();
-  g.strokeStyle = '#0b6b3a';
-  g.lineWidth = 4;
+  g.strokeStyle = '#1b1d22';
+  g.lineWidth = 5;
   g.stroke();
   g.fillStyle = '#b8b8b0';
   for (const x of [46, 210]) {
     g.beginPath();
-    g.arc(x, 18, 5, 0, Math.PI * 2);
+    g.arc(x, 16, 5, 0, Math.PI * 2);
     g.fill();
   }
-  const font = '"Hiragino Sans", "Yu Gothic", "Meiryo", "Noto Sans JP", "Noto Sans CJK JP", sans-serif';
-  g.fillStyle = '#0b6b3a';
+  g.fillStyle = '#111317';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.font = `bold 28px ${font}`;
-  g.fillText(`${plate.region} ${classNo}`, 128, 30);
-  g.font = `bold 30px ${font}`;
-  g.fillText(plate.kana, 32, 88);
-  // Four places: "12-34", or dots in place of leading zeros ("・・86").
-  const n = String(plate.number);
-  const text = plate.number >= 1000 ? `${n.slice(0, 2)}-${n.slice(2)}` : '・'.repeat(4 - n.length) + n;
-  g.font = `bold 62px ${font}`;
-  g.fillText(text, 150, 88);
+  g.font = 'bold 78px "Arial Narrow", "Roboto Condensed", system-ui, sans-serif';
+  g.fillText(text, 128, 72, 224);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
@@ -383,7 +375,6 @@ function getParts() {
     taillight: new THREE.BoxGeometry(1, 0.06, 0.05),
     box: new THREE.BoxGeometry(1, 1, 1),
     number: new THREE.PlaneGeometry(0.58, 0.58),
-    // Japanese plates are 330 x 165 mm.
     plate: new THREE.PlaneGeometry(0.33, 0.165),
     shadow,
     beam,
@@ -745,7 +736,7 @@ export class CarModel {
       brake: this.brakeMat,
       reverse: this.reverseMat,
       number: own(new THREE.MeshStandardMaterial({ map: own(numberTexture(setup.number, setup.accent)), roughness: 0.5, transparent: true })),
-      plate: own(new THREE.MeshStandardMaterial({ map: own(plateTexture(setup.plate, def.id === 'hatch' ? '500' : '300')), roughness: 0.45, metalness: 0.15 })),
+      plate: own(new THREE.MeshStandardMaterial({ map: own(plateTexture(setup.plate)), roughness: 0.45, metalness: 0.15 })),
       trim: m.trim,
       chrome: m.chrome,
     };
@@ -798,9 +789,7 @@ export class CarModel {
     };
     for (const part of asset.body) this.addMesh(part.geometry, part.material ?? materials[part.role as Exclude<PartRole, 'other'>], this.body);
 
-    const plate = own(
-      new THREE.MeshStandardMaterial({ map: own(plateTexture(setup.plate, def.id === 'hatch' ? '500' : '300')), roughness: 0.45, metalness: 0.15 }),
-    );
+    const plate = own(new THREE.MeshStandardMaterial({ map: own(plateTexture(setup.plate)), roughness: 0.45, metalness: 0.15 }));
     asset.plates.forEach((at, i) => {
       const mesh = new THREE.Mesh(getParts().plate, plate);
       mesh.position.copy(at);

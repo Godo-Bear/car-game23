@@ -4,7 +4,7 @@ import { formatTime, RaceManager } from '../src/race/RaceManager';
 import { RaceSimulation } from '../src/race/RaceSimulation';
 import { TOKYO_CIRCUIT } from '../src/track/tokyoCircuit';
 import { TRACKS } from '../src/track/tracks';
-import { CARS } from '../src/vehicles/cars';
+import { aiField, CARS } from '../src/vehicles/cars';
 
 const racers = [
   { id: 0, name: 'A', isPlayer: true },
@@ -87,6 +87,42 @@ describe.each(Object.values(TRACKS))('RaceSimulation on $name (headless full rac
 describe.each(Object.values(CARS))('One-make race in the $name', (car) => {
   it('lets the AI drive this car cleanly round Sakura Valley', () => {
     const sim = new RaceSimulation(TRACKS.sakura.layout, { laps: 1, opponents: 5, carSpec: car.spec, aiGrip: car.aiGrip, seed: 7 });
+    sim.player.autopilot = true;
+    let respawns = 0;
+    const respawn = sim.respawn.bind(sim);
+    sim.respawn = (c) => {
+      respawns++;
+      respawn(c);
+    };
+    sim.startRace();
+    const input = neutralControls();
+    while (sim.race.raceTime < 150 && !sim.race.racers.every((r) => r.finished)) sim.step(input);
+    expect(sim.race.racers.every((r) => r.finished)).toBe(true);
+    expect(respawns).toBe(0);
+  }, 30_000);
+});
+
+describe('Mixed field', () => {
+  it('puts every car on the grid, a few matching the player, with engines evened out', () => {
+    const field = aiField('hatch', 7, 11);
+    expect(new Set(field.map((f) => f.car.id))).toEqual(new Set(Object.keys(CARS)));
+    expect(field.filter((f) => f.car.id === 'hatch').length).toBeGreaterThanOrEqual(1);
+    for (const f of field) expect(f.power).toBeGreaterThanOrEqual(0.9);
+    // The hypercar is slowed toward the hatch's pace; another hatch is left alone.
+    expect(field.find((f) => f.car.id === 'super')!.power).toBeLessThan(1);
+    expect(field.find((f) => f.car.id === 'hatch')!.power).toBe(1);
+  });
+
+  it('lets the AI race every car together round Sakura Valley', () => {
+    const field = aiField('gt', 7, 11);
+    const sim = new RaceSimulation(TRACKS.sakura.layout, {
+      laps: 1,
+      opponents: 7,
+      carSpec: CARS.gt.spec,
+      aiGrip: CARS.gt.aiGrip,
+      aiCars: field.map((f) => ({ spec: f.car.spec, aiGrip: f.car.aiGrip, power: f.power })),
+      seed: 11,
+    });
     sim.player.autopilot = true;
     let respawns = 0;
     const respawn = sim.respawn.bind(sim);

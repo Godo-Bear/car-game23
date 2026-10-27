@@ -1,4 +1,4 @@
-import { CAR_IDS, type CarSetup, type LiveryPattern, type PaintFinish, PLATE_KANA, PLATE_REGIONS, type PlayerSettings } from '../../shared/api';
+import { CAR_IDS, type CarSetup, cleanPlate, type LiveryPattern, type PaintFinish, PLATE_LENGTH, type PlayerSettings } from '../../shared/api';
 import { CARS, carSetup, PAINT_SWATCHES, RIM_SWATCHES, randomPlate } from '../vehicles/cars';
 import { CAR_MODELS } from '../vehicles/importedCars';
 
@@ -22,8 +22,7 @@ export class GarageScreen {
     this.buildSwatches('paint', 'sw-paint', PAINT_SWATCHES);
     this.buildSwatches('accent', 'sw-accent', ['#ffffff', '#111214', ...PAINT_SWATCHES.filter((c) => c !== '#f5f5f5' && c !== '#111214').slice(0, 9)]);
     this.buildSwatches('rims', 'sw-rims', RIM_SWATCHES);
-    $('plate-region').replaceChildren(...PLATE_REGIONS.map((r) => new Option(`${r.id}  ${r.label}`, r.id)));
-    $('plate-kana').replaceChildren(...PLATE_KANA.map((k) => new Option(k, k)));
+    $<HTMLInputElement>('plate-text').maxLength = PLATE_LENGTH;
     this.wire();
   }
 
@@ -83,10 +82,8 @@ export class GarageScreen {
     this.markSeg('seg-pattern', setup.pattern);
     const num = $<HTMLInputElement>('car-number');
     if (document.activeElement !== num) num.value = String(setup.number);
-    $<HTMLSelectElement>('plate-region').value = setup.plate.region;
-    $<HTMLSelectElement>('plate-kana').value = setup.plate.kana;
-    const plateNum = $<HTMLInputElement>('plate-number');
-    if (document.activeElement !== plateNum) plateNum.value = String(setup.plate.number);
+    const plate = $<HTMLInputElement>('plate-text');
+    if (document.activeElement !== plate) plate.value = setup.plate;
   }
 
   private markSeg(id: string, value: string): void {
@@ -142,13 +139,13 @@ export class GarageScreen {
       if (n >= 1 && n <= 99) this.customise({ number: n });
       else this.render();
     });
-    $('plate-region').addEventListener('change', (e) => this.customise({ plate: { ...this.setup.plate, region: (e.target as HTMLSelectElement).value } }));
-    $('plate-kana').addEventListener('change', (e) => this.customise({ plate: { ...this.setup.plate, kana: (e.target as HTMLSelectElement).value } }));
-    $<HTMLInputElement>('plate-number').addEventListener('change', (e) => {
-      const n = Math.round(Number((e.target as HTMLInputElement).value));
-      if (n >= 1 && n <= 9999) this.customise({ plate: { ...this.setup.plate, number: n } });
-      else this.render();
+    // The car updates as you type; leaving the box shows the tidied text.
+    const plate = $<HTMLInputElement>('plate-text');
+    plate.addEventListener('input', () => {
+      const text = cleanPlate(plate.value);
+      if (text && text !== this.setup.plate) this.customise({ plate: text });
     });
+    plate.addEventListener('change', () => this.render());
     $('plate-random').addEventListener('click', () => this.customise({ plate: randomPlate(Math.random() * 1000) }));
     $('btn-livery-reset').addEventListener('click', () => {
       const s = this.get();

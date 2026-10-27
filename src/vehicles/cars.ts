@@ -1,10 +1,8 @@
-import { type CarId, type CarSetup, PLATE_KANA, PLATE_REGIONS, type Plate } from '../../shared/api';
+import { CAR_IDS, type CarId, type CarSetup } from '../../shared/api';
+import { clamp, createRng } from '../core/math';
 import { SPORTS_CAR, type VehicleSpec } from '../physics/VehiclePhysics';
 
-/**
- * The garage: every drivable car, its handling and its body shape. All cars in a race are the
- * same model (a one-make series), so picking a car changes how the whole race drives.
- */
+/** The garage: every drivable car, its handling and its body shape. */
 
 export type WingStyle = 'none' | 'lip' | 'roof' | 'gt';
 
@@ -96,7 +94,7 @@ export const CARS: Record<CarId, CarDef> = {
       accent: '#ffffff',
       rims: '#d6dae2',
       number: 23,
-      plate: { region: '品川', kana: 'さ', number: 2323 },
+      plate: 'KAZE GT',
     },
   },
   hatch: {
@@ -160,7 +158,7 @@ export const CARS: Record<CarId, CarDef> = {
       accent: '#e8202a',
       rims: '#23262b',
       number: 8,
-      plate: { region: '練馬', kana: 'た', number: 88 },
+      plate: 'SPYDER',
     },
   },
   rally: {
@@ -226,7 +224,7 @@ export const CARS: Record<CarId, CarDef> = {
       accent: '#ffd400',
       rims: '#ffd400',
       number: 5,
-      plate: { region: '富士山', kana: 'ら', number: 555 },
+      plate: 'YAMA R4',
     },
   },
   drift: {
@@ -287,7 +285,7 @@ export const CARS: Record<CarId, CarDef> = {
       accent: '#1a1a1a',
       rims: '#c9a24a',
       number: 86,
-      plate: { region: '湘南', kana: 'は', number: 8686 },
+      plate: 'ONI 86R',
     },
   },
   super: {
@@ -354,7 +352,7 @@ export const CARS: Record<CarId, CarDef> = {
       accent: '#111214',
       rims: '#111214',
       number: 1,
-      plate: { region: '品川', kana: 'す', number: 1 },
+      plate: 'RAIJIN',
     },
   },
 };
@@ -378,7 +376,7 @@ export const PAINT_SWATCHES = [
 ];
 export const RIM_SWATCHES = ['#d6dae2', '#23262b', '#c9a24a', '#ffd400', '#f5f5f5', '#e8202a', '#8a5a2b'];
 
-/** Livery colours for AI cars (one-make series: same car, team colours). */
+/** Livery colours for AI cars. */
 export const AI_LIVERIES: Omit<CarSetup, 'finish' | 'plate'>[] = [
   { paint: '#e8202a', pattern: 'stripes', accent: '#ffffff', rims: '#d6dae2', number: 1 },
   { paint: '#f5f5f5', pattern: 'race', accent: '#d01020', rims: '#23262b', number: 7 },
@@ -393,17 +391,40 @@ export const AI_LIVERIES: Omit<CarSetup, 'finish' | 'plate'>[] = [
   { paint: '#ff7a1a', pattern: 'race', accent: '#0a2a6a', rims: '#d6dae2', number: 77 },
 ];
 
-/** A random but valid plate for an AI car. */
-export function randomPlate(seed: number): Plate {
+/** A random plate like "KTR 482" (for AI cars and the garage's dice button). */
+export function randomPlate(seed: number): string {
   const h = (k: number) => {
     const x = Math.sin(seed * 12.9898 + k * 78.233) * 43758.5453;
     return x - Math.floor(x);
   };
-  return {
-    region: PLATE_REGIONS[Math.floor(h(1) * PLATE_REGIONS.length)].id,
-    kana: PLATE_KANA[Math.floor(h(2) * PLATE_KANA.length)],
-    number: 1 + Math.floor(h(3) * 9999),
-  };
+  const letters = 'ABCDEFGHJKLMNPRSTUVWXYZ';
+  const pick = (k: number) => letters[Math.floor(h(k) * letters.length)];
+  return `${pick(1)}${pick(2)}${pick(3)} ${String(Math.floor(h(4) * 1000)).padStart(3, '0')}`;
+}
+
+export interface FieldCar {
+  car: CarDef;
+  /** Engine scale that evens the field out a little (see aiField). */
+  power: number;
+}
+
+/**
+ * The cars the AI drive: every car in the garage takes its turn in a shuffled order, with the
+ * player's car in twice, so a few usually match. Engines are evened out a little toward the
+ * player's car's pace, so a hatch can still race a hypercar.
+ */
+export function aiField(player: CarId, count: number, seed: number): FieldCar[] {
+  const rng = createRng(seed);
+  const order = [...CAR_IDS, player];
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  const pace = (c: CarDef) => c.stats.speed + c.stats.acceleration;
+  return Array.from({ length: count }, (_, i) => {
+    const car = CARS[order[i % order.length]];
+    return { car, power: clamp(1 + 0.025 * (pace(CARS[player]) - pace(car)), 0.9, 1.1) };
+  });
 }
 
 export function carSetup(id: CarId, garage: Partial<Record<CarId, CarSetup>> | undefined): CarSetup {

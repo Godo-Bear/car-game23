@@ -13,9 +13,10 @@ countryside, by day, at sunset or at night — running in the browser and hosted
   from `public/models/` (see *3D assets*); the rally car (and any car whose model fails to load)
   uses the built-in body with wheel arches, glasshouse, lights, grilles and brake calipers.
   Customise paint colour and finish (gloss / metallic / pearl / matte), livery (racing stripes,
-  side stripe, two-tone, race livery), accent colour, rim colour, race number and a Japanese
-  number plate (region, hiragana, number); saved per car to your account.
-  Races are one-make: the AI drive the same car in team colours.
+  side stripe, two-tone, race livery), accent colour, rim colour, race number and your own
+  number plate text (up to 8 characters); saved per car to your account.
+  The AI race a mixed field of every car (a few the same as yours) in team colours, with their
+  engines evened out a little toward your car's pace so any car can win.
 - **Vehicle physics:** semi-simulation bicycle model — tyre slip, weight transfer, 6-speed automatic
   gearbox, handbrake drifting with skid marks and tyre smoke, stability control, slipstream, and
   crashes that cost real speed. High-speed drifts are assisted: the car carves toward where it is
@@ -132,7 +133,7 @@ runs at a fixed 120 Hz, and is covered by unit tests — including a headless 8-
 ├── public/models/<car>/car.glb # Car models (see 3D assets)
 ├── public/previews/            # Track-picker pictures (rendered by `npm run previews`)
 ├── scripts/render-previews.mjs # Renders those pictures from the game itself
-├── tests/                      # Vitest: track, physics (incl. drift), collisions, races for every car
+├── tests/                      # Vitest: track, physics (incl. drift), collisions, races for every car and a mixed field
 ├── biome.json                  # Lint + format rules
 ├── .github/workflows/ci.yml    # CI: lint, tests, type-check + build
 ├── wrangler.jsonc              # Cloudflare Workers config (static assets + API + D1)
