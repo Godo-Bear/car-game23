@@ -4,7 +4,7 @@ import { type VehicleControls, VehiclePhysics } from '../src/physics/VehiclePhys
 import { createProjection } from '../src/track/TrackPath';
 
 const DT = 1 / 120;
-const input = (o: Partial<VehicleControls>): VehicleControls => ({ throttle: 0, brake: 0, steer: 0, handbrake: false, ...o });
+const input = (o: Partial<VehicleControls>): VehicleControls => ({ throttle: 0, brake: 0, steer: 0, handbrake: false, nitro: false, ...o });
 
 function simulate(car: VehiclePhysics, seconds: number, controls: (t: number) => VehicleControls): void {
   for (let t = 0; t < seconds; t += DT) car.step(controls(t), DT);
@@ -96,6 +96,49 @@ describe('VehiclePhysics', () => {
     simulate(car, 4.5, (t) => input({ throttle: t > 0.5 && t < 1.5 ? 1 : 0, steer: t < 0.5 ? -0.8 : 0, handbrake: t > 0.1 && t < 0.5 }));
     expect(Math.abs(car.driftAngle)).toBeLessThan(0.05);
     expect(car.drifting).toBe(false);
+  });
+
+  it('recovers from a drift within a second of lifting off, without a tank-slapper', () => {
+    const car = cruising(24);
+    car.gear = 2;
+    let recovered: number | null = null;
+    let maxSlipAfter = 0;
+    simulate(car, 4, (t) => {
+      const lifted = t > 1.2;
+      if (lifted) {
+        maxSlipAfter = Math.max(maxSlipAfter, Math.abs(car.driftAngle));
+        if (recovered === null && !car.drifting && Math.abs(car.driftAngle) < 0.06) recovered = t - 1.2;
+      }
+      return input({ throttle: lifted ? 0 : t > 0.5 ? 1 : 0.3, steer: t < 0.5 ? -0.8 : 0, handbrake: t > 0.1 && t < 0.5 });
+    });
+    expect(recovered).not.toBeNull();
+    expect(recovered!).toBeLessThan(1);
+    // It straightens, rather than flicking over into a slide the other way.
+    expect(maxSlipAfter).toBeLessThan(0.75);
+    expect(Math.abs(car.driftAngle)).toBeLessThan(0.05);
+  });
+
+  it('nitro pushes harder than the engine alone, drains its tank and refills', () => {
+    const plain = cruising(28);
+    plain.gear = 4;
+    simulate(plain, 2, () => input({ throttle: 1 }));
+    const boosted = cruising(28);
+    boosted.gear = 4;
+    simulate(boosted, 2, () => input({ throttle: 1, nitro: true }));
+    expect(boosted.speedKmh).toBeGreaterThan(plain.speedKmh + 15);
+    expect(boosted.nitro).toBeCloseTo(1 - 2 / boosted.spec.nitroCapacity, 1);
+    const tank = boosted.nitro;
+    simulate(boosted, 2, () => input({ throttle: 1 }));
+    expect(boosted.nitroActive).toBe(false);
+    expect(boosted.nitro).toBeGreaterThan(tank);
+  });
+
+  it('nitro cannot push past the top speed the gearing allows', () => {
+    const car = new VehiclePhysics();
+    car.place(0, 0, 0);
+    simulate(car, 60, () => input({ throttle: 1, nitro: true }));
+    // Boost runs out, refills a little and fires again; the car never runs away.
+    expect(car.forwardSpeed).toBeLessThan(car.gearedTopSpeed * 1.06);
   });
 
   it('brakes to a stop, then reverses at a limited speed when brake is held', () => {

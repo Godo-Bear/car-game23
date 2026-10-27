@@ -48,6 +48,19 @@ interface ModelDef {
 
 /** The model files. Cars without one use their built-in body. */
 export const CAR_MODELS: Partial<Record<CarId, ModelDef>> = {
+  starter: {
+    file: 'starter/car.glb',
+    credit: 'Model: "Basic Car" by Quaternius (CC0)',
+    roles: [
+      [/^Blue$/, 'paint'],
+      [/^Windows$/, 'glass'],
+      [/^Headlights$/, 'light'],
+      [/^TailLights$/, 'brake'],
+      [/^Grey$/, 'rims'],
+      [/^Black$/, 'trim'],
+    ],
+    wheels: /Wheel/,
+  },
   gt: {
     file: 'gt/car.glb',
     credit: 'Model: "Chevrolet Camaro" by PuKkBuMXDD (Poly Pizza)',
@@ -188,8 +201,8 @@ interface Piece {
   geometry: THREE.BufferGeometry;
   material: THREE.MeshStandardMaterial;
   role: PartRole;
-  /** The wheel node this piece belongs to, if any. */
-  wheel: THREE.Object3D | null;
+  /** Which wheel this piece belongs to (its node's id, plus a side for a split pair), if any. */
+  wheel: string | null;
 }
 
 /** A non-indexed copy with plain float attributes (only `names`), ready to cut, bake and merge. */
@@ -213,6 +226,21 @@ function plain(geo: THREE.BufferGeometry, names: string[]): THREE.BufferGeometry
   return out;
 }
 
+/** The triangles of a plain geometry (see `plain`) for which `keep(first vertex)` is true. */
+function filterTriangles(geo: THREE.BufferGeometry, keep: (vertex: number) => boolean): THREE.BufferGeometry {
+  const kept: number[] = [];
+  for (let t = 0; t < geo.getAttribute('position').count; t += 3) if (keep(t)) kept.push(t);
+  const out = new THREE.BufferGeometry();
+  for (const [name, attr] of Object.entries(geo.attributes)) {
+    const n = attr.itemSize;
+    const src = attr.array as Float32Array;
+    const data = new Float32Array(kept.length * 3 * n);
+    kept.forEach((t, k) => data.set(src.subarray(t * n, (t + 3) * n), k * 3 * n));
+    out.setAttribute(name, new THREE.BufferAttribute(data, n));
+  }
+  return out;
+}
+
 /** Drop the triangles of wheels moulded into the body (every corner inside a tyre). */
 function cutWheels(geo: THREE.BufferGeometry, cut: WheelCut): THREE.BufferGeometry {
   const pos = geo.getAttribute('position');
@@ -220,18 +248,15 @@ function cutWheels(geo: THREE.BufferGeometry, cut: WheelCut): THREE.BufferGeomet
     const x = Math.abs(pos.getX(i));
     return x >= cut.inner && x <= cut.outer && cut.z.some((z) => Math.hypot(pos.getZ(i) - z, pos.getY(i) - cut.y) <= cut.radius);
   };
-  const keep: number[] = [];
-  for (let t = 0; t < pos.count; t += 3) if (!(inside(t) && inside(t + 1) && inside(t + 2))) keep.push(t);
-  const out = new THREE.BufferGeometry();
-  for (const [name, attr] of Object.entries(geo.attributes)) {
-    const n = attr.itemSize;
-    const src = attr.array as Float32Array;
-    const data = new Float32Array(keep.length * 3 * n);
-    keep.forEach((t, k) => data.set(src.subarray(t * n, (t + 3) * n), k * 3 * n));
-    out.setAttribute(name, new THREE.BufferAttribute(data, n));
-  }
+  const out = filterTriangles(geo, (t) => !(inside(t) && inside(t + 1) && inside(t + 2)));
   geo.dispose();
   return out;
+}
+
+/** Centre x of each triangle (for splitting a mesh that holds both wheels of an axle). */
+function triangleX(geo: THREE.BufferGeometry, t: number): number {
+  const pos = geo.getAttribute('position');
+  return (pos.getX(t) + pos.getX(t + 1) + pos.getX(t + 2)) / 3;
 }
 
 /** Merge pieces that share a material; `uv` keeps (or pads) texture coordinates. */
@@ -265,8 +290,8 @@ function prepare(root: THREE.Object3D, def: ModelDef, body: BodyDef): CarAsset {
   root.traverse((o) => {
     if (!(o instanceof THREE.Mesh)) return;
     // The outermost match: a wheel node's meshes and primitives often repeat its name.
-    let wheel: THREE.Object3D | null = null;
-    for (let p: THREE.Object3D | null = o; p && def.wheels; p = p.parent) if (def.wheels.test(p.name)) wheel = p;
+    let wheel: string | null = null;
+    for (let p: THREE.Object3D | null = o; p && def.wheels; p = p.parent) if (def.wheels.test(p.name)) wheel = p.uuid;
     const material = o.material as THREE.MeshStandardMaterial;
     let geometry = plain(o.geometry, ['position', 'normal', 'uv']).applyMatrix4(o.matrixWorld);
     if (o.matrixWorld.determinant() < 0) flipWinding(geometry);
@@ -276,33 +301,47 @@ function prepare(root: THREE.Object3D, def: ModelDef, body: BodyDef): CarAsset {
     pieces.push({ geometry, material, role, wheel });
   });
 
+  const boxOf = (list: Piece[]) => {
+    const box = new THREE.Box3();
+    for (const p of list) {
+      p.geometry.computeBoundingBox();
+      box.union(p.geometry.boundingBox!);
+    }
+    return box;
+  };
+  const midX = boxOf(pieces).getCenter(new THREE.Vector3()).x;
+  // A node holding both wheels of an axle (one mesh across the car) is split down the middle.
+  for (const key of new Set(pieces.map((p) => p.wheel).filter((w) => w !== null))) {
+    const pair = pieces.filter((p) => p.wheel === key);
+    const box = boxOf(pair);
+    if (box.min.x > midX - 0.2 * (box.max.x - box.min.x) || box.max.x < midX + 0.2 * (box.max.x - box.min.x)) continue;
+    for (const p of pair) {
+      const whole = p.geometry;
+      p.geometry = filterTriangles(whole, (t) => triangleX(whole, t) >= midX);
+      p.wheel = `${key}:left`;
+      pieces.push({ ...p, geometry: filterTriangles(whole, (t) => triangleX(whole, t) < midX), wheel: `${key}:right` });
+      whole.dispose();
+    }
+  }
+
   // Hubs, in model space.
-  type Hub = { centre: THREE.Vector3; radius: number; node: THREE.Object3D | null };
+  type Hub = { centre: THREE.Vector3; radius: number; key: string | null };
   let hubs: Hub[];
   if (def.wheelCut) {
     const c = def.wheelCut;
     const x = (c.inner + c.outer) / 2;
-    hubs = c.z.flatMap((z) => [1, -1].map((side) => ({ centre: new THREE.Vector3(side * x, c.y, z), radius: c.radius, node: null })));
+    hubs = c.z.flatMap((z) => [1, -1].map((side) => ({ centre: new THREE.Vector3(side * x, c.y, z), radius: c.radius, key: null })));
   } else {
-    const nodes = [...new Set(pieces.map((p) => p.wheel).filter((w) => w !== null))];
-    hubs = nodes.map((node) => {
-      const box = new THREE.Box3();
-      for (const p of pieces) {
-        if (p.wheel !== node) continue;
-        p.geometry.computeBoundingBox();
-        box.union(p.geometry.boundingBox!);
-      }
-      return { centre: box.getCenter(new THREE.Vector3()), radius: (box.max.y - box.min.y) / 2, node };
+    const keys = [...new Set(pieces.map((p) => p.wheel).filter((w) => w !== null))];
+    hubs = keys.map((key) => {
+      const box = boxOf(pieces.filter((p) => p.wheel === key));
+      return { centre: box.getCenter(new THREE.Vector3()), radius: (box.max.y - box.min.y) / 2, key };
     });
   }
   if (hubs.length !== 4) throw new Error(`expected 4 wheels, found ${hubs.length}`);
 
   // Scale to the built-in body's length; put the axles where the physics has them.
-  const box = new THREE.Box3();
-  for (const p of pieces) {
-    p.geometry.computeBoundingBox();
-    box.union(p.geometry.boundingBox!);
-  }
+  const box = boxOf(pieces);
   const zs = body.profile.map(([z]) => z);
   const s = (Math.max(...zs) - Math.min(...zs)) / (box.max.z - box.min.z);
   const hubZ = hubs.map((h) => h.centre.z);
@@ -361,14 +400,14 @@ function prepare(root: THREE.Object3D, def: ModelDef, body: BodyDef): CarAsset {
     radius: h.radius,
     front: h.centre.z > (frontAxle + rearAxle) / 2,
     parts:
-      def.ownWheels || !h.node
+      def.ownWheels || !h.key
         ? []
         : group(
-            pieces.filter((p) => p.wheel === h.node),
+            pieces.filter((p) => p.wheel === h.key),
             h.centre,
           ),
   }));
-  for (const p of pieces) if (p.wheel && (def.ownWheels || !hubs.some((h) => h.node === p.wheel))) p.geometry.dispose();
+  if (def.ownWheels) for (const p of pieces) if (p.wheel) p.geometry.dispose();
 
   // Number plates: on the bumpers, found by casting rays at them.
   const rayMaterial = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });

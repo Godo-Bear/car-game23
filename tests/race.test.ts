@@ -103,17 +103,20 @@ describe.each(Object.values(CARS))('One-make race in the $name', (car) => {
 });
 
 describe('Mixed field', () => {
-  it('puts every car on the grid, a few matching the player, with engines evened out', () => {
+  it('races you against your class and the ones either side, a few matching you, engines evened out', () => {
     const field = aiField('hatch', 7, 11);
-    expect(new Set(field.map((f) => f.car.id))).toEqual(new Set(Object.keys(CARS)));
-    expect(field.filter((f) => f.car.id === 'hatch').length).toBeGreaterThanOrEqual(1);
-    for (const f of field) expect(f.power).toBeGreaterThanOrEqual(0.9);
-    // The hypercar is slowed toward the hatch's pace; another hatch is left alone.
-    expect(field.find((f) => f.car.id === 'super')!.power).toBeLessThan(1);
+    expect(new Set(field.map((f) => f.car.id))).toEqual(new Set(['starter', 'hatch', 'gt']));
+    expect(field.filter((f) => f.car.id === 'hatch').length).toBeGreaterThanOrEqual(2);
+    for (const f of field) expect(f.power).toBeGreaterThanOrEqual(0.85);
+    // The GT is slowed toward the roadster's pace, the starter car helped; another roadster is left alone.
+    expect(field.find((f) => f.car.id === 'gt')!.power).toBeLessThan(1);
+    expect(field.find((f) => f.car.id === 'starter')!.power).toBeGreaterThan(1);
     expect(field.find((f) => f.car.id === 'hatch')!.power).toBe(1);
+    // A starter-car race has no hypercars in it.
+    expect(aiField('starter', 7, 3).every((f) => f.car.id === 'starter' || f.car.id === 'hatch')).toBe(true);
   });
 
-  it('lets the AI race every car together round Sakura Valley', () => {
+  it('lets the AI race a mixed field cleanly round Sakura Valley', () => {
     const field = aiField('gt', 7, 11);
     const sim = new RaceSimulation(TRACKS.sakura.layout, {
       laps: 1,
@@ -152,7 +155,7 @@ describe('AI respects the player', () => {
       sim.track.project(spot.x, spot.z, -1, sim.player.proj);
       sim.startRace();
       // Handbrake only: holding the brake while stopped would engage reverse.
-      const parked = { throttle: 0, brake: 0, steer: 0, handbrake: true };
+      const parked = { throttle: 0, brake: 0, steer: 0, handbrake: true, nitro: false };
       let contacts = 0;
       let passed = 0;
       // Long enough for the whole field to arrive and squeeze past (one lane is left at a corner exit).

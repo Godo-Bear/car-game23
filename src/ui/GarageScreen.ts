@@ -1,23 +1,71 @@
-import { CAR_IDS, type CarSetup, cleanPlate, type LiveryPattern, type PaintFinish, PLATE_LENGTH, type PlayerSettings } from '../../shared/api';
-import { CARS, carSetup, PAINT_SWATCHES, RIM_SWATCHES, randomPlate } from '../vehicles/cars';
+import {
+  CAR_IDS,
+  type CarId,
+  type CarSetup,
+  cleanPlate,
+  type LiveryPattern,
+  type PaintFinish,
+  PLATE_LENGTH,
+  type PlayerSettings,
+  type UpgradePart,
+  type Upgrades,
+} from '../../shared/api';
+import { formatYen, MAX_UPGRADE, NO_UPGRADES, UPGRADE_PARTS, upgradeCost, upgradesOf } from '../../shared/economy';
+import { type AccountService, ApiError } from '../account/AccountService';
+import { CARS, type CarStats, carSetup, carStats, PAINT_SWATCHES, RIM_SWATCHES, randomPlate } from '../vehicles/cars';
 import { CAR_MODELS } from '../vehicles/importedCars';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
-const STATS: [keyof (typeof CARS)['gt']['stats'], string][] = [
+const STATS: [keyof CarStats, string][] = [
   ['speed', 'Top speed'],
   ['acceleration', 'Acceleration'],
   ['handling', 'Handling'],
   ['drift', 'Drift'],
+  ['nitro', 'Nitro'],
 ];
+
+const UPGRADE_INFO: Record<UpgradePart, [string, string]> = {
+  engine: ['Engine', 'More power: quicker everywhere, faster at the top'],
+  handling: ['Handling', 'Grippier tyres, sharper steering, stronger brakes'],
+  nitro: ['Nitro', 'A bigger tank and a harder push'],
+};
+
+/** Stat bars for a car; the part its upgrades add is drawn brighter. */
+export function renderStats(el: HTMLElement, car: CarId, upgrades: Upgrades): void {
+  const def = CARS[car];
+  const base = carStats(def, NO_UPGRADES);
+  const now = carStats(def, upgrades);
+  el.replaceChildren(
+    ...STATS.map(([key, label]) => {
+      const row = document.createElement('div');
+      row.className = 'stat';
+      const extra = now[key] - base[key];
+      row.innerHTML = `<span>${label}</span><span class="bar"><i style="width:${base[key] * 10}%"></i>${extra > 0 ? `<i class="up" style="width:${extra * 10}%"></i>` : ''}</span>`;
+      return row;
+    }),
+  );
+}
+
+/** One dot per car, the current one lit. */
+export function renderDots(el: HTMLElement, ids: CarId[], current: CarId): void {
+  el.replaceChildren(
+    ...ids.map((id) => {
+      const dot = document.createElement('span');
+      dot.className = id === current ? 'on' : '';
+      return dot;
+    }),
+  );
+}
 
 type ColorKey = 'paint' | 'accent' | 'rims';
 
-/** Garage tab: pick a car and customise its paint, livery, wheels and race number. */
+/** Garage tab: your cars - pick one, paint it, fit plates and buy upgrades. */
 export class GarageScreen {
   constructor(
     private readonly get: () => PlayerSettings,
     private readonly set: (patch: Partial<PlayerSettings>) => void,
+    private readonly account: AccountService,
   ) {
     this.buildSwatches('paint', 'sw-paint', PAINT_SWATCHES);
     this.buildSwatches('accent', 'sw-accent', ['#ffffff', '#111214', ...PAINT_SWATCHES.filter((c) => c !== '#f5f5f5' && c !== '#111214').slice(0, 9)]);
@@ -31,39 +79,35 @@ export class GarageScreen {
     return carSetup(s.car, s.garage);
   }
 
+  private get owned(): CarId[] {
+    const owned = this.account.wallet.owned;
+    return CAR_IDS.filter((id) => owned.includes(id));
+  }
+
   private customise(patch: Partial<CarSetup>): void {
     const s = this.get();
     this.set({ garage: { ...s.garage, [s.car]: { ...this.setup, ...patch } } });
   }
 
   private cycle(dir: number): void {
-    const i = CAR_IDS.indexOf(this.get().car);
-    this.set({ car: CAR_IDS[(i + dir + CAR_IDS.length) % CAR_IDS.length] });
+    const owned = this.owned;
+    if (owned.length < 2) return;
+    const i = owned.indexOf(this.get().car);
+    this.set({ car: owned[(i + dir + owned.length) % owned.length] });
   }
 
   render(): void {
     const s = this.get();
     const car = CARS[s.car];
     const setup = this.setup;
+    const upgrades = upgradesOf(this.account.wallet, s.car);
     $('car-name').textContent = car.name;
     $('car-kind').textContent = car.kind;
     $('car-blurb').textContent = car.blurb;
     $('car-credit').textContent = CAR_MODELS[s.car]?.credit ?? '';
-    $('car-dots').replaceChildren(
-      ...CAR_IDS.map((id) => {
-        const dot = document.createElement('span');
-        dot.className = id === s.car ? 'on' : '';
-        return dot;
-      }),
-    );
-    $('car-stats').replaceChildren(
-      ...STATS.map(([key, label]) => {
-        const row = document.createElement('div');
-        row.className = 'stat';
-        row.innerHTML = `<span>${label}</span><span class="bar"><i style="width:${car.stats[key] * 10}%"></i></span>`;
-        return row;
-      }),
-    );
+    renderDots($('car-dots'), this.owned, s.car);
+    for (const id of ['car-prev', 'car-next']) $<HTMLButtonElement>(id).disabled = this.owned.length < 2;
+    renderStats($('car-stats'), s.car, upgrades);
     for (const key of ['paint', 'accent', 'rims'] as const) {
       const value = setup[key];
       let matched = false;
@@ -84,6 +128,51 @@ export class GarageScreen {
     if (document.activeElement !== num) num.value = String(setup.number);
     const plate = $<HTMLInputElement>('plate-text');
     if (document.activeElement !== plate) plate.value = setup.plate;
+    this.renderUpgrades(upgrades);
+  }
+
+  private renderUpgrades(upgrades: Upgrades): void {
+    const car = this.get().car;
+    const credits = this.account.wallet.credits;
+    $('upgrades').replaceChildren(
+      ...UPGRADE_PARTS.map((part) => {
+        const [name, info] = UPGRADE_INFO[part];
+        const level = upgrades[part];
+        const row = document.createElement('div');
+        row.className = 'upgrade';
+        const text = document.createElement('div');
+        text.innerHTML = `<b>${name}</b><small class="muted">${info}</small>`;
+        const pips = document.createElement('span');
+        pips.className = 'pips';
+        pips.setAttribute('aria-label', `Level ${level} of ${MAX_UPGRADE}`);
+        for (let i = 0; i < MAX_UPGRADE; i++) pips.append(Object.assign(document.createElement('i'), { className: i < level ? 'on' : '' }));
+        const buy = document.createElement('button');
+        buy.type = 'button';
+        if (level >= MAX_UPGRADE) {
+          buy.textContent = 'MAX';
+          buy.disabled = true;
+        } else {
+          const price = upgradeCost(car, part, level + 1);
+          buy.textContent = `Upgrade ${formatYen(price)}`;
+          buy.disabled = credits < price;
+          buy.title = credits < price ? 'Win races to earn more money' : '';
+          buy.addEventListener('click', () => void this.buyUpgrade(part));
+        }
+        row.append(text, pips, buy);
+        return row;
+      }),
+    );
+  }
+
+  private async buyUpgrade(part: UpgradePart): Promise<void> {
+    const note = $('upgrade-note');
+    try {
+      await this.account.buy({ kind: 'upgrade', car: this.get().car, part });
+      note.textContent = `${UPGRADE_INFO[part][0]} upgraded!`;
+    } catch (e) {
+      note.textContent = e instanceof ApiError ? e.message : 'Could not buy that. Please try again.';
+    }
+    this.render();
   }
 
   private markSeg(id: string, value: string): void {
@@ -123,6 +212,7 @@ export class GarageScreen {
       tab.addEventListener('click', () => {
         document.querySelectorAll<HTMLElement>('.garage-tabs [data-ctab]').forEach((t) => t.classList.toggle('active', t === tab));
         document.querySelectorAll<HTMLElement>('[data-cpane]').forEach((p) => p.classList.toggle('hidden', p.dataset.cpane !== tab.dataset.ctab));
+        $('upgrade-note').textContent = '';
       }),
     );
     (document.querySelector('.garage-tabs [data-ctab]') as HTMLElement).classList.add('active');

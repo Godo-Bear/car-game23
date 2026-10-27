@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { PlayerSettings, TimeOfDay, TrackId } from '../../shared/api';
+import type { CarId, PlayerSettings, TimeOfDay, TrackId } from '../../shared/api';
+import { raceReward, upgradesOf } from '../../shared/economy';
 import { AccountService } from '../account/AccountService';
 import type { RacingLine } from '../ai/RacingLine';
 import { type CameraMode, ChaseCamera } from '../camera/ChaseCamera';
@@ -17,7 +18,7 @@ import { Hud } from '../ui/Hud';
 import { Minimap } from '../ui/Minimap';
 import { type HubPanel, Screens } from '../ui/Screens';
 import { CarModel } from '../vehicles/CarModel';
-import { AI_LIVERIES, aiField, CARS, carSetup, randomPlate } from '../vehicles/cars';
+import { AI_LIVERIES, aiField, CARS, carSetup, randomPlate, upgradedSpec } from '../vehicles/cars';
 import { loadCarAsset, loadCarAssets, onCarAssetLoaded } from '../vehicles/importedCars';
 import { Sparks } from '../vehicles/Sparks';
 import { type EffectsCar, TireEffects } from '../vehicles/TireEffects';
@@ -67,6 +68,8 @@ export class Game {
   private screens!: Screens;
   private sim!: RaceSimulation;
   private readonly carModels: CarModel[] = [];
+  /** The car the current simulation was built around. */
+  private simCar: CarId | null = null;
   private effectCars: EffectsCar[] = [];
   private readonly colors: string[] = [];
 
@@ -110,6 +113,7 @@ export class Game {
         onRace: (settings) => void this.startRace(settings),
         onSettingsChanged: (settings, car) => this.onSettingsChanged(settings, car),
         onHubPanel: (panel) => this.onHubPanel(panel),
+        onPreviewCar: (id) => this.onPreviewCar(id),
         onResume: () => this.setPaused(false),
         onRestart: () => void this.startRace(this.screens.settings),
         onQuit: () => void this.goHome(),
@@ -191,26 +195,34 @@ export class Game {
     void this.account.saveSettings(settings);
     if (!car || this.state !== 'home') return;
     const def = CARS[settings.car];
-    if (def.spec !== this.sim.settings.carSpec) {
+    if (settings.car !== this.simCar) {
       // A different car: rebuild the field around it (parked on the grid while in the garage).
       this.createSimulation(this.homeRaceSettings(), true);
-      if (this.hubPanel !== 'garage') this.startAttract();
+      if (!this.showroom) this.startAttract();
     } else {
       this.carModels[0].build(def, carSetup(settings.car, settings.garage));
       this.colors[this.sim.player.id] = carSetup(settings.car, settings.garage).paint;
     }
   }
 
+  /** Garage and shop show a car on the turntable instead of the homescreen race. */
+  private get showroom(): boolean {
+    return this.hubPanel === 'garage' || this.hubPanel === 'shop';
+  }
+
   private onHubPanel(panel: HubPanel): void {
     const was = this.hubPanel;
+    const wasShowroom = this.showroom;
     this.hubPanel = panel;
-    if (this.state !== 'home' || !this.sim) return;
-    if (panel === 'garage' && was !== 'garage') {
-      // Park the field on the grid and show the car on a turntable.
-      this.createSimulation(this.homeRaceSettings(), true);
-    } else if (panel !== 'garage' && was === 'garage') {
-      this.startAttract();
-    }
+    if (this.state !== 'home' || !this.sim || panel === was) return;
+    // Park the field on the grid for the turntable (and put your car back after a shop preview).
+    if (was === 'shop' || (this.showroom && !wasShowroom)) this.createSimulation(this.homeRaceSettings(), true);
+    if (!this.showroom && wasShowroom) this.startAttract();
+  }
+
+  /** Shop: show a car on the turntable in its factory paint. */
+  private onPreviewCar(id: CarId): void {
+    if (this.state === 'home' && this.hubPanel === 'shop') this.carModels[0].build(CARS[id], CARS[id].setup);
   }
 
   // ---------------------------------------------------------------- tracks & lighting
@@ -272,8 +284,9 @@ export class Game {
   private createSimulation(settings: PlayerSettings, home = false): void {
     const total = settings.opponents + 1;
     const car = CARS[settings.car];
+    this.simCar = settings.car;
     const seed = Math.floor(Math.random() * 1e6);
-    // A mixed field: the AI drive every car in the garage (a few the same as the player's).
+    // A mixed field of cars around the player's class (a few the same as the player's).
     const field = aiField(settings.car, settings.opponents, seed);
     this.sim = new RaceSimulation(
       this.track,
@@ -285,7 +298,8 @@ export class Game {
         // Start mid-pack so there is someone to race either way (at the front for the showroom).
         playerGridSlot: home ? 0 : Math.min(total - 1, Math.floor(total / 2) + 1),
         seed,
-        carSpec: car.spec,
+        // Your car with the upgrades you've bought fitted.
+        carSpec: upgradedSpec(car.spec, upgradesOf(this.account.wallet, settings.car)),
         aiGrip: car.aiGrip,
         aiCars: field.map((f) => ({ spec: f.car.spec, aiGrip: f.car.aiGrip, power: f.power })),
       },
@@ -339,7 +353,7 @@ export class Game {
     this.applyTimeOfDay(HOME_TIME);
     this.world!.trackVisual.setStartLights(0);
     this.createSimulation(this.homeRaceSettings(), true);
-    if (this.hubPanel !== 'garage') this.startAttract();
+    if (!this.showroom) this.startAttract();
     if (first) await this.compile();
     setLoading(null);
     this.screens.showHome();
@@ -467,7 +481,7 @@ export class Game {
     }
 
     const home = this.state === 'home';
-    const garage = home && this.hubPanel === 'garage';
+    const garage = home && this.showroom;
     const running = !this.paused && !this.modalOpen && !garage;
     const simDt = running ? dt * this.timeScale : 0;
     if (running) {
@@ -488,7 +502,8 @@ export class Game {
     this.effects.update(this.effectCars, simDt, this.cam.camera, this.pipeline.renderer.domElement.height);
     const blur = running && !home ? this.feedback.update(this.sim, this.state === 'racing', this.frameImpact, simDt) : 0;
     this.frameImpact = 0;
-    this.pipeline.setSpeedEffect(blur, this.elapsed);
+    const boosting = running && !home && this.sim.player.physics.nitroActive;
+    this.pipeline.setSpeedEffect(Math.min(1, blur + (boosting ? 0.35 : 0)), this.elapsed);
 
     // Camera.
     const player = this.sim.player;
@@ -504,7 +519,7 @@ export class Game {
       this.timeScale = this.cine.updateFinish(model.root, running ? dt : 0);
       if (!this.cine.finishActive) this.cam.snap();
     } else {
-      this.cam.follow(model, player.physics.speed, running ? dt : 0);
+      this.cam.follow(model, player.physics.speed, running ? dt : 0, boosting);
     }
 
     const p = player.physics;
@@ -636,7 +651,7 @@ export class Game {
     const saving = this.account.recordRace(record);
     setTimeout(async () => {
       if (this.state !== 'finished') return;
-      this.screens.showResults(this.resultsData(), 'Saving result…');
+      this.screens.showResults(this.resultsData(), 'Saving result…', raceReward(record));
       const where = await saving;
       if (this.state !== 'finished') return;
       this.screens.setResultsSaved(

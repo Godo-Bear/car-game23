@@ -1,5 +1,6 @@
 /** Shared helpers for the account API handlers in server/api. */
-import type { CareerStats, ProfileResponse, RaceRecord, TrackId } from '../shared/api';
+import type { CareerStats, ProfileResponse, RaceRecord, TrackId, Wallet } from '../shared/api';
+import { cleanWallet } from '../shared/economy';
 
 export interface Env {
   /** Cloudflare D1 database for accounts (binding configured in wrangler.jsonc). */
@@ -15,6 +16,19 @@ export interface UserRow {
   username: string;
   created_at: number;
   settings: string;
+  /** JSON; read it with walletOf. */
+  wallet: string;
+}
+
+/** The columns every handler reads into a UserRow. */
+export const USER_COLUMNS = 'id, username, created_at, settings, wallet';
+
+export function walletOf(user: UserRow): Wallet {
+  try {
+    return cleanWallet(JSON.parse(user.wallet));
+  } catch {
+    return cleanWallet(null);
+  }
 }
 
 // Cloudflare Workers caps PBKDF2 at 100k iterations.
@@ -148,7 +162,7 @@ export async function currentUser(db: D1Database, request: Request): Promise<Use
   if (!token) return null;
   return db
     .prepare(
-      `SELECT u.id, u.username, u.created_at, u.settings
+      `SELECT u.id, u.username, u.created_at, u.settings, u.wallet
          FROM sessions s JOIN users u ON u.id = s.user_id
         WHERE s.token_hash = ? AND s.expires_at > ?`,
     )
@@ -227,6 +241,7 @@ export async function loadProfile(db: D1Database, user: UserRow): Promise<Profil
     createdAt: user.created_at,
     stats,
     settings,
+    wallet: walletOf(user),
     recent: recent.results.map((r) => ({
       track: r.track,
       position: r.position,

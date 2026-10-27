@@ -1,5 +1,18 @@
 import { type CredentialsRequest, PASSWORD_MAX, PASSWORD_MIN, USERNAME_PATTERN } from '../../shared/api';
-import { type ApiHandler, checkWrite, createSession, fail, hashPassword, json, loadProfile, now, randomSalt, readJson, type UserRow } from '../auth';
+import {
+  type ApiHandler,
+  checkWrite,
+  createSession,
+  fail,
+  hashPassword,
+  json,
+  loadProfile,
+  now,
+  randomSalt,
+  readJson,
+  USER_COLUMNS,
+  type UserRow,
+} from '../auth';
 
 /** POST /api/register  { username, password } -> profile + session cookie */
 export const register: ApiHandler = async (request, env) => {
@@ -18,9 +31,7 @@ export const register: ApiHandler = async (request, env) => {
   const hash = await hashPassword(password, salt);
   const t = now();
   const inserted = await db
-    .prepare(
-      'INSERT INTO users (username, password_hash, salt, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(username) DO NOTHING RETURNING id, username, created_at, settings',
-    )
+    .prepare(`INSERT INTO users (username, password_hash, salt, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(username) DO NOTHING RETURNING ${USER_COLUMNS}`)
     .bind(username, hash, salt, t)
     .first<UserRow>();
   if (!inserted) return fail(409, 'That username is taken.');

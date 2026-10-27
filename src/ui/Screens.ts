@@ -1,4 +1,5 @@
-import type { PlayerSettings, TrackId } from '../../shared/api';
+import type { CarId, PlayerSettings, TrackId } from '../../shared/api';
+import { formatYen, STARTER_CAR } from '../../shared/economy';
 import { type AccountService, ApiError } from '../account/AccountService';
 import type { Input } from '../core/Input';
 import type { SettingsStore } from '../core/Settings';
@@ -8,6 +9,7 @@ import { TRACKS, type TrackTheme } from '../track/tracks';
 import { CARS } from '../vehicles/cars';
 import { GarageScreen } from './GarageScreen';
 import { SettingsPanel, type SettingsTab } from './SettingsPanel';
+import { ShopScreen } from './ShopScreen';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -19,17 +21,19 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   camera: 'chase',
   track: 'tokyo',
   timeOfDay: 'night',
-  car: 'gt',
+  car: STARTER_CAR,
   garage: {},
 };
 
-export type HubPanel = 'race' | 'garage' | 'career';
+export type HubPanel = 'race' | 'garage' | 'shop' | 'career';
 
 export interface ScreenHandlers {
   onRace(settings: PlayerSettings): void;
   /** Race setup or car changed (already applied to `settings`); `car` is true for garage changes. */
   onSettingsChanged(settings: PlayerSettings, car: boolean): void;
   onHubPanel(panel: HubPanel): void;
+  /** The shop is showing a car (on the turntable). */
+  onPreviewCar(id: CarId): void;
   onResume(): void;
   onRestart(): void;
   onQuit(): void;
@@ -55,6 +59,7 @@ export class Screens {
   private settingsReturnTo: 'none' | 'pause' = 'none';
   private readonly panel: SettingsPanel;
   private readonly garage: GarageScreen;
+  private readonly shop: ShopScreen;
 
   constructor(
     private readonly account: AccountService,
@@ -70,10 +75,21 @@ export class Screens {
     this.garage = new GarageScreen(
       () => this.settings,
       (patch) => this.update(patch, true),
+      account,
+    );
+    this.shop = new ShopScreen(
+      account,
+      (id) => this.handlers.onPreviewCar(id),
+      (id) => this.update({ car: id }, true),
     );
     this.buildTrackCards();
     this.wire();
-    account.onChange(() => this.renderProfile());
+    // Money, cars and upgrades change with purchases and race results.
+    account.onChange(() => {
+      this.renderProfile();
+      this.garage.render();
+      this.shop.render();
+    });
   }
 
   // ---------- visibility ----------
@@ -102,6 +118,8 @@ export class Screens {
     if (panel === 'garage') this.garage.render();
     if (panel === 'race') $('btn-race').focus({ preventScroll: true });
     this.handlers.onHubPanel(panel);
+    // After the turntable is set up, so the shop's first car replaces yours on it.
+    if (panel === 'shop') this.shop.open();
   }
 
   hideAll(): void {
@@ -137,6 +155,8 @@ export class Screens {
   /** Settings from the account (or guest profile) merged over defaults. */
   loadSettings(saved: Partial<PlayerSettings>): void {
     this.settings = { ...DEFAULT_PLAYER_SETTINGS, ...saved, garage: { ...saved.garage } };
+    // You can only race a car you own (e.g. a new account, or settings from before the shop).
+    if (!this.account.wallet.owned.includes(this.settings.car)) this.settings.car = STARTER_CAR;
     this.render();
   }
 
@@ -147,10 +167,11 @@ export class Screens {
   }
 
   // ---------- results ----------
-  showResults(data: ResultsData, savedText: string): void {
+  showResults(data: ResultsData, savedText: string, earned: number): void {
     const me = data.standings.find((r) => r.id === data.playerId)!;
     const title = $('results-title');
     title.textContent = me.position === 1 ? 'P1 — Victory!' : me.position <= 3 ? `P${me.position} — Podium!` : `P${me.position} — Finished`;
+    $('results-earned').textContent = `+${formatYen(earned)} prize money`;
     this.renderResultsTable(data);
     $('results-saved').textContent = savedText;
     $('screen-results').classList.remove('hidden');
@@ -199,8 +220,9 @@ export class Screens {
     for (const prefix of ['profile', 'career']) {
       $(`${prefix}-name`).textContent = a.displayName;
       $(`${prefix}-avatar`).textContent = a.displayName.slice(0, 1).toUpperCase();
-      $(`${prefix}-status`).textContent = status;
     }
+    $('career-status').textContent = status;
+    $('money').textContent = formatYen(a.wallet.credits);
     const s = a.stats;
     $('stat-races').textContent = String(s.races);
     $('stat-wins').textContent = String(s.wins);

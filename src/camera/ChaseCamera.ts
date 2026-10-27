@@ -39,7 +39,8 @@ export class ChaseCamera {
     this.initialised = false;
   }
 
-  follow(car: CarModel, speed: number, dt: number): void {
+  /** `boost`: nitro is firing (the view widens for a rush of speed). */
+  follow(car: CarModel, speed: number, dt: number, boost = false): void {
     const root = car.root;
     const heading = root.rotation.y;
     if (!this.initialised) {
@@ -48,7 +49,7 @@ export class ChaseCamera {
       this.pos.set(Infinity, 0, 0);
     }
     const cam = this.camera;
-    const fovTarget = 60 + clamp(speed, 0, 80) * 0.2;
+    const fovTarget = 60 + clamp(speed, 0, 80) * 0.2 + (boost ? 9 : 0);
     cam.fov = damp(cam.fov, this.mode === 'hood' ? fovTarget + 6 : fovTarget, 3, dt);
 
     if (this.mode === 'hood') {

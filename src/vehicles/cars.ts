@@ -1,4 +1,4 @@
-import { CAR_IDS, type CarId, type CarSetup } from '../../shared/api';
+import { CAR_IDS, type CarId, type CarSetup, type Upgrades } from '../../shared/api';
 import { clamp, createRng } from '../core/math';
 import { SPORTS_CAR, type VehicleSpec } from '../physics/VehiclePhysics';
 
@@ -50,6 +50,72 @@ export interface CarDef {
 const torque = (scale: number) => SPORTS_CAR.torqueCurve.map(([rpm, nm]) => [rpm, nm * scale] as const);
 
 export const CARS: Record<CarId, CarDef> = {
+  starter: {
+    id: 'starter',
+    name: 'Mame 1.3',
+    kind: 'Starter Car',
+    blurb: 'Slow, soft and honest. Every legend starts somewhere: win races, earn yen and trade up.',
+    stats: { speed: 3, acceleration: 3, handling: 6, drift: 4 },
+    spec: {
+      ...SPORTS_CAR,
+      mass: 1150,
+      inertia: 1500,
+      wheelbase: 2.5,
+      cgToFront: 1.1,
+      cgToRear: 1.4,
+      cgHeight: 0.52,
+      halfWidth: 0.86,
+      halfLength: 2.0,
+      wheelRadius: 0.31,
+      tireGrip: 1.45,
+      corneringStiffnessFront: 84000,
+      corneringStiffnessRear: 100000,
+      handbrakeGrip: 0.6,
+      maxBrakeForce: 12500,
+      dragCoefficient: 0.44,
+      torqueCurve: torque(0.56),
+      finalDrive: 4.1,
+      maxSteer: 0.6,
+      nitroForce: 3600,
+    },
+    aiGrip: 0.97,
+    body: {
+      profile: [
+        [-2.0, 0.32],
+        [1.92, 0.32],
+        [2.02, 0.46],
+        [1.98, 0.66],
+        [1.0, 0.84],
+        [-1.7, 0.9],
+        [-2.02, 0.84],
+        [-2.04, 0.46],
+      ],
+      cabin: [
+        [-1.8, 0.86],
+        [0.9, 0.82],
+        [0.1, 1.32],
+        [-1.4, 1.36],
+        [-1.82, 1.0],
+      ],
+      width: 1.74,
+      cabinWidth: 1.48,
+      roof: { z: -0.65, length: 1.4, y: 1.36 },
+      wheelRadius: 0.31,
+      trackHalf: 0.76,
+      frontAxle: 1.25,
+      rearAxle: -1.25,
+      wing: 'none',
+    },
+    setup: {
+      paint: '#4a78c2',
+      finish: 'gloss',
+      pattern: 'none',
+      accent: '#ffffff',
+      rims: '#d6dae2',
+      number: 13,
+      plate: 'MAME 13',
+    },
+  },
   gt: {
     id: 'gt',
     name: 'Kaze GT',
@@ -409,13 +475,14 @@ export interface FieldCar {
 }
 
 /**
- * The cars the AI drive: every car in the garage takes its turn in a shuffled order, with the
- * player's car in twice, so a few usually match. Engines are evened out a little toward the
- * player's car's pace, so a hatch can still race a hypercar.
+ * The cars the AI drive: your car's class and the ones either side of it (the shop's order), in
+ * a shuffled order with your car in twice, so a few usually match. Engines are evened out a
+ * little toward your car's pace; upgrades are yours alone, so tuning your car pays off.
  */
 export function aiField(player: CarId, count: number, seed: number): FieldCar[] {
   const rng = createRng(seed);
-  const order = [...CAR_IDS, player];
+  const tier = CAR_IDS.indexOf(player);
+  const order = [...CAR_IDS.filter((_, i) => Math.abs(i - tier) <= 1), player];
   for (let i = order.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
     [order[i], order[j]] = [order[j], order[i]];
@@ -423,8 +490,40 @@ export function aiField(player: CarId, count: number, seed: number): FieldCar[] 
   const pace = (c: CarDef) => c.stats.speed + c.stats.acceleration;
   return Array.from({ length: count }, (_, i) => {
     const car = CARS[order[i % order.length]];
-    return { car, power: clamp(1 + 0.025 * (pace(CARS[player]) - pace(car)), 0.9, 1.1) };
+    return { car, power: clamp(1 + 0.03 * (pace(CARS[player]) - pace(car)), 0.85, 1.15) };
   });
+}
+
+/** What each upgrade level does: engine power, grip/brakes, and nitro push/tank size. */
+const UPGRADE_EFFECT = { power: 0.08, grip: 0.035, stiffness: 0.05, brakes: 0.06, nitroForce: 0.15, nitroTank: 0.25 };
+
+/** A car's handling with its upgrades fitted. */
+export function upgradedSpec(spec: VehicleSpec, u: Upgrades): VehicleSpec {
+  const e = UPGRADE_EFFECT;
+  return {
+    ...spec,
+    torqueCurve: spec.torqueCurve.map(([rpm, nm]) => [rpm, nm * (1 + e.power * u.engine)] as const),
+    tireGrip: spec.tireGrip * (1 + e.grip * u.handling),
+    corneringStiffnessFront: spec.corneringStiffnessFront * (1 + e.stiffness * u.handling),
+    corneringStiffnessRear: spec.corneringStiffnessRear * (1 + e.stiffness * u.handling),
+    maxBrakeForce: spec.maxBrakeForce * (1 + e.brakes * u.handling),
+    nitroForce: spec.nitroForce * (1 + e.nitroForce * u.nitro),
+    nitroCapacity: spec.nitroCapacity * (1 + e.nitroTank * u.nitro),
+  };
+}
+
+export type CarStats = CarDef['stats'] & { nitro: number };
+
+/** The garage's stat bars (1..10) with upgrades counted in. */
+export function carStats(def: CarDef, u: Upgrades): CarStats {
+  const bar = (v: number) => Math.min(10, Math.round(v * 2) / 2);
+  return {
+    speed: bar(def.stats.speed + 0.5 * u.engine),
+    acceleration: bar(def.stats.acceleration + 0.7 * u.engine),
+    handling: bar(def.stats.handling + 0.7 * u.handling),
+    drift: def.stats.drift,
+    nitro: bar(4 + 2 * u.nitro),
+  };
 }
 
 export function carSetup(id: CarId, garage: Partial<Record<CarId, CarSetup>> | undefined): CarSetup {

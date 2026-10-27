@@ -10,6 +10,7 @@ export class Hud {
   private readonly rpmBar = $('hud-rpm');
   private readonly standings = $('hud-standings');
   private readonly tow = $('hud-tow');
+  private readonly nitro = $('hud-nitro');
   private readonly cache = new Map<string, string>();
   private messageTimer = 0;
   private standingsKey = '';
@@ -70,6 +71,8 @@ export class Hud {
     else if (towing) this.set('hud-tow', 'SLIPSTREAM');
     this.tow.classList.toggle('on', drifting || towing);
     this.tow.classList.toggle('drift', drifting);
+    (this.nitro.firstElementChild as HTMLElement).style.transform = `scaleX(${p.nitro.toFixed(3)})`;
+    this.nitro.classList.toggle('firing', p.nitroActive);
 
     const order = race.standings();
     const key = order.map((r) => r.id).join(',');

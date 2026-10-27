@@ -12,6 +12,7 @@ import {
   readJson,
   recordFailedLogin,
   timingSafeEqual,
+  USER_COLUMNS,
   type UserRow,
 } from '../auth';
 
@@ -31,7 +32,7 @@ export const login: ApiHandler = async (request, env) => {
   if (await isLockedOut(db, username)) return fail(429, 'Too many failed attempts. Try again in 15 minutes.');
 
   const row = await db
-    .prepare('SELECT id, username, created_at, settings, password_hash, salt FROM users WHERE username = ?')
+    .prepare(`SELECT ${USER_COLUMNS}, password_hash, salt FROM users WHERE username = ?`)
     .bind(username)
     .first<UserRow & { password_hash: string; salt: string }>();
   const hash = await hashPassword(password, row?.salt ?? DUMMY_SALT);

@@ -10,6 +10,7 @@ export const GAMEPAD_BINDINGS: { action: string; button: string }[] = [
   { action: 'Brake / Reverse', button: 'Left trigger (LT / L2)' },
   { action: 'Steer', button: 'Left stick' },
   { action: 'Handbrake / drift', button: 'A / Cross' },
+  { action: 'Nitro', button: 'X / Square or RB / R1' },
   { action: 'Change camera', button: 'Y / Triangle' },
   { action: 'Reset car', button: 'View / Share' },
   { action: 'Pause', button: 'Menu / Options' },
@@ -26,7 +27,7 @@ const GAMEPAD_ACTIONS: Partial<Record<Action, number>> = { camera: 3, reset: 8, 
 const NO_SCROLL = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space']);
 
 export class Input {
-  readonly controls: VehicleControls = { throttle: 0, brake: 0, steer: 0, handbrake: false };
+  readonly controls: VehicleControls = { throttle: 0, brake: 0, steer: 0, handbrake: false, nitro: false };
   private readonly down = new Set<string>();
   private readonly pressed = new Set<Action>();
   private padPrev: boolean[] = [];
@@ -112,6 +113,7 @@ export class Input {
     let brake = this.held('brake') ? 1 : 0;
     let steer = (this.held('right') ? 1 : 0) - (this.held('left') ? 1 : 0);
     let handbrake = this.held('handbrake');
+    let nitro = this.held('nitro');
 
     const pad = navigator.getGamepads?.().find((p) => p?.connected);
     if (pad) {
@@ -120,6 +122,7 @@ export class Input {
       throttle = Math.max(throttle, pad.buttons[7]?.value ?? 0);
       brake = Math.max(brake, pad.buttons[6]?.value ?? 0);
       handbrake ||= pad.buttons[0]?.pressed ?? false;
+      nitro ||= (pad.buttons[2]?.pressed || pad.buttons[5]?.pressed) ?? false;
       for (const [action, index] of Object.entries(GAMEPAD_ACTIONS) as [Action, number][]) {
         const now = pad.buttons[index]?.pressed ?? false;
         if (now && !this.padPrev[index]) {
@@ -134,6 +137,7 @@ export class Input {
     c.brake = brake;
     c.steer = steer;
     c.handbrake = handbrake;
+    c.nitro = nitro;
     return c;
   }
 }

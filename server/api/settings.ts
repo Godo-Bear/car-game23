@@ -1,5 +1,5 @@
 import { CAMERA_MODES, CAR_IDS, type CarSetup, cleanCarSetup, DIFFICULTIES, type PlayerSettings, TIMES_OF_DAY, TRACK_IDS } from '../../shared/api';
-import { type ApiHandler, checkWrite, currentUser, fail, json, readJson } from '../auth';
+import { type ApiHandler, checkWrite, currentUser, fail, json, readJson, walletOf } from '../auth';
 
 /** PUT /api/settings  Partial<PlayerSettings> -> saved settings (race setup remembered per account) */
 export const settings: ApiHandler = async (request, env) => {
@@ -19,7 +19,8 @@ export const settings: ApiHandler = async (request, env) => {
   if (body.camera && CAMERA_MODES.includes(body.camera)) clean.camera = body.camera;
   if (body.track && TRACK_IDS.includes(body.track)) clean.track = body.track;
   if (body.timeOfDay && TIMES_OF_DAY.includes(body.timeOfDay)) clean.timeOfDay = body.timeOfDay;
-  if (body.car && CAR_IDS.includes(body.car)) clean.car = body.car;
+  // Only cars you own can be raced.
+  if (body.car && walletOf(user).owned.includes(body.car)) clean.car = body.car;
   if (body.garage && typeof body.garage === 'object') {
     const garage: Partial<Record<(typeof CAR_IDS)[number], CarSetup>> = {};
     for (const id of CAR_IDS) {

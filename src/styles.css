@@ -731,6 +731,33 @@ input {
 .tow.on {
   opacity: 1;
 }
+.nitro-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+.nitro {
+  flex: 1;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.nitro div {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #1e6bff, #35d8ff);
+  transform-origin: left;
+}
+.nitro.firing div {
+  background: linear-gradient(90deg, #35d8ff, #e9fbff);
+  box-shadow: 0 0 12px #35d8ff;
+}
 
 @media (max-width: 720px) {
   .standings {
@@ -962,6 +989,7 @@ input {
   color: var(--muted);
 }
 .car-stats .bar {
+  display: flex;
   height: 8px;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.08);
@@ -972,6 +1000,73 @@ input {
   height: 100%;
   background: linear-gradient(90deg, var(--accent-2), #7b5cff);
   transition: width 0.3s;
+}
+/* What upgrades add. */
+.car-stats .bar i.up {
+  background: var(--gold);
+}
+
+/* Money, shop and upgrades */
+/* Your money stays visible on small screens too. */
+.profile-chip .money {
+  display: block;
+  color: var(--gold);
+  font-weight: 900;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.shop-buy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 6px;
+}
+.shop-buy small {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.shop-buy b {
+  font-size: 26px;
+  color: var(--gold);
+}
+.upgrades {
+  display: grid;
+  gap: 10px;
+}
+.upgrade {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+}
+.upgrade small {
+  display: block;
+  font-size: 11px;
+}
+.upgrade button {
+  white-space: nowrap;
+}
+.pips {
+  display: flex;
+  gap: 4px;
+}
+.pips i {
+  width: 14px;
+  height: 8px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.pips i.on {
+  background: var(--gold);
+}
+.earned {
+  margin: -4px 0 10px;
+  color: var(--gold);
+  font-weight: 900;
+  font-size: 20px;
 }
 .garage-tabs {
   margin: 4px 0 12px;

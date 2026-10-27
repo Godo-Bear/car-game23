@@ -1,13 +1,14 @@
 import { DIFFICULTIES, type RaceRecord, TRACK_IDS } from '../../shared/api';
-import { type ApiHandler, checkWrite, currentUser, fail, json, loadProfile, now, readJson } from '../auth';
+import { raceReward } from '../../shared/economy';
+import { type ApiHandler, checkWrite, currentUser, fail, json, loadProfile, now, readJson, walletOf } from '../auth';
 
 const isInt = (v: unknown, lo: number, hi: number): v is number => Number.isInteger(v) && (v as number) >= lo && (v as number) <= hi;
 const isTime = (v: unknown, lo: number, hi: number): v is number | null => v === null || (typeof v === 'number' && v >= lo && v <= hi);
 
 /**
  * POST /api/races  { track, position, fieldSize, laps, difficulty, totalTime, bestLap }
- * Records a finished race and updates career stats. (Results come from the browser, so this is
- * sanity-checked rather than cheat-proof - fine for a personal career record.)
+ * Records a finished race, updates career stats and pays the prize money. (Results come from the
+ * browser, so this is sanity-checked rather than cheat-proof - fine for a personal career.)
  */
 export const races: ApiHandler = async (request, env) => {
   const blocked = checkWrite(request, env);
@@ -35,7 +36,10 @@ export const races: ApiHandler = async (request, env) => {
   const t = now();
   const podium = r.position <= 3 ? 1 : 0;
   const win = r.position === 1 ? 1 : 0;
+  const wallet = walletOf(user);
+  user.wallet = JSON.stringify({ ...wallet, credits: wallet.credits + raceReward(r) });
   await db.batch([
+    db.prepare('UPDATE users SET wallet = ? WHERE id = ?').bind(user.wallet, user.id),
     db
       .prepare(
         'INSERT INTO race_results (user_id, track, position, field_size, laps, difficulty, total_time, best_lap, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',

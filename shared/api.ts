@@ -4,7 +4,7 @@ export type Difficulty = 'easy' | 'normal' | 'hard';
 export type TrackId = 'tokyo' | 'hakone' | 'sakura';
 export type TimeOfDay = 'day' | 'sunset' | 'night';
 export type CameraModeSetting = 'chase' | 'far' | 'hood';
-export type CarId = 'gt' | 'hatch' | 'rally' | 'drift' | 'super';
+export type CarId = 'starter' | 'hatch' | 'gt' | 'drift' | 'rally' | 'super';
 export type PaintFinish = 'gloss' | 'metallic' | 'matte' | 'pearl';
 export type LiveryPattern = 'none' | 'stripes' | 'side' | 'twotone' | 'race';
 
@@ -58,13 +58,29 @@ export interface PlayerSettings {
   garage: Partial<Record<CarId, CarSetup>>;
 }
 
+/** Money, cars and upgrades (see shared/economy.ts). */
+export interface Wallet {
+  credits: number;
+  /** Cars bought (the starter car is always owned). */
+  owned: CarId[];
+  /** Upgrade levels per owned car. */
+  upgrades: Partial<Record<CarId, Upgrades>>;
+}
+
+export type UpgradePart = 'engine' | 'handling' | 'nitro';
+export type Upgrades = Record<UpgradePart, number>;
+
 export interface ProfileResponse {
   username: string;
   createdAt: number;
   stats: CareerStats;
   settings: Partial<PlayerSettings>;
   recent: RaceRecord[];
+  wallet: Wallet;
 }
+
+/** POST /api/shop: buy a car, or the next level of an upgrade for an owned car. */
+export type Purchase = { kind: 'car'; car: CarId } | { kind: 'upgrade'; car: CarId; part: UpgradePart };
 
 export interface CredentialsRequest {
   username: string;
@@ -82,7 +98,8 @@ export const DIFFICULTIES: Difficulty[] = ['easy', 'normal', 'hard'];
 export const CAMERA_MODES: CameraModeSetting[] = ['chase', 'far', 'hood'];
 export const TRACK_IDS: TrackId[] = ['tokyo', 'hakone', 'sakura'];
 export const TIMES_OF_DAY: TimeOfDay[] = ['day', 'sunset', 'night'];
-export const CAR_IDS: CarId[] = ['gt', 'hatch', 'rally', 'drift', 'super'];
+/** Cheapest to dearest (the shop's order). */
+export const CAR_IDS: CarId[] = ['starter', 'hatch', 'gt', 'drift', 'rally', 'super'];
 export const PAINT_FINISHES: PaintFinish[] = ['gloss', 'metallic', 'matte', 'pearl'];
 export const LIVERY_PATTERNS: LiveryPattern[] = ['none', 'stripes', 'side', 'twotone', 'race'];
 

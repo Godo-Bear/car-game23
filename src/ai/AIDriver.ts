@@ -54,7 +54,7 @@ export class AIDriver {
   private readonly ahead: { lo: number; hi: number; gap: number; bumperGap: number; otherU: number }[] = [];
   private stuckTime = 0;
   private reverseTime = 0;
-  private readonly controls: VehicleControls = { throttle: 0, brake: 0, steer: 0, handbrake: false };
+  private readonly controls: VehicleControls = { throttle: 0, brake: 0, steer: 0, handbrake: false, nitro: false };
 
   constructor(line: RacingLine, profile: AIProfile) {
     this.line = line;

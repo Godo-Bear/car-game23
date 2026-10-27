@@ -1,5 +1,6 @@
 import schemaSql from '../migrations/0001_accounts.sql';
 import raceTrackSql from '../migrations/0002_race_track.sql';
+import walletSql from '../migrations/0003_wallet.sql';
 
 /**
  * Creates the account tables on first use, so a fresh D1 database works without running
@@ -18,7 +19,7 @@ const split = (sql: string) =>
 
 const statements = split(schemaSql);
 /** Later column additions; each is skipped if a previous run already applied it. */
-const upgrades = split(raceTrackSql);
+const upgrades = [...split(raceTrackSql), ...split(walletSql)];
 
 let ready: Promise<void> | null = null;
 

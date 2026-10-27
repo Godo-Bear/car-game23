@@ -1,4 +1,5 @@
-import type { CareerStats, PlayerSettings, ProfileResponse, RaceRecord } from '../../shared/api';
+import type { CareerStats, PlayerSettings, ProfileResponse, Purchase, RaceRecord, Wallet } from '../../shared/api';
+import { cleanWallet, newWallet, purchase, raceReward } from '../../shared/economy';
 
 /** 'no-database': the API Worker is deployed but its D1 binding is missing. */
 export type BackendStatus = 'unknown' | 'online' | 'offline' | 'no-database';
@@ -9,6 +10,7 @@ interface GuestData {
   stats: CareerStats;
   settings: Partial<PlayerSettings>;
   recent: RaceRecord[];
+  wallet: Wallet;
 }
 
 const emptyStats = (): CareerStats => ({ races: 0, wins: 0, podiums: 0, bestLap: null, bestLaps: {}, totalLaps: 0 });
@@ -61,6 +63,24 @@ export class AccountService {
 
   get settings(): Partial<PlayerSettings> {
     return this.profile ? this.profile.settings : this.guest.settings;
+  }
+
+  get wallet(): Wallet {
+    return this.profile?.wallet ?? this.guest.wallet;
+  }
+
+  /** Buy a car or an upgrade. Accounts are charged by the server; guests on this device. */
+  async buy(p: Purchase): Promise<void> {
+    if (this.profile) {
+      const res = await this.call<{ wallet: Wallet }>('POST', '/api/shop', p);
+      this.profile.wallet = res.wallet;
+    } else {
+      const wallet = purchase(this.guest.wallet, p);
+      if (typeof wallet === 'string') throw new ApiError(wallet, 400);
+      this.guest.wallet = wallet;
+      saveGuest(this.guest);
+    }
+    this.emit();
   }
 
   /** Detect the backend and restore an existing session cookie. */
@@ -141,6 +161,7 @@ export class AccountService {
   async recordRace(result: RaceRecord): Promise<'account' | 'device' | 'failed'> {
     if (this.profile) {
       try {
+        // The server pays the prize money (see shared/economy.ts).
         this.profile = await this.call<ProfileResponse>('POST', '/api/races', result);
         this.emit();
         return 'account';
@@ -157,6 +178,7 @@ export class AccountService {
     const trackBest = s.bestLaps[result.track];
     if (result.bestLap !== null && (trackBest === undefined || result.bestLap < trackBest)) s.bestLaps[result.track] = result.bestLap;
     s.totalLaps += result.laps;
+    this.guest.wallet = { ...this.guest.wallet, credits: this.guest.wallet.credits + raceReward(result) };
     this.guest.recent = [{ ...result, createdAt: Math.floor(Date.now() / 1000) }, ...this.guest.recent].slice(0, 5);
     saveGuest(this.guest);
     this.emit();
@@ -173,12 +195,12 @@ function loadGuest(): GuestData {
       // Guest results from before multiple circuits were all on the Tokyo circuit.
       if (stats.bestLap !== null && stats.bestLaps.tokyo === undefined && !data.stats?.bestLaps) stats.bestLaps = { tokyo: stats.bestLap };
       const recent = (data.recent ?? []).map((r) => ({ ...r, track: r.track ?? 'tokyo' }));
-      return { stats, settings: data.settings ?? {}, recent };
+      return { stats, settings: data.settings ?? {}, recent, wallet: cleanWallet(data.wallet) };
     }
   } catch {
     // Storage blocked (private mode etc.) - fall through to a fresh profile.
   }
-  return { stats: emptyStats(), settings: {}, recent: [] };
+  return { stats: emptyStats(), settings: {}, recent: [], wallet: newWallet() };
 }
 
 function saveGuest(data: GuestData): void {

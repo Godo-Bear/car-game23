@@ -25,7 +25,8 @@ describe('car model files', () => {
       const missing = def.roles.filter(([re]) => !materials.some((m) => re.test(m))).map(([, role]) => role);
       expect(missing).toEqual([]);
       if (def.wheelCut) return;
-      // Four wheel nodes (outermost matches, named as the loader names them).
+      // Four wheel nodes, or three when both rear wheels share one (the loader splits that pair).
+      // Outermost matches, named as the loader names them.
       const nodes = gltf.nodes ?? [];
       const parent = new Map<number, number>();
       nodes.forEach((n, i) => {
@@ -37,7 +38,7 @@ describe('car model files', () => {
         for (let p = parent.get(i); p !== undefined; p = parent.get(p)) if (isWheel(p)) return false;
         return true;
       });
-      expect(outermost).toHaveLength(4);
+      expect([3, 4]).toContain(outermost.length);
     });
   }
 });

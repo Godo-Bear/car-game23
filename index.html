@@ -43,6 +43,10 @@
         <div class="rpm"><div id="hud-rpm"></div></div>
         <div class="speed-row"><span id="hud-speed">0</span><span class="unit">KM/H</span></div>
         <div class="gear">GEAR <b id="hud-gear">N</b><span id="hud-tow" class="tow">SLIPSTREAM</span></div>
+        <div class="nitro-row" title="Nitro (Shift / N) — drift to refill">
+          <span>NITRO</span>
+          <div id="hud-nitro" class="nitro"><div></div></div>
+        </div>
       </div>
     </div>
 
@@ -53,12 +57,13 @@
         <div class="hub-tabs" role="tablist" aria-label="Menu">
           <button type="button" role="tab" data-panel="race">Race</button>
           <button type="button" role="tab" data-panel="garage">Garage</button>
+          <button type="button" role="tab" data-panel="shop">Shop</button>
           <button type="button" role="tab" data-panel="career">Career</button>
           <button type="button" id="btn-settings">Settings</button>
         </div>
-        <button type="button" id="profile-chip" class="profile-chip" title="Career &amp; account">
+        <button type="button" id="profile-chip" class="profile-chip" title="Career &amp; account — win races to earn money">
           <span class="avatar" id="profile-avatar">G</span>
-          <span><b id="profile-name">Guest</b><small id="profile-status">Progress saved on this device</small></span>
+          <span><b id="profile-name">Guest</b><small id="money" class="money">¥0</small></span>
         </button>
       </header>
 
@@ -109,6 +114,7 @@
             <button type="button" role="tab" data-ctab="wheels">Wheels</button>
             <button type="button" role="tab" data-ctab="number">Number</button>
             <button type="button" role="tab" data-ctab="plate">Plate</button>
+            <button type="button" role="tab" data-ctab="upgrades">Upgrades</button>
           </div>
           <section data-cpane="paint">
             <div id="sw-paint" class="swatches"></div>
@@ -137,10 +143,33 @@
             <p class="muted small-text">Up to 8 letters, numbers, spaces or dashes.</p>
             <button type="button" id="plate-random" class="secondary">🎲 Random plate</button>
           </section>
+          <section data-cpane="upgrades" class="hidden">
+            <div id="upgrades" class="upgrades"></div>
+            <p id="upgrade-note" class="muted small-text" role="status"></p>
+          </section>
           <div class="row">
             <button type="button" id="btn-garage-race" class="primary">Race with this car ▶</button>
             <button type="button" id="btn-livery-reset" class="secondary">Reset paint</button>
           </div>
+        </div>
+      </div>
+
+      <div class="hub-panel hidden" data-panel="shop">
+        <div class="panel garage-panel">
+          <div class="car-switch">
+            <button type="button" id="shop-prev" class="icon-btn" aria-label="Previous car">‹</button>
+            <div class="car-title"><small id="shop-kind">Shop</small><h2 id="shop-name">Cars for sale</h2></div>
+            <button type="button" id="shop-next" class="icon-btn" aria-label="Next car">›</button>
+          </div>
+          <div id="shop-dots" class="car-dots"></div>
+          <p id="shop-blurb" class="muted small-text"></p>
+          <p id="shop-credit" class="muted car-credit"></p>
+          <div id="shop-stats" class="car-stats"></div>
+          <div class="shop-buy">
+            <div><small class="muted">Price</small><b id="shop-price"></b></div>
+            <button type="button" id="shop-buy" class="primary">Buy</button>
+          </div>
+          <p id="shop-note" class="muted small-text" role="status"></p>
         </div>
       </div>
 
@@ -251,6 +280,7 @@
               <ul class="tips muted">
                 <li>Brake before the corner, then turn in — full lock while braking unsettles the car.</li>
                 <li>Drift: pull the handbrake while turning, then hold the throttle; lift off to straighten.</li>
+                <li>Nitro (Shift / N) is strongest on the straights; drifting refills it fastest.</li>
                 <li>Barriers cost a lot of speed. Follow a car closely for a slipstream tow.</li>
               </ul>
             </div>
@@ -276,6 +306,7 @@
     <div id="screen-results" class="modal hidden" role="dialog" aria-modal="true">
       <div class="panel">
         <h2 id="results-title">Finished</h2>
+        <p id="results-earned" class="earned"></p>
         <table id="results-table" class="results"></table>
         <p id="results-saved" class="muted"></p>
         <div class="row">

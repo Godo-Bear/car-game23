@@ -41,6 +41,26 @@ const cache = new Map<string, BodyGeometry>();
 let parts: Record<'headlight' | 'exhaust' | 'taillight' | 'box' | 'number' | 'plate' | 'shadow' | 'beam', THREE.BufferGeometry> | null = null;
 let shadowTexture: THREE.Texture | null = null;
 let beamTexture: THREE.Texture | null = null;
+let flame: { geometry: THREE.BufferGeometry; material: THREE.Material } | null = null;
+
+/** A blue nitro flame pointing backwards from the exhaust (bright enough to bloom). */
+function getFlame() {
+  if (!flame) {
+    const geometry = new THREE.ConeGeometry(0.08, 0.62, 10, 1, true);
+    geometry.rotateX(-Math.PI / 2);
+    geometry.translate(0, 0, -0.31);
+    const material = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(0.18, 0.6, 2.4),
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    flame = { geometry, material };
+  }
+  return flame;
+}
 let common: Record<'wheel' | 'glass' | 'carbon' | 'headlight' | 'trim' | 'chrome', THREE.Material> | null = null;
 
 function extrudeProfile(points: [number, number][], width: number, bevel: number, segments = 3): THREE.BufferGeometry {
@@ -673,6 +693,8 @@ export class CarModel {
   private reverseMat!: THREE.MeshBasicMaterial;
   private readonly beam: THREE.Mesh;
   private readonly shadow: THREE.Mesh;
+  /** Nitro flames, one per exhaust. */
+  private readonly flames: THREE.Mesh[] = [];
   private owned: (THREE.Material | THREE.Texture)[] = [];
   /** What the car was last built as (rebuilt when its model file arrives). */
   private def: CarDef | null = null;
@@ -699,7 +721,21 @@ export class CarModel {
     this.beam.renderOrder = 2;
     this.beam.userData.noAO = true;
     this.root.add(this.shadow, this.beam);
+    const f = getFlame();
+    for (let i = 0; i < 2; i++) {
+      const mesh = new THREE.Mesh(f.geometry, f.material);
+      mesh.visible = false;
+      mesh.renderOrder = 3;
+      mesh.userData.noAO = true;
+      this.flames.push(mesh);
+      this.root.add(mesh);
+    }
     this.build(def, setup);
+  }
+
+  /** Put the nitro flames at the exhausts: `spread` either side of centre, at the rear bumper. */
+  private placeFlames(spread: number, y: number, z: number): void {
+    this.flames.forEach((f, i) => f.position.set(i === 0 ? spread : -spread, y, z));
   }
 
   /** (Re)build the body for a car and paint job; used live by the garage. */
@@ -761,6 +797,7 @@ export class CarModel {
     // The rear wheels never steer and spin together, so they are one axle.
     wheel(0, b.rearAxle, false, geo.rear);
     this.shadow.scale.set(b.width + 0.75, 1, geo.frontZ - geo.rearZ + 1);
+    this.placeFlames(0.42, b.wheelRadius + 0.08, geo.rearZ);
   }
 
   /** Rebuild if this car's model file has just arrived. */
@@ -818,6 +855,7 @@ export class CarModel {
     }
     this.frontZ = asset.front;
     this.shadow.scale.set(asset.width + 0.75, 1, asset.front - asset.rear + 1);
+    this.placeFlames(asset.width * 0.2, def.body.wheelRadius + 0.05, asset.rear);
   }
 
   /**
@@ -843,6 +881,12 @@ export class CarModel {
     for (const w of this.wheels) {
       if (w.front) w.steer.rotation.y = -this.visualSteer;
       w.spin.rotation.x = p.wheelSpin;
+    }
+
+    // Nitro flames flicker in length while they burn.
+    for (const f of this.flames) {
+      f.visible = p.nitroActive;
+      if (p.nitroActive) f.scale.set(1, 1, 0.65 + Math.random() * 0.7);
     }
 
     const braking = p.braking && p.forwardSpeed > 0.5;

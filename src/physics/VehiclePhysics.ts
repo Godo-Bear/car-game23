@@ -52,6 +52,10 @@ export interface VehicleSpec {
   steerSpeedHalf: number;
   /** Steering speed in "full locks per second". */
   steerRate: number;
+  /** Extra push (N) while the nitro fires. */
+  nitroForce: number;
+  /** Seconds of boost in a full nitro tank. */
+  nitroCapacity: number;
 }
 
 export const SPORTS_CAR: VehicleSpec = {
@@ -94,6 +98,8 @@ export const SPORTS_CAR: VehicleSpec = {
   maxSteer: 0.6,
   steerSpeedHalf: 16,
   steerRate: 2.6,
+  nitroForce: 5200,
+  nitroCapacity: 3,
 };
 
 export interface VehicleControls {
@@ -101,10 +107,11 @@ export interface VehicleControls {
   brake: number; // 0..1 (also reverses when stopped)
   steer: number; // -1 (left) .. 1 (right)
   handbrake: boolean;
+  nitro: boolean;
 }
 
 export function neutralControls(): VehicleControls {
-  return { throttle: 0, brake: 0, steer: 0, handbrake: false };
+  return { throttle: 0, brake: 0, steer: 0, handbrake: false, nitro: false };
 }
 
 const G = 9.81;
@@ -134,6 +141,15 @@ const DRIFT_CARVE_FAST = 3.2;
 /** Most extra cornering (m/s^2) the carve may add, so it helps without feeling on rails. */
 const DRIFT_CARVE_ACCEL = 2.5;
 const DRIFT_CARVE_ACCEL_FAST = 5.5;
+/**
+ * Recovery: lifting off the throttle (handbrake released) ends a drift. The rear tyres find
+ * their grip again over ~1/DRIFT_REGRIP s while the slide is straightened out at this rate (1/s).
+ */
+const DRIFT_REGRIP = 3.5;
+const DRIFT_RECOVER = 2.2;
+/** Nitro tank refill (tanks per second): slowly on its own, quickly while drifting. */
+const NITRO_REFILL = 1 / 45;
+const NITRO_REFILL_DRIFT = 1 / 6;
 
 export class VehiclePhysics {
   readonly spec: VehicleSpec;
@@ -170,6 +186,12 @@ export class VehiclePhysics {
   /** Body slip angle in radians (positive: travelling to the right of where the nose points). */
   driftAngle = 0;
   private driftSettle = 0;
+  /** 0..1 how far the rear has regained its grip after a drift (1 = fully). */
+  private regrip = 1;
+  /** Nitro tank 0..1 (starts full). */
+  nitro = 1;
+  /** Nitro firing this step (for flames, sound and camera). */
+  nitroActive = false;
   /** Multiplier the AI/difficulty system can use; 1 = normal. */
   powerScale = 1;
   /** Aerodynamic drag multiplier; < 1 while slipstreaming another car. */
@@ -207,6 +229,14 @@ export class VehiclePhysics {
     this.latAccel = 0;
     this.drifting = false;
     this.driftAngle = 0;
+    this.regrip = 1;
+    this.nitroActive = false;
+  }
+
+  /** Top speed the gearing allows (redline in top gear), m/s. */
+  get gearedTopSpeed(): number {
+    const s = this.spec;
+    return ((s.redlineRpm / (s.gearRatios[s.gearRatios.length - 1] * s.finalDrive)) * 2 * Math.PI * s.wheelRadius) / 60;
   }
 
   /** Maximum steering angle available at the current speed (speed-sensitive steering). */
@@ -259,9 +289,16 @@ export class VehiclePhysics {
     const bodySlip = speed > 1 ? Math.atan2(w, Math.max(Math.abs(u), 0.5)) : 0;
     this.driftAngle = bodySlip;
     if (input.handbrake && u > 8) this.drifting = true;
+    // Lifting off with the handbrake released means "straighten up": the rear regrips and the
+    // slide is reeled in, so a drift ends where you want it to instead of in a spin.
+    const recovering = this.drifting && !input.handbrake && throttle < 0.3;
+    if (input.handbrake) this.regrip = 0;
+    else if (!this.drifting) this.regrip = 1;
+    else if (recovering) this.regrip = Math.min(1, this.regrip + DRIFT_REGRIP * dt);
     if (this.drifting) {
-      this.driftSettle = Math.abs(bodySlip) < 0.1 && !input.handbrake ? this.driftSettle + dt : 0;
-      if (this.driftSettle > 0.35 || u < 4) this.drifting = false;
+      const settled = Math.abs(bodySlip) < (recovering ? 0.16 : 0.1) && !input.handbrake;
+      this.driftSettle = settled ? this.driftSettle + dt : 0;
+      if (this.driftSettle > (recovering ? 0.15 : 0.35) || u < 4) this.drifting = false;
     }
 
     // ---- Steering ----
@@ -331,7 +368,7 @@ export class VehiclePhysics {
     const muF = s.tireGrip;
     // A handbrake pull at high speed breaks traction more gently, so it starts a slide, not a spin.
     const handbrakeGrip = lerp(s.handbrakeGrip, (s.handbrakeGrip + 1) / 2, fast * 0.6);
-    const muR = s.tireGrip * (input.handbrake ? handbrakeGrip : this.drifting ? DRIFT_REAR_GRIP : 1);
+    const muR = s.tireGrip * (input.handbrake ? handbrakeGrip : this.drifting ? lerp(DRIFT_REAR_GRIP, 1, this.regrip) : 1);
 
     // Traction control: never ask the rear tyres for more than ~85% of their grip (off while drifting).
     const maxDrive = muR * loadR * (this.drifting ? 1 : 0.7 + 0.15 * this.stabilityAssist);
@@ -369,12 +406,18 @@ export class VehiclePhysics {
     this.frontSlide = clamp(Math.abs(slipF) / 0.2, 0, 1) * smoothstep(3, 8, speed);
     this.rearSlide = clamp(Math.abs(slipR) / 0.15, 0, 1) * smoothstep(3, 8, speed);
 
+    // ---- Nitro: a push on top of the engine, fading out at the gearing's top speed ----
+    this.nitroActive = input.nitro && this.nitro > 0 && this.gear > 0 && u > 2;
+    if (this.nitroActive) this.nitro = Math.max(0, this.nitro - dt / s.nitroCapacity);
+    else this.nitro = Math.min(1, this.nitro + dt * (this.drifting && Math.abs(bodySlip) > 0.15 ? NITRO_REFILL_DRIFT : NITRO_REFILL));
+    const boost = this.nitroActive ? s.nitroForce * (1 - smoothstep(0.9, 1.05, u / this.gearedTopSpeed)) : 0;
+
     // ---- Longitudinal forces ----
     const drag = -s.dragCoefficient * this.dragScale * u * Math.abs(u);
     const rolling = -s.rollingResistance * u;
-    const engineBrake = this.gear > 0 && throttle < 0.05 ? -u * 45 : 0;
+    const engineBrake = this.gear > 0 && throttle < 0.05 && !this.nitroActive ? -u * 45 : 0;
     const grade = -s.mass * G * clamp(slope, -0.2, 0.2);
-    let fx = driveForce * dir + drag + rolling + engineBrake + grade;
+    let fx = driveForce * dir + boost + drag + rolling + engineBrake + grade;
     const brakeForce = brakeF + brakeR;
     if (movingSign !== 0) {
       fx -= movingSign * brakeForce;
@@ -422,6 +465,12 @@ export class VehiclePhysics {
       const slip = slip0 - clamp(slip0 * (1 - Math.exp(-carve * dt)), -maxTurn, maxTurn);
       uNew = v * Math.cos(slip);
       wNew = v * Math.sin(slip);
+      if (recovering) {
+        // Straighten up: settle the rotation toward what the steering asks for and reel in the slide.
+        const k = Math.min(1, DRIFT_RECOVER * (0.6 + 0.6 * this.stabilityAssist) * dt);
+        r = lerp(r, (-uNew * Math.tan(delta)) / L, k);
+        wNew -= wNew * k;
+      }
     }
 
     // Low-speed kinematic blend.

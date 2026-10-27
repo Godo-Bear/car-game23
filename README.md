@@ -6,21 +6,32 @@ countryside, by day, at sunset or at night — running in the browser and hosted
 - **Core racing loop:** cinematic fly-in over the grid, F1-style start lights, lap counting, live
   positions, lap timing, 3–7 AI opponents, a slow-motion trackside finish shot and a results screen.
 - **Menu hub (Dirt 5 style):** *Race* (circuit cards with preview pictures, time of day, laps,
-  opponents, difficulty), *Garage*, *Career* and *Settings* tabs over a live homescreen: the field
-  racing over the Hakone pass on a sunny day, filmed with TV-style camera shots.
-- **Garage:** five cars with their own handling — Kaze GT (all-rounder), Shiro Spyder (roadster),
-  Yama R4 (rally special), Oni 86R (drift coupe) and Raijin V12 (hypercar). Four use 3D models
-  from `public/models/` (see *3D assets*); the rally car (and any car whose model fails to load)
-  uses the built-in body with wheel arches, glasshouse, lights, grilles and brake calipers.
-  Customise paint colour and finish (gloss / metallic / pearl / matte), livery (racing stripes,
-  side stripe, two-tone, race livery), accent colour, rim colour, race number and your own
-  number plate text (up to 8 characters); saved per car to your account.
-  The AI race a mixed field of every car (a few the same as yours) in team colours, with their
-  engines evened out a little toward your car's pace so any car can win.
+  opponents, difficulty), *Garage*, *Shop*, *Career* and *Settings* tabs over a live homescreen:
+  the field racing over the Hakone pass on a sunny day, filmed with TV-style camera shots.
+- **Career:** you start with ¥3,000 and the Mame 1.3 starter car. Every finished race pays prize
+  money (more for a better place, more laps, harder difficulty and more rivals; a 3-lap win on
+  Normal is ¥10,500). Spend it in the *Shop* on faster cars (¥30,000 – ¥220,000) or on upgrades
+  in the garage: Engine, Handling and Nitro, three levels each. With an account the server does
+  the sums (prices, prize money, what you own), so money only comes from racing; guests are saved
+  on the device. A guest's money doesn't move to a new account.
+- **Garage:** six cars with their own handling — Mame 1.3 (starter), Shiro Spyder (roadster),
+  Kaze GT (all-rounder), Oni 86R (drift coupe), Yama R4 (rally special) and Raijin V12 (hypercar).
+  Five use 3D models from `public/models/` (see *3D assets*); the rally car (and any car whose
+  model fails to load) uses the built-in body with wheel arches, glasshouse, lights, grilles and
+  brake calipers. Customise paint colour and finish (gloss / metallic / pearl / matte), livery
+  (racing stripes, side stripe, two-tone, race livery), accent colour, rim colour, race number and
+  your own number plate text (up to 8 characters); saved per car to your account.
+  The AI race your car's class and the classes either side of it (a few the same as yours) in team
+  colours, with their engines evened out a little toward your car's pace; your upgrades are yours
+  alone, so tuning pays off.
+- **Nitro:** Shift / N (X or RB on a gamepad). A tank of boost that pushes harder than the engine
+  alone, with blue exhaust flames, a wider view and speed blur. It refills slowly on its own and
+  quickly while drifting.
 - **Vehicle physics:** semi-simulation bicycle model — tyre slip, weight transfer, 6-speed automatic
   gearbox, handbrake drifting with skid marks and tyre smoke, stability control, slipstream, and
   crashes that cost real speed. High-speed drifts are assisted: the car carves toward where it is
-  pointing instead of sliding wide into the barrier. Steering calms down at speed, and with
+  pointing instead of sliding wide into the barrier, and lifting off the throttle ends a drift
+  cleanly (the rear grips up and the slide is reeled in). Steering calms down at speed, and with
   stability assist on a barrier assist nudges you away from walls you're about to hit.
 - **Three circuits:**
   - **Tokyo** — 2.48 km *Shinjuku–Bay Street Circuit*: neon towers, a Shibuya scramble chicane, an
@@ -125,10 +136,11 @@ runs at a fixed 120 Hz, and is covered by unit tests — including a headless 8-
 │   │   └── textures.ts         # Canvas-generated textures
 │   ├── camera/ChaseCamera.ts   # Chase / far chase / bonnet cams
 │   ├── core/                   # Input (rebindable keys + gamepad), settings store, audio, math
-│   ├── ui/                     # HUD, minimap, menu hub, garage, settings window
+│   ├── ui/                     # HUD, minimap, menu hub, garage + upgrades, shop, settings window
 │   └── account/                # Client for the accounts API (with guest fallback)
-├── server/                     # Cloudflare Worker: /api/* accounts, sessions, stats, settings
+├── server/                     # Cloudflare Worker: /api/* accounts, sessions, stats, settings, shop
 ├── shared/api.ts               # Types + validation shared by client and Worker
+├── shared/economy.ts           # Prices, prize money, upgrades, purchase rules (client and Worker)
 ├── migrations/                 # D1 schema (applied automatically by the Worker)
 ├── public/models/<car>/car.glb # Car models (see 3D assets)
 ├── public/previews/            # Track-picker pictures (rendered by `npm run previews`)
@@ -184,7 +196,7 @@ GitHub): build command `npm run build`, deploy command `npx wrangler deploy`, Wo
 
 ## 3D assets
 
-Everything except four car bodies — buildings, terrain, trees, signs, landmarks, sky, textures,
+Everything except five car bodies — buildings, terrain, trees, signs, landmarks, sky, textures,
 sound, the rally car — is generated in code.
 
 The car models are glTF files in `public/models/<car>/car.glb`, set up in
@@ -192,13 +204,15 @@ The car models are glTF files in `public/models/<car>/car.glb`, set up in
 physics, and split into parts by material: the paint takes the player's colour, finish and livery
 (paint baked into a texture is picked out by its hue and recoloured), rims take the rim colour,
 tail lights glow under braking, the wheels spin and steer, and number plates are fitted to the
-bumpers. Brand badges and the models' own plates are left out. To add a model: put it in the
-car's folder, add an entry with its material names, and run `npm test` (it checks the file
-matches its entry). Keep files small (these are 0.2–1.4 MB); large textures can be shrunk to
-JPEG before adding them.
+bumpers. Brand badges and the models' own plates are left out. Wheels can be separate nodes,
+a pair in one node (split down the middle) or moulded into the body (cut out and replaced). To add
+a model: put it in the car's folder, add an entry with its material names, and run `npm test` (it
+checks the file matches its entry). Keep files small (these are 0.2–1.4 MB); large textures can
+be shrunk to JPEG before adding them.
 
 | Car | Model | Author | Source |
 | --- | --- | --- | --- |
+| Mame 1.3 | Basic Car | Quaternius (CC0) | Poly Pizza |
 | Kaze GT | Chevrolet Camaro | PuKkBuMXDD | Poly Pizza |
 | Shiro Spyder | Convertible | Poly by Google (CC-BY) | Poly Pizza |
 | Oni 86R | Mazda RX-7 | IvOfficial | Poly Pizza |
