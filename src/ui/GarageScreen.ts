@@ -1,5 +1,6 @@
 import { CAR_IDS, type CarSetup, type LiveryPattern, type PaintFinish, PLATE_KANA, PLATE_REGIONS, type PlayerSettings } from '../../shared/api';
 import { CARS, carSetup, PAINT_SWATCHES, RIM_SWATCHES, randomPlate } from '../vehicles/cars';
+import { CAR_MODELS } from '../vehicles/importedCars';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -48,6 +49,7 @@ export class GarageScreen {
     $('car-name').textContent = car.name;
     $('car-kind').textContent = car.kind;
     $('car-blurb').textContent = car.blurb;
+    $('car-credit').textContent = CAR_MODELS[s.car]?.credit ?? '';
     $('car-dots').replaceChildren(
       ...CAR_IDS.map((id) => {
         const dot = document.createElement('span');

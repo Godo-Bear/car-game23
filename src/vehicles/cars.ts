@@ -101,9 +101,9 @@ export const CARS: Record<CarId, CarDef> = {
   },
   hatch: {
     id: 'hatch',
-    name: 'Shiro Type-H',
-    kind: 'Hot Hatch',
-    blurb: 'Light and eager. Gives away top speed but darts into corners and never bites.',
+    name: 'Shiro Spyder',
+    kind: 'Roadster',
+    blurb: 'Light and eager, roof down. Gives away top speed but darts into corners and never bites.',
     stats: { speed: 5, acceleration: 6, handling: 9, drift: 5 },
     spec: {
       ...SPORTS_CAR,

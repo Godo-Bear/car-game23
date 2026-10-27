@@ -444,6 +444,11 @@ input {
   font-size: 12px;
   margin: 0;
 }
+.car-credit {
+  font-size: 10px;
+  margin: 6px 0 0;
+  opacity: 0.7;
+}
 .error {
   color: #ff6b81;
   min-height: 1.2em;

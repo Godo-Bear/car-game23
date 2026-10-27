@@ -18,6 +18,7 @@ import { Minimap } from '../ui/Minimap';
 import { type HubPanel, Screens } from '../ui/Screens';
 import { CarModel } from '../vehicles/CarModel';
 import { AI_LIVERIES, CARS, carSetup, randomPlate } from '../vehicles/cars';
+import { loadCarAsset, onCarAssetLoaded, preloadCarAssets } from '../vehicles/importedCars';
 import { Sparks } from '../vehicles/Sparks';
 import { type EffectsCar, TireEffects } from '../vehicles/TireEffects';
 import { Lighting } from '../world/Lighting';
@@ -137,9 +138,15 @@ export class Game {
     await this.loadTrack(HOME_TRACK);
     await profile;
     this.screens.loadSettings(this.account.settings);
+    // Cars swap to their model files as they arrive; the player's is waited for.
+    onCarAssetLoaded((id) => {
+      for (const m of this.carModels) m.refresh(id);
+    });
+    await loadCarAsset(this.screens.settings.car);
     await this.goHome(true);
     // Racing lines for the other circuits are worked out in the background.
     this.loader.prefetchAll();
+    preloadCarAssets();
     setLoading(null);
     this.pipeline.renderer.setAnimationLoop((time) => this.frame(time));
   }
@@ -349,7 +356,7 @@ export class Game {
     this.screens.hideAll();
     this.feedback.quiet();
     const fresh = !this.worlds.has(settings.track);
-    await this.loadTrack(settings.track);
+    await Promise.all([this.loadTrack(settings.track), loadCarAsset(settings.car)]);
     this.applyTimeOfDay(settings.timeOfDay);
     this.createSimulation(settings);
     if (fresh) await this.compile();

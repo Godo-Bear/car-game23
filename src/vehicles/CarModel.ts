@@ -1,9 +1,10 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { CarSetup, Plate, TimeOfDay } from '../../shared/api';
 import { damp, lerp, wrapAngle } from '../core/math';
 import type { SimCar } from '../race/RaceSimulation';
 import type { BodyDef, CarDef } from './cars';
+import { type CarAsset, carAsset, liveryMaterial, type PartRole } from './importedCars';
+import { flipWinding, mergeAll } from './meshUtils';
 
 /**
  * Procedurally built cars (no external model files needed). Each body is extruded from a side
@@ -413,17 +414,23 @@ interface WheelGeometry {
   brake: THREE.BufferGeometry;
 }
 
-interface CarGeometry {
-  /** Every static part of the body, merged per material slot. */
-  body: Partial<Record<Slot, THREE.BufferGeometry>>;
+interface WheelSet {
+  /** Front wheels, centred on their hubs. */
   left: WheelGeometry;
   right: WheelGeometry;
+  /** Both rear wheels (they spin together as one axle). */
   rear: WheelGeometry;
+}
+
+interface CarGeometry extends WheelSet {
+  /** Every static part of the body, merged per material slot. */
+  body: Partial<Record<Slot, THREE.BufferGeometry>>;
   frontZ: number;
   rearZ: number;
 }
 
 const carCache = new Map<string, CarGeometry>();
+const wheelCache = new Map<string, WheelSet>();
 
 /** Bake a transform into a copy of `geo`, keeping only the attributes a merge needs. */
 function prep(geo: THREE.BufferGeometry, matrix: THREE.Matrix4, keep: string[], color?: THREE.Color): THREE.BufferGeometry {
@@ -437,27 +444,6 @@ function prep(geo: THREE.BufferGeometry, matrix: THREE.Matrix4, keep: string[], 
     g.setAttribute('color', new THREE.BufferAttribute(c, 3));
   }
   return g;
-}
-
-/** After mirroring a geometry (negative scale), restore its triangles' facing. */
-function flipWinding(geo: THREE.BufferGeometry): void {
-  for (const name of Object.keys(geo.attributes)) {
-    const attr = geo.getAttribute(name);
-    for (let i = 0; i < attr.count; i += 3) {
-      for (let k = 0; k < attr.itemSize; k++) {
-        const a = attr.getComponent(i + 1, k);
-        attr.setComponent(i + 1, k, attr.getComponent(i + 2, k));
-        attr.setComponent(i + 2, k, a);
-      }
-    }
-    attr.needsUpdate = true;
-  }
-}
-
-function mergeAll(list: THREE.BufferGeometry[]): THREE.BufferGeometry {
-  const out = mergeGeometries(list)!;
-  for (const g of list) g.dispose();
-  return out;
 }
 
 /** A car's geometry for one body + livery pattern (shared by every car that looks like it). */
@@ -634,7 +620,18 @@ function carGeometry(def: CarDef, pattern: CarSetup['pattern']): CarGeometry {
   const body: Partial<Record<Slot, THREE.BufferGeometry>> = {};
   for (const [slot, list] of Object.entries(parts) as [Slot, THREE.BufferGeometry[]][]) if (list.length) body[slot] = mergeAll(list);
 
-  // Wheels: tyre + rim in one geometry (vertex-coloured), spokes on the outer face.
+  const out: CarGeometry = { body, ...wheelGeometry(def), frontZ: g.front, rearZ: g.rear };
+  carCache.set(key, out);
+  return out;
+}
+
+/** A car's wheels: tyre + rim in one geometry (vertex-coloured), spokes on the outer face. */
+function wheelGeometry(def: CarDef): WheelSet {
+  const hit = wheelCache.get(def.id);
+  if (hit) return hit;
+  const b = def.body;
+  const g = bodyGeometry(def);
+  const matrix = new THREE.Matrix4();
   const tyreColor = new THREE.Color(0x151515);
   const rimColor = new THREE.Color(0x2a2d33);
   const wheelAt = (x: number, side: number): WheelGeometry => {
@@ -651,15 +648,12 @@ function carGeometry(def: CarDef, pattern: CarSetup['pattern']): CarGeometry {
   };
   const rl = wheelAt(b.trackHalf, 1);
   const rr = wheelAt(-b.trackHalf, -1);
-  const out: CarGeometry = {
-    body,
+  const out: WheelSet = {
     left: wheelAt(0, 1),
     right: wheelAt(0, -1),
     rear: { tyre: mergeAll([rl.tyre, rr.tyre]), spokes: mergeAll([rl.spokes, rr.spokes]), brake: mergeAll([rl.brake, rr.brake]) },
-    frontZ: g.front,
-    rearZ: g.rear,
   };
-  carCache.set(key, out);
+  wheelCache.set(def.id, out);
   return out;
 }
 
@@ -689,6 +683,9 @@ export class CarModel {
   private readonly beam: THREE.Mesh;
   private readonly shadow: THREE.Mesh;
   private owned: (THREE.Material | THREE.Texture)[] = [];
+  /** What the car was last built as (rebuilt when its model file arrives). */
+  private def: CarDef | null = null;
+  private setup: CarSetup | null = null;
   private roll = 0;
   private pitch = 0;
   private visualSteer = 0;
@@ -721,16 +718,24 @@ export class CarModel {
     this.body.clear();
     this.wheelGroup.clear();
     this.wheels = [];
+    this.def = def;
+    this.setup = setup;
 
-    const b = def.body;
-    const geo = carGeometry(def, setup.pattern);
-    const m = getCommon();
     const own = <T extends THREE.Material | THREE.Texture>(x: T): T => {
       this.owned.push(x);
       return x;
     };
     this.brakeMat = own(new THREE.MeshBasicMaterial({ color: new THREE.Color(1.4, 0.04, 0.05) }));
     this.reverseMat = own(new THREE.MeshBasicMaterial({ color: 0x333333 }));
+    const asset = carAsset(def.id);
+    if (asset) {
+      this.buildImported(def, setup, asset, own);
+      return;
+    }
+
+    const b = def.body;
+    const geo = carGeometry(def, setup.pattern);
+    const m = getCommon();
     const materials: Record<Slot, THREE.Material> = {
       paint: own(new THREE.MeshPhysicalMaterial({ color: setup.paint, ...FINISHES[setup.finish] })),
       accent: own(new THREE.MeshPhysicalMaterial({ color: setup.accent, ...FINISHES[setup.finish === 'matte' ? 'matte' : 'gloss'] })),
@@ -744,13 +749,8 @@ export class CarModel {
       trim: m.trim,
       chrome: m.chrome,
     };
-    const mesh = (g: THREE.BufferGeometry, mat: THREE.Material, parent: THREE.Object3D) => {
-      const out = new THREE.Mesh(g, mat);
-      out.castShadow = !(mat instanceof THREE.MeshBasicMaterial);
-      parent.add(out);
-    };
     // One mesh per material: a car is ~16 draw calls instead of ~30.
-    for (const [slot, g] of Object.entries(geo.body) as [Slot, THREE.BufferGeometry][]) mesh(g, materials[slot], this.body);
+    for (const [slot, g] of Object.entries(geo.body) as [Slot, THREE.BufferGeometry][]) this.addMesh(g, materials[slot], this.body);
     this.frontZ = geo.frontZ;
 
     const spokeMat = own(new THREE.MeshStandardMaterial({ color: setup.rims, metalness: 0.85, roughness: 0.25 }));
@@ -759,9 +759,9 @@ export class CarModel {
       steer.position.set(x, b.wheelRadius, z);
       const spin = new THREE.Group();
       steer.add(spin);
-      mesh(parts.tyre, m.wheel, spin);
-      mesh(parts.spokes, spokeMat, spin);
-      mesh(parts.brake, m.wheel, steer);
+      this.addMesh(parts.tyre, m.wheel, spin);
+      this.addMesh(parts.spokes, spokeMat, spin);
+      this.addMesh(parts.brake, m.wheel, steer);
       this.wheelGroup.add(steer);
       this.wheels.push({ steer, spin, front });
     };
@@ -770,6 +770,65 @@ export class CarModel {
     // The rear wheels never steer and spin together, so they are one axle.
     wheel(0, b.rearAxle, false, geo.rear);
     this.shadow.scale.set(b.width + 0.75, 1, geo.frontZ - geo.rearZ + 1);
+  }
+
+  /** Rebuild if this car's model file has just arrived. */
+  refresh(id: CarDef['id']): void {
+    if (this.def?.id === id && this.setup) this.build(this.def, this.setup);
+  }
+
+  private addMesh(g: THREE.BufferGeometry, mat: THREE.Material, parent: THREE.Object3D): void {
+    const out = new THREE.Mesh(g, mat);
+    out.castShadow = !(mat instanceof THREE.MeshBasicMaterial);
+    parent.add(out);
+  }
+
+  /** A body loaded from a model file, painted and fitted with plates like the built-in ones. */
+  private buildImported(def: CarDef, setup: CarSetup, asset: CarAsset, own: <T extends THREE.Material | THREE.Texture>(x: T) => T): void {
+    const m = getCommon();
+    const rims = own(new THREE.MeshStandardMaterial({ color: setup.rims, metalness: 0.85, roughness: 0.25 }));
+    const materials: Record<Exclude<PartRole, 'other'>, THREE.Material> = {
+      paint: own(liveryMaterial(asset, FINISHES[setup.finish], setup, own(numberTexture(setup.number, setup.accent)))),
+      glass: m.glass,
+      light: m.headlight,
+      brake: this.brakeMat,
+      trim: m.trim,
+      chrome: m.chrome,
+      rims,
+    };
+    for (const part of asset.body) this.addMesh(part.geometry, part.material ?? materials[part.role as Exclude<PartRole, 'other'>], this.body);
+
+    const plate = own(
+      new THREE.MeshStandardMaterial({ map: own(plateTexture(setup.plate, def.id === 'hatch' ? '500' : '300')), roughness: 0.45, metalness: 0.15 }),
+    );
+    asset.plates.forEach((at, i) => {
+      const mesh = new THREE.Mesh(getParts().plate, plate);
+      mesh.position.copy(at);
+      mesh.rotation.y = i === 0 ? 0 : Math.PI;
+      this.body.add(mesh);
+    });
+
+    // The model's own wheels, or the game's (scaled to fit the arches) when it has none to spin.
+    const builtIn = wheelGeometry(def);
+    for (const w of asset.wheels) {
+      const steer = new THREE.Group();
+      steer.position.copy(w.centre);
+      const spin = new THREE.Group();
+      steer.add(spin);
+      if (w.parts.length) {
+        for (const part of w.parts) this.addMesh(part.geometry, part.material ?? materials[part.role as Exclude<PartRole, 'other'>], spin);
+      } else {
+        const g = w.centre.x > 0 ? builtIn.left : builtIn.right;
+        steer.scale.setScalar(w.radius / def.body.wheelRadius);
+        this.addMesh(g.tyre, m.wheel, spin);
+        this.addMesh(g.spokes, rims, spin);
+        this.addMesh(g.brake, m.wheel, steer);
+      }
+      this.wheelGroup.add(steer);
+      this.wheels.push({ steer, spin, front: w.front });
+    }
+    this.frontZ = asset.front;
+    this.shadow.scale.set(asset.width + 0.75, 1, asset.front - asset.rear + 1);
   }
 
   /**

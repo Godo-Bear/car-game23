@@ -8,12 +8,13 @@ countryside, by day, at sunset or at night — running in the browser and hosted
 - **Menu hub (Dirt 5 style):** *Race* (circuit cards with preview pictures, time of day, laps,
   opponents, difficulty), *Garage*, *Career* and *Settings* tabs over a live homescreen: the field
   racing over the Hakone pass on a sunny day, filmed with TV-style camera shots.
-- **Garage:** five cars with their own handling and body (wheel arches, real glasshouse with
-  pillars, swept lights, grilles, diffusers, exhausts, flares/intakes/vents per model, detailed
-  wheels with brake calipers) — Kaze GT (all-rounder), Shiro Type-H
-  (hot hatch), Yama R4 (rally special), Oni 86R (drift coupe) and Raijin V12 (hypercar). Customise
-  paint colour and finish (gloss / metallic / pearl / matte), livery (racing stripes, side stripe,
-  two-tone, race livery), accent colour, rim colour and race number; saved per car to your account.
+- **Garage:** five cars with their own handling — Kaze GT (all-rounder), Shiro Spyder (roadster),
+  Yama R4 (rally special), Oni 86R (drift coupe) and Raijin V12 (hypercar). Four use 3D models
+  from `public/models/` (see *3D assets*); the rally car (and any car whose model fails to load)
+  uses the built-in body with wheel arches, glasshouse, lights, grilles and brake calipers.
+  Customise paint colour and finish (gloss / metallic / pearl / matte), livery (racing stripes,
+  side stripe, two-tone, race livery), accent colour, rim colour, race number and a Japanese
+  number plate (region, hiragana, number); saved per car to your account.
   Races are one-make: the AI drive the same car in team colours.
 - **Vehicle physics:** semi-simulation bicycle model — tyre slip, weight transfer, 6-speed automatic
   gearbox, handbrake drifting with skid marks and tyre smoke, stability control, slipstream, and
@@ -106,7 +107,9 @@ runs at a fixed 120 Hz, and is covered by unit tests — including a headless 8-
 │   │   └── RaceSimulation.ts   # Fixed-step world update shared by game and tests
 │   ├── vehicles/
 │   │   ├── cars.ts             # The garage: car specs, bodies, stats, default paint jobs
-│   │   ├── CarModel.ts         # Procedural cars + liveries: spinning/steering wheels, body roll, lights
+│   │   ├── CarModel.ts         # Car bodies + liveries: spinning/steering wheels, body roll, lights, plates
+│   │   ├── importedCars.ts     # Loads public/models/<car>/car.glb: fit, paint recolouring, livery shader
+│   │   ├── meshUtils.ts        # Geometry merge / winding helpers
 │   │   ├── TireEffects.ts      # Skid marks + tyre smoke
 │   │   └── Sparks.ts           # Barrier-scrape sparks
 │   ├── world/
@@ -126,6 +129,7 @@ runs at a fixed 120 Hz, and is covered by unit tests — including a headless 8-
 ├── server/                     # Cloudflare Worker: /api/* accounts, sessions, stats, settings
 ├── shared/api.ts               # Types + validation shared by client and Worker
 ├── migrations/                 # D1 schema (applied automatically by the Worker)
+├── public/models/<car>/car.glb # Car models (see 3D assets)
 ├── public/previews/            # Track-picker pictures (rendered by `npm run previews`)
 ├── scripts/render-previews.mjs # Renders those pictures from the game itself
 ├── tests/                      # Vitest: track, physics (incl. drift), collisions, races for every car
@@ -179,6 +183,25 @@ GitHub): build command `npm run build`, deploy command `npx wrangler deploy`, Wo
 
 ## 3D assets
 
-Everything — cars, buildings, terrain, trees, signs, landmarks, sky, textures, sound — is generated
-in code, so the game has no external asset files and no licensing to track. `CarModel` and `City` are isolated so
-real glTF models (e.g. licensed Tokyo buildings or vehicles) can be swapped in later.
+Everything except four car bodies — buildings, terrain, trees, signs, landmarks, sky, textures,
+sound, the rally car — is generated in code.
+
+The car models are glTF files in `public/models/<car>/car.glb`, set up in
+`src/vehicles/importedCars.ts`. Each is scaled to the car's size, its axles lined up with the
+physics, and split into parts by material: the paint takes the player's colour, finish and livery
+(paint baked into a texture is picked out by its hue and recoloured), rims take the rim colour,
+tail lights glow under braking, the wheels spin and steer, and number plates are fitted to the
+bumpers. Brand badges and the models' own plates are left out. To add a model: put it in the
+car's folder, add an entry with its material names, and run `npm test` (it checks the file
+matches its entry). Keep files small (these are 0.2–1.4 MB); large textures can be shrunk to
+JPEG before adding them.
+
+| Car | Model | Author | Source |
+| --- | --- | --- | --- |
+| Kaze GT | Chevrolet Camaro | PuKkBuMXDD | Poly Pizza |
+| Shiro Spyder | Convertible | Poly by Google (CC-BY) | Poly Pizza |
+| Oni 86R | Mazda RX-7 | IvOfficial | Poly Pizza |
+| Raijin V12 | Lamborghini Aventador | Ignition Labs | Poly Pizza |
+
+Credits are also shown in the garage. Check each model's licence on its Poly Pizza page before
+using the game commercially (the real car names and designs may be trademarks).
