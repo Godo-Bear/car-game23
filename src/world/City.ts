@@ -1,8 +1,10 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { TimeOfDay } from '../../shared/api';
 import { BARRIER_THICKNESS, SIDEWALK_WIDTH } from '../track/TrackMesh';
 import type { TrackPath } from '../track/TrackPath';
 import { GeometryBuilder } from './GeometryBuilder';
+import { type BuildingTemplate, cityKit, tokyoTowerMesh } from './sceneryModels';
 import { applyContactShading, type StreakLight } from './surfaces';
 import { billboardTexture, type FacadeTextures, facadeTexture, glowTexture, neonSignTexture, SIGN_COLORS, shopfrontTexture } from './textures';
 
@@ -39,6 +41,11 @@ export function placeLamps(track: TrackPath): Lamp[] {
 }
 
 type Style = 'office' | 'residential' | 'glass' | 'old';
+
+/** Tiled and painted walls of a Tokyo street: beige, grey, cream, brick-ish and pale blue. */
+const WALL_COLORS = [0xd9d2c3, 0xc9c3b8, 0xe6e1d6, 0xb8b4ad, 0xcdbba0, 0xa9b4bd, 0xd8c8b0, 0xbfb2a4, 0x9aa3a8, 0xe0d4c0, 0xc4a98e, 0xdedad0];
+/** Kit buildings stand on the lots this close to the circuit (where you can see them). */
+const KIT_RANGE = 150;
 const STYLES: Style[] = ['office', 'residential', 'glass', 'old'];
 
 export class City {
@@ -54,6 +61,7 @@ export class City {
   private readonly glows: { mat: THREE.PointsMaterial; opacity: Record<TimeOfDay, number> }[] = [];
   private signLevel = 1.9;
   private nightLights = true;
+  private towerModel: ReturnType<typeof tokyoTowerMesh> = null;
 
   /** Register a self-lit material: full brightness at night, dimmer (or just painted) by day. */
   private glowing<T extends THREE.MeshBasicMaterial>(mat: T, night: THREE.Color, sunset: THREE.Color, day: THREE.Color): T {
@@ -107,6 +115,9 @@ export class City {
     const BILLBOARDS = 5;
     const boards = Array.from({ length: BILLBOARDS }, () => new GeometryBuilder());
 
+    const kit = cityKit();
+    const kitSolid: THREE.BufferGeometry[] = [];
+    const kitWindows: THREE.BufferGeometry[] = [];
     const clearance = track.wallOffset + BARRIER_THICKNESS + SIDEWALK_WIDTH + 2.5;
     const b = track.bounds;
     const cell = 32;
@@ -134,15 +145,20 @@ export class City {
         else if (cx < -260 && cz > 280) h = 35 + rng() * 95;
         else if (rng() < 0.05) h = 90 + rng() * 80;
         if (dist > 320) h *= 0.75;
-        const style: Style = h > 110 ? (rng() < 0.6 ? 'glass' : 'office') : h < 22 ? (rng() < 0.6 ? 'old' : 'residential') : STYLES[Math.floor(rng() * 3)];
-        builders[style].box(cx, 0, cz, w, h, d, 0, {
-          tileU: 12,
-          tileV: 14,
-          roof: roofs,
-          uOffset: Math.floor(rng() * 4) / 4,
-          vOffset: Math.floor(rng() * 4) / 4,
-        });
-        if (rng() < 0.5) roofs.box(cx + (rng() - 0.5) * w * 0.4, h, cz + (rng() - 0.5) * d * 0.4, w * 0.3, 2 + rng() * 3, d * 0.3);
+        if (kit && dist - r < KIT_RANGE && h < 140) {
+          // A City Kit building on the lot, its front to the circuit.
+          h = placeKitBuilding(kit, rng, cx, cz, w, d, h, nx, nz, kitSolid, kitWindows);
+        } else {
+          const style: Style = h > 110 ? (rng() < 0.6 ? 'glass' : 'office') : h < 22 ? (rng() < 0.6 ? 'old' : 'residential') : STYLES[Math.floor(rng() * 3)];
+          builders[style].box(cx, 0, cz, w, h, d, 0, {
+            tileU: 12,
+            tileV: 14,
+            roof: roofs,
+            uOffset: Math.floor(rng() * 4) / 4,
+            vOffset: Math.floor(rng() * 4) / 4,
+          });
+          if (rng() < 0.5) roofs.box(cx + (rng() - 0.5) * w * 0.4, h, cz + (rng() - 0.5) * d * 0.4, w * 0.3, 2 + rng() * 3, d * 0.3);
+        }
         if (h > 70) beacons.box(cx, h, cz, 0.8, 0.8, 0.8);
 
         // Street-facing details only where drivers can see them.
@@ -249,6 +265,20 @@ export class City {
       this.group.add(new THREE.Mesh(builders[style].build(), mat));
     }
     this.group.add(new THREE.Mesh(roofs.build(), new THREE.MeshLambertMaterial({ color: 0x24252b })));
+    if (kitSolid.length) {
+      const solid = new THREE.MeshLambertMaterial({ vertexColors: true });
+      applyContactShading(solid);
+      this.group.add(new THREE.Mesh(mergeGeometries(kitSolid)!, solid));
+      // Windows: the glass by day, lit rooms after dark.
+      const glass = this.glowing(
+        new THREE.MeshBasicMaterial({ vertexColors: true }),
+        new THREE.Color(2.6, 2.05, 1.25),
+        new THREE.Color(1.35, 1.15, 0.95),
+        new THREE.Color(1, 1, 1),
+      );
+      this.group.add(new THREE.Mesh(mergeGeometries(kitWindows)!, glass));
+      for (const g of [...kitSolid, ...kitWindows]) g.dispose();
+    }
     this.beacon = new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 0.1, 0.1) });
     this.group.add(new THREE.Mesh(beacons.build(), this.beacon));
     const shopTex = shopfrontTexture(rng);
@@ -343,6 +373,11 @@ export class City {
   }
 
   private buildTokyoTower(): void {
+    this.towerModel = tokyoTowerMesh(333, TOKYO_TOWER.x, 0, TOKYO_TOWER.z);
+    if (this.towerModel) {
+      this.group.add(this.towerModel.mesh);
+      return;
+    }
     const tower = new THREE.Group();
     tower.position.set(TOKYO_TOWER.x, 0, TOKYO_TOWER.z);
     const lattice = this.latticeTexture();
@@ -494,6 +529,7 @@ export class City {
     for (const { mat, colors } of this.lit) mat.color.copy(colors[tod]);
     for (const { mat, opacity } of this.glows) mat.opacity = opacity[tod];
     this.signLevel = { night: 1.9, sunset: 1.45, day: 1.05 }[tod];
+    this.towerModel?.setTimeOfDay(tod === 'night', tod === 'sunset');
     this.nightLights = tod !== 'day';
   }
 
@@ -529,4 +565,49 @@ function lanternTexture(): THREE.Texture {
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
+}
+
+/**
+ * Put a City Kit building on a lot: the kit model whose proportions best match the lot (a little
+ * randomness among the closest), stretched to fill it and turned to face the track. Its walls get
+ * a Tokyo colour. Returns its height.
+ */
+function placeKitBuilding(
+  kit: BuildingTemplate[],
+  rng: () => number,
+  cx: number,
+  cz: number,
+  w: number,
+  d: number,
+  h: number,
+  nx: number,
+  nz: number,
+  solid: THREE.BufferGeometry[],
+  windows: THREE.BufferGeometry[],
+): number {
+  const want = h / Math.max(w, d);
+  const ranked = [...kit].sort(
+    (a, b) => Math.abs(Math.log(a.size.y / Math.max(a.size.x, a.size.z) / want)) - Math.abs(Math.log(b.size.y / Math.max(b.size.x, b.size.z) / want)),
+  );
+  const t = ranked[Math.floor(rng() * Math.min(3, ranked.length))];
+  // Front (+z in the kit) toward the track, in quarter turns so the lot stays axis-aligned.
+  const towardX = Math.abs(nx) > Math.abs(nz);
+  const turn = towardX ? (nx > 0 ? Math.PI / 2 : -Math.PI / 2) : nz > 0 ? 0 : Math.PI;
+  const sx = (towardX ? d : w) / t.size.x;
+  const sz = (towardX ? w : d) / t.size.z;
+  const sy = (sx + sz) / 2;
+  const matrix = new THREE.Matrix4()
+    .makeTranslation(cx, 0, cz)
+    .multiply(new THREE.Matrix4().makeRotationY(turn))
+    .multiply(new THREE.Matrix4().makeScale(sx, sy, sz));
+  const wall = new THREE.Color(WALL_COLORS[Math.floor(rng() * WALL_COLORS.length)]);
+  for (const part of t.parts) {
+    const g = part.geometry.clone().applyMatrix4(matrix);
+    const c = part.name === '_defaultMat' ? wall : part.color;
+    const colors = new Float32Array(g.getAttribute('position').count * 3);
+    for (let i = 0; i < colors.length; i += 3) colors.set([c.r, c.g, c.b], i);
+    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    (part.name === 'window' ? windows : solid).push(g);
+  }
+  return t.size.y * sy;
 }

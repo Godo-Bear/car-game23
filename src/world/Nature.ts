@@ -23,6 +23,7 @@ import {
   vendingMachines,
 } from './japan';
 import { SUN_DIRECTION } from './Lighting';
+import { tokyoTowerMesh } from './sceneryModels';
 import { concreteNormalMap, groundMaterial, waterNormalMap } from './surfaces';
 import { glowTexture } from './textures';
 
@@ -263,6 +264,7 @@ export class NatureWorld {
     this.buildTerrain();
     this.buildWater();
     this.addFeature(new MountFuji(...this.cfg.fujiAt, () => SUN_DIRECTION));
+    this.placeTokyoTower();
     this.buildDistantRidges(rng);
     const ground = (x: number, z: number) => this.heightAt(x, z);
     const wall = track.wallOffset;
@@ -316,6 +318,34 @@ export class NatureWorld {
     );
     this.group.add(this.grass.mesh);
     this.setDetail(detail, grassLevel);
+  }
+
+  /**
+   * Tokyo Tower, once per map: a few hundred metres from the circuit on dry ground, so it stands
+   * on the skyline from much of the lap. Placed before the trees, which then keep clear of it.
+   */
+  private placeTokyoTower(): void {
+    const { cx, cz } = this.extent;
+    const lake = this.cfg.lake;
+    for (let k = 0; k < 60; k++) {
+      // A golden-angle spiral of candidate spots around the circuit.
+      const angle = k * 2.39996;
+      const radius = 380 + (k % 7) * 70;
+      const x = cx + Math.cos(angle) * radius;
+      const z = cz + Math.sin(angle) * radius;
+      const d = this.field.query(x, z).d;
+      if (d < 200 || d > 560 || this.isBlocked(x, z)) continue;
+      if (((x - lake.x) / (lake.rx + 60)) ** 2 + ((z - lake.z) / (lake.rz + 60)) ** 2 < 1) continue;
+      const y = Math.min(...[-12, 0, 12].flatMap((dx) => [-12, 0, 12].map((dz) => this.heightAt(x + dx, z + dz))));
+      if (y < this.cfg.waterLevel + 2) continue;
+      const tower = tokyoTowerMesh(220, x, y - 1, z);
+      if (!tower) return;
+      const group = new THREE.Group();
+      group.add(tower.mesh);
+      this.addFeature({ group, setTimeOfDay: (tod) => tower.setTimeOfDay(tod === 'night', tod === 'sunset') });
+      this.blocked.push({ x, z, r: 45 });
+      return;
+    }
   }
 
   private addFeature(f: Feature): void {

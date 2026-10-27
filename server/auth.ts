@@ -7,6 +7,8 @@ export interface Env {
   DB?: D1Database;
   /** The built game (dist/), served by Workers Static Assets. */
   ASSETS: Fetcher;
+  /** Optional secret admin code (`wrangler secret put ADMIN_CODE`); replaces the built-in one. */
+  ADMIN_CODE?: string;
 }
 
 export type ApiHandler = (request: Request, env: Env) => Promise<Response>;

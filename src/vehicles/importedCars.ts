@@ -63,17 +63,18 @@ export const CAR_MODELS: Partial<Record<CarId, ModelDef>> = {
   },
   gt: {
     file: 'gt/car.glb',
-    credit: 'Model: "Chevrolet Camaro" by PuKkBuMXDD (Poly Pizza)',
+    credit: 'Model: "2015 Dodge Challenger" by Grzybek (Poly Pizza)',
     roles: [
-      [/^bodywork$/, 'paint'],
-      [/^glass$/, 'glass'],
-      [/^lights$/, 'light'],
-      [/^back_lights$/, 'brake'],
-      [/^kidney$/, 'rims'],
-      [/^(rubber|black|bottom|mesh|plastic|back_plate)$/, 'trim'],
+      [/^Body$/, 'paint'],
+      [/^Windows/, 'glass'],
+      [/^(Headlights|Long Headlights|Sidelights)$/, 'light'],
+      [/^(Brakelights|Tailights)/, 'brake'],
+      [/^Middle$/, 'rims'],
+      [/^(Tire \d|Interior \d|Details 0|Cables)$/, 'trim'],
     ],
-    hide: /logo|front_plate/,
-    wheels: /^wheel_/,
+    // The model's stand-in floor plane, light and camera.
+    hide: /^(Plane001|Light|Camera)$/,
+    wheels: /^Wheel/,
   },
   hatch: {
     file: 'hatch/car.glb',

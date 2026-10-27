@@ -24,6 +24,12 @@ countryside, by day, at sunset or at night — running in the browser and hosted
   The AI race your car's class and the classes either side of it (a few the same as yours) in team
   colours, with their engines evened out a little toward your car's pace; your upgrades are yours
   alone, so tuning pays off.
+- **Admin panel:** *Career → Admin*, unlocked with the admin code. Look up any player (or list
+  them all) and set their money, which cars they own and each car's upgrade levels. The server
+  checks the code on every request and locks a network address out for 15 minutes after 10 wrong
+  codes. Only a SHA-256 of the code is in this repository (`shared/admin.ts`); to use a private
+  code instead, run `npx wrangler secret put ADMIN_CODE` (it replaces the built-in one). Without
+  the backend, the panel edits this device's guest profile.
 - **Nitro:** Shift / N (X or RB on a gamepad). A tank of boost that pushes harder than the engine
   alone, with blue exhaust flames, a wider view and speed blur. It refills slowly on its own and
   quickly while drifting.
@@ -196,8 +202,17 @@ GitHub): build command `npm run build`, deploy command `npx wrangler deploy`, Wo
 
 ## 3D assets
 
-Everything except five car bodies — buildings, terrain, trees, signs, landmarks, sky, textures,
-sound, the rally car — is generated in code.
+Most of the world — terrain, trees, signs, sky, textures, sound, the rally car — is generated in
+code. From model files:
+
+- **Cars:** five car bodies (below).
+- **City Kit buildings** (`public/models/city/`): the Tokyo lots near the circuit, merged into a
+  few meshes with Tokyo wall colours and windows that light up at night.
+- **Tokyo Tower** (`public/models/landmarks/`, by Kenta Imai): cut out of its diorama, it stands in
+  Tokyo and once on the skyline of Hakone and Sakura Valley, lit orange after dark.
+
+If a scenery file fails to load, the built-in buildings and tower are used
+(`src/world/sceneryModels.ts`).
 
 The car models are glTF files in `public/models/<car>/car.glb`, set up in
 `src/vehicles/importedCars.ts`. Each is scaled to the car's size, its axles lined up with the
@@ -213,7 +228,7 @@ be shrunk to JPEG before adding them.
 | Car | Model | Author | Source |
 | --- | --- | --- | --- |
 | Mame 1.3 | Basic Car | Quaternius (CC0) | Poly Pizza |
-| Kaze GT | Chevrolet Camaro | PuKkBuMXDD | Poly Pizza |
+| Kaze GT | 2015 Dodge Challenger | Grzybek | Poly Pizza |
 | Shiro Spyder | Convertible | Poly by Google (CC-BY) | Poly Pizza |
 | Oni 86R | Mazda RX-7 | IvOfficial | Poly Pizza |
 | Raijin V12 | Lamborghini Aventador | Ignition Labs | Poly Pizza |

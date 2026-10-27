@@ -4,7 +4,7 @@ import { SPORTS_CAR, type VehicleSpec } from '../physics/VehiclePhysics';
 
 /** The garage: every drivable car, its handling and its body shape. */
 
-export type WingStyle = 'none' | 'lip' | 'roof' | 'gt';
+export type WingStyle = 'none' | 'lip' | 'roof' | 'gt' | 'rally';
 
 export interface BodyDef {
   /** Side profile of the lower body, [z (forward), y (up)] in metres. */
@@ -20,7 +20,7 @@ export interface BodyDef {
   frontAxle: number;
   rearAxle: number;
   wing: WingStyle;
-  /** Rally kit: roof scoop, light pod and mud flaps. */
+  /** Rally kit: roof scoop, light pod, mud flaps, splitter, tow hooks, louvres and diffuser. */
   rally?: boolean;
   /** Bonnet scoop. */
   hoodScoop?: boolean;
@@ -256,32 +256,37 @@ export const CARS: Record<CarId, CarDef> = {
     },
     aiGrip: 1,
     body: {
+      // A WRC-style hatch: low wedge nose, steep raked screen, short tail.
       profile: [
-        [-1.96, 0.42],
-        [1.9, 0.42],
-        [2.02, 0.56],
-        [1.98, 0.78],
-        [1.02, 0.98],
-        [-1.78, 1.04],
-        [-2.0, 0.98],
-        [-2.02, 0.56],
+        [-1.96, 0.4],
+        [1.94, 0.4],
+        [2.06, 0.5],
+        [2.03, 0.68],
+        [1.6, 0.84],
+        [0.95, 0.97],
+        [-1.78, 1.03],
+        [-2.0, 0.96],
+        [-2.03, 0.54],
       ],
       cabin: [
-        [-1.9, 1.0],
-        [0.97, 0.96],
-        [0.12, 1.5],
-        [-1.6, 1.54],
-        [-1.92, 1.14],
+        [-1.86, 0.99],
+        [0.92, 0.95],
+        [0.02, 1.47],
+        [-1.5, 1.52],
+        [-1.9, 1.16],
       ],
-      width: 1.84,
-      cabinWidth: 1.54,
-      roof: { z: -0.74, length: 1.55, y: 1.54 },
+      width: 1.9,
+      cabinWidth: 1.5,
+      roof: { z: -0.72, length: 1.48, y: 1.52 },
       wheelRadius: 0.35,
       trackHalf: 0.8,
       frontAxle: 1.25,
       rearAxle: -1.3,
-      wing: 'roof',
+      wing: 'rally',
       rally: true,
+      flares: true,
+      hoodScoop: true,
+      hoodVents: true,
     },
     setup: {
       paint: '#0a3d91',

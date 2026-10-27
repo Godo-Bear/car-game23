@@ -1,3 +1,4 @@
+import type { AdminRequest } from '../../shared/admin';
 import type { CareerStats, PlayerSettings, ProfileResponse, Purchase, RaceRecord, Wallet } from '../../shared/api';
 import { cleanWallet, newWallet, purchase, raceReward } from '../../shared/economy';
 
@@ -67,6 +68,22 @@ export class AccountService {
 
   get wallet(): Wallet {
     return this.profile?.wallet ?? this.guest.wallet;
+  }
+
+  /** Admin tools on the server (the code travels with every request and is checked there). */
+  admin<T>(request: AdminRequest): Promise<T> {
+    return this.call<T>('POST', '/api/admin', request);
+  }
+
+  /** An admin changed a wallet: the signed-in player's (online) or this device's guest. */
+  replaceWallet(wallet: Wallet): void {
+    if (this.profile) {
+      this.profile.wallet = wallet;
+    } else {
+      this.guest.wallet = cleanWallet(wallet);
+      saveGuest(this.guest);
+    }
+    this.emit();
   }
 
   /** Buy a car or an upgrade. Accounts are charged by the server; guests on this device. */

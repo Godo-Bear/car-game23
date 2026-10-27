@@ -7,6 +7,7 @@ import { formatTime, type RacerState } from '../race/RaceManager';
 import { TrackPath } from '../track/TrackPath';
 import { TRACKS, type TrackTheme } from '../track/tracks';
 import { CARS } from '../vehicles/cars';
+import { AdminPanel } from './AdminPanel';
 import { GarageScreen } from './GarageScreen';
 import { SettingsPanel, type SettingsTab } from './SettingsPanel';
 import { ShopScreen } from './ShopScreen';
@@ -60,6 +61,7 @@ export class Screens {
   private readonly panel: SettingsPanel;
   private readonly garage: GarageScreen;
   private readonly shop: ShopScreen;
+  private readonly admin: AdminPanel;
 
   constructor(
     private readonly account: AccountService,
@@ -84,8 +86,11 @@ export class Screens {
     );
     this.buildTrackCards();
     this.wire();
-    // Money, cars and upgrades change with purchases and race results.
+    this.admin = new AdminPanel(account, () => this.handlers.onModalChange(this.isModalOpen));
+    // Money, cars and upgrades change with purchases, race results and the admin tools.
     account.onChange(() => {
+      // An admin may have taken away the car you were going to race.
+      if (!account.wallet.owned.includes(this.settings.car)) this.update({ car: STARTER_CAR }, true);
       this.renderProfile();
       this.garage.render();
       this.shop.render();
@@ -94,7 +99,7 @@ export class Screens {
 
   // ---------- visibility ----------
   get isModalOpen(): boolean {
-    return !$('modal-auth').classList.contains('hidden') || this.panel.isOpen;
+    return !$('modal-auth').classList.contains('hidden') || this.panel.isOpen || this.admin?.isOpen;
   }
 
   get homeVisible(): boolean {
@@ -408,6 +413,7 @@ export class Screens {
         if (e.code !== 'Escape') return;
         if (!$('modal-auth').classList.contains('hidden')) this.closeAuth();
         else if (this.panel.isOpen) this.panel.close();
+        else if (this.admin.isOpen) this.admin.close();
         else return;
         e.stopImmediatePropagation();
         this.input.clearActions();

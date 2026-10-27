@@ -596,6 +596,13 @@ function carGeometry(def: CarDef, pattern: CarSetup['pattern']): CarGeometry {
   } else if (b.wing === 'roof') {
     const z = b.roof.z - b.roof.length / 2 - 0.12;
     put(p.box, b.rally ? 'carbon' : 'paint', 0, b.roof.y + 0.03, z, b.cabinWidth - 0.06, b.rally ? 0.06 : 0.04, b.rally ? 0.4 : 0.26);
+  } else if (b.wing === 'rally') {
+    // WRC wing: a deep blade off the back of the roof, big endplates, a second element under it.
+    const z = b.roof.z - b.roof.length / 2 - 0.22;
+    const y = b.roof.y - 0.06;
+    put(p.box, 'carbon', 0, y, z, b.cabinWidth + 0.1, 0.05, 0.5);
+    put(p.box, 'carbon', 0, y - 0.16, z - 0.08, b.cabinWidth - 0.1, 0.04, 0.3);
+    for (const side of [-1, 1]) put(p.box, 'paint', side * ((b.cabinWidth + 0.1) / 2), y - 0.08, z, 0.03, 0.3, 0.56);
   } else if (b.wing === 'lip') {
     put(p.box, 'paint', 0, g.topAt(g.rear + 0.15) + 0.03, g.rear + 0.12, b.width - 0.2, 0.05, 0.16);
   }
@@ -611,7 +618,18 @@ function carGeometry(def: CarDef, pattern: CarSetup['pattern']): CarGeometry {
       for (const z of [b.frontAxle - b.wheelRadius - 0.12, b.rearAxle - b.wheelRadius - 0.12]) {
         put(p.box, 'carbon', side * (b.trackHalf + 0.02), g.bottom - 0.12, z, 0.32, 0.3, 0.02);
       }
+      // Louvres behind the front wheels let the hot air out of the arches.
+      for (let k = 0; k < 4; k++) put(p.box, 'trim', side * (hw + 0.006), g.bottom + 0.3 + k * 0.07, b.frontAxle - archR - 0.16, 0.012, 0.03, 0.28);
+      // Red tow hooks front and rear.
+      put(p.box, 'brake', side * 0.55, g.bottom + 0.06, g.front + 0.02, 0.05, 0.08, 0.08);
     }
+    put(p.box, 'brake', 0, g.bottom + 0.08, g.rear - 0.03, 0.06, 0.08, 0.08);
+    // Front splitter and a rear diffuser with strakes.
+    put(p.box, 'carbon', 0, g.bottom - 0.05, g.front - 0.02, b.width - 0.1, 0.03, 0.22);
+    put(p.box, 'carbon', 0, g.bottom - 0.02, g.rear + 0.12, b.width * 0.7, 0.04, 0.3);
+    for (const x of [-0.45, -0.15, 0.15, 0.45]) put(p.box, 'carbon', x, g.bottom + 0.03, g.rear + 0.1, 0.02, 0.1, 0.26);
+    // Twin roof antennae for the stage radio.
+    for (const side of [-1, 1]) put(p.box, 'trim', side * 0.25, b.roof.y + 0.12, b.roof.z - 0.45, 0.015, 0.24, 0.015);
   }
 
   // Livery.
