@@ -22,7 +22,8 @@ describe('car model files', () => {
       const gltf = readGlb(def.file);
       // Every role finds a material, so a re-exported file can't silently lose its paint.
       const materials = (gltf.materials ?? []).map((m) => m.name ?? '');
-      for (const [re, role] of def.roles) expect(materials.some((m) => re.test(m)), `${role} material ${re}`).toBe(true);
+      const missing = def.roles.filter(([re]) => !materials.some((m) => re.test(m))).map(([, role]) => role);
+      expect(missing).toEqual([]);
       if (def.wheelCut) return;
       // Four wheel nodes (outermost matches, named as the loader names them).
       const nodes = gltf.nodes ?? [];
