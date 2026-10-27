@@ -61,7 +61,11 @@ export class City {
     return mat;
   }
 
-  constructor(track: TrackPath, lamps: Lamp[], rng: () => number) {
+  /**
+   * `keepOut` reserves corridors (e.g. under the railway viaduct) where no building may stand:
+   * it gets a building's centre and radius.
+   */
+  constructor(track: TrackPath, lamps: Lamp[], rng: () => number, keepOut: (x: number, z: number, r: number) => boolean = () => false) {
     this.group.name = 'city';
     this.rng = rng;
     const coarse = track.samples.filter((_, i) => i % 3 === 0);
@@ -97,6 +101,7 @@ export class City {
     const roofs = new GeometryBuilder();
     const beacons = new GeometryBuilder();
     const shops = new GeometryBuilder();
+    const lanterns = new GeometryBuilder();
     const SIGN_TEXTURES = 16;
     const signs = Array.from({ length: SIGN_TEXTURES }, () => new GeometryBuilder());
     const BILLBOARDS = 5;
@@ -111,6 +116,7 @@ export class City {
         const cx = gx + (rng() - 0.5) * 6;
         const cz = gz + (rng() - 0.5) * 6;
         if (Math.hypot(cx - TOKYO_TOWER.x, cz - TOKYO_TOWER.z) < 70) continue;
+        if (keepOut(cx, cz, 14)) continue;
         let w = 13 + rng() * 15;
         let d = 13 + rng() * 15;
         const { d: dist, nx, nz, bx, by, bz } = distToTrack(cx, cz);
@@ -168,6 +174,13 @@ export class City {
             target.quad(v0, v1, v2, v3, 0, 0, u1, 1, undefined, flip);
           };
           quadFacing(a, c, 0.2, Math.min(3.6, h - 1), shops, faceLen / 16);
+          // Red paper lanterns (chochin) hanging either side of the izakaya door.
+          if (rng() < 0.55) {
+            for (const along of [-faceLen / 6, faceLen / 6]) {
+              const [lx, lz] = facePoint(along, 0.45);
+              lanterns.cylinder(lx, 2.05, lz, 0.2, 0.2, 0.55, 10);
+            }
+          }
         }
 
         if (rng() < 0.65 && h > 10) {
@@ -241,6 +254,13 @@ export class City {
     const shopTex = shopfrontTexture(rng);
     const grey = (v: number) => new THREE.Color(v, v, v);
     const shopMat = this.glowing(new THREE.MeshBasicMaterial({ map: shopTex }), grey(1.3), grey(1.15), grey(0.95));
+    const lanternMat = this.glowing(
+      new THREE.MeshBasicMaterial({ map: lanternTexture() }),
+      new THREE.Color(2.2, 1.6, 1.4),
+      new THREE.Color(1.4, 1.1, 1),
+      grey(0.9),
+    );
+    this.group.add(new THREE.Mesh(lanterns.build(), lanternMat));
     this.group.add(new THREE.Mesh(shops.build(), shopMat));
     signs.forEach((g, i) => {
       if (g.isEmpty) return;
@@ -486,4 +506,27 @@ export class City {
       m.color.setRGB(v, v, v);
     }
   }
+}
+
+/** Red paper lantern: black bands top and bottom, a kanji in the middle. */
+function lanternTexture(): THREE.Texture {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 64;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#d42a1e';
+  g.fillRect(0, 0, 64, 64);
+  g.fillStyle = 'rgba(0,0,0,0.25)';
+  for (let y = 10; y < 56; y += 6) g.fillRect(0, y, 64, 1);
+  g.fillStyle = '#111';
+  g.fillRect(0, 0, 64, 9);
+  g.fillRect(0, 55, 64, 9);
+  g.font = 'bold 26px sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('酒', 16, 33);
+  g.fillText('酒', 48, 33);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }

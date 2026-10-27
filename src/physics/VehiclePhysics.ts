@@ -276,7 +276,11 @@ export class VehiclePhysics {
       target = clamp(clamp(input.steer, -1, 1) * limit + bodySlip * counter, -limit, limit);
     }
     const returning = Math.abs(target) < Math.abs(this.steerAngle) && Math.sign(target) !== -Math.sign(this.steerAngle);
-    const rate = s.steerRate * s.maxSteer * (returning ? 1.6 : 1);
+    // Steering speed shrinks with the available lock, so the wheel takes a similar time to reach
+    // full lock at any speed - no twitchy flicks at 200 km/h.
+    // (Drift flicks and countersteer keep the quick rack.)
+    const quick = this.drifting || input.handbrake;
+    const rate = s.steerRate * (quick ? s.maxSteer : lerp(s.maxSteer, limit, 0.7)) * (returning ? 1.6 : 1);
     this.steerAngle = moveTowards(this.steerAngle, target, rate * dt);
     this.steerAngle = clamp(this.steerAngle, -limit * 1.05, limit * 1.05);
     const delta = this.steerAngle;

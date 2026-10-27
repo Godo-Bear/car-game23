@@ -21,12 +21,12 @@ export const HAKONE_PASS: TrackLayout = {
   start: { x: 50, z: 0 },
   vertices: [
     { x: -350, z: 0, radius: 45, y: 0 }, // S0
-    { x: 250, z: 0, radius: 22, y: 2 }, // S1  first hairpin (left)
-    { x: 250, z: -60, radius: 20, y: 4 }, // L1
-    { x: -150, z: -60, radius: 18, y: 26 }, // L2  second hairpin (right)
-    { x: -150, z: -120, radius: 18, y: 28 }, // L3
-    { x: 200, z: -120, radius: 18, y: 50 }, // L4  third hairpin (left)
-    { x: 200, z: -180, radius: 18, y: 52 }, // L5
+    { x: 250, z: 0, radius: 26, y: 2 }, // S1  first hairpin (left)
+    { x: 250, z: -60, radius: 25, y: 4 }, // L1
+    { x: -150, z: -60, radius: 24, y: 26 }, // L2  second hairpin (right)
+    { x: -150, z: -120, radius: 24, y: 28 }, // L3
+    { x: 200, z: -120, radius: 24, y: 50 }, // L4  third hairpin (left)
+    { x: 200, z: -180, radius: 24, y: 52 }, // L5
     { x: -300, z: -200, radius: 70, y: 55 }, // R1  ridge
     { x: -560, z: -150, radius: 60, y: 42 }, // R2  descent
     { x: -700, z: 80, radius: 55, y: 20 }, // R3
@@ -51,7 +51,7 @@ export const SAKURA_VALLEY: TrackLayout = {
     { x: 460, z: 390, radius: 45, y: 7 }, // D
     { x: 240, z: 480, radius: 80, y: 2 }, // E
     { x: 10, z: 380, radius: 95, y: 9 }, // F
-    { x: -210, z: 480, radius: 35, y: 4 }, // G
+    { x: -210, z: 480, radius: 46, y: 4 }, // G
     { x: -470, z: 400, radius: 55, y: 13 }, // H
     { x: -560, z: 170, radius: 60, y: 7 }, // I
   ],

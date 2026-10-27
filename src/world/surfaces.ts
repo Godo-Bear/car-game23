@@ -94,6 +94,14 @@ export function asphaltNormalMap(): THREE.DataTexture {
   return asphaltNormals;
 }
 
+let waterNormals: THREE.DataTexture | null = null;
+
+/** Gentle ripples for still water (paddies). */
+export function waterNormalMap(): THREE.DataTexture {
+  waterNormals ??= normalMap(128, (x, y) => fbm(x, y, 128, 4, 3, 41) * 3, 1);
+  return waterNormals;
+}
+
 /** Cast concrete: soft unevenness and small air pockets. */
 export function concreteNormalMap(): THREE.DataTexture {
   concreteNormals ??= normalMap(128, (x, y) => fbm(x, y, 128, 6, 4, 31) * 2 - (hash(x, y, 9) > 0.985 ? 1.5 : 0), 1.2);
@@ -159,9 +167,13 @@ export function groundMaterial(params: THREE.MeshLambertMaterialParameters, kind
         // Dry, yellower patches in the grass.
         soil = mix(soil, soil * vec3(1.12, 1.06, 0.78), smoothstep(0.55, 0.75, mid) * 0.5);
         float crack = texture2D(uDetail, gp * 0.12).a;
-        vec3 stone = mix(vec3(0.43, 0.42, 0.39), diffuseColor.rgb, 0.25) * (0.62 + 0.5 * crack) * (0.85 + 0.3 * fine);
-        float rock = (1.0 - smoothstep(0.7, 0.88, vSurfUp)) * uRock;
-        diffuseColor.rgb = mix(soil, stone, rock);`,
+        // Weathered rock, darker and mossy where it meets the grass.
+        vec3 stone = mix(vec3(0.3, 0.3, 0.28), diffuseColor.rgb * 0.8, 0.45) * (0.6 + 0.5 * crack) * (0.85 + 0.3 * fine);
+        float rock = (1.0 - smoothstep(0.6, 0.9, vSurfUp)) * uRock * (0.75 + 0.25 * mid);
+        // Snow (the painted colour is near white) stays clean and bright, just a little textured.
+        vec3 base = diffuseColor.rgb;
+        float snow = smoothstep(0.62, 0.8, dot(base, vec3(0.3333)));
+        diffuseColor.rgb = mix(mix(soil, stone, rock), base * (0.93 + 0.1 * fine), snow);`,
       )
       .replace(
         '#include <normal_fragment_maps>',

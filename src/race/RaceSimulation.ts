@@ -200,6 +200,32 @@ export class RaceSimulation {
     this.race.start();
   }
 
+  private readonly assisted: VehicleControls = neutralControls();
+
+  /**
+   * Barrier assist (scales with the stability-assist setting): if the car is about to run into a
+   * wall within the next half second, nudge the steering away from it - harder the closer it is.
+   * The player's own steering away from the wall always wins.
+   */
+  private barrierAssist(car: SimCar, input: VehicleControls): VehicleControls {
+    const k = this.settings.playerAssist;
+    const p = car.physics;
+    const pr = car.proj;
+    if (k < 0.3 || p.forwardSpeed < 12) return input;
+    const lateralSpeed = p.vx * pr.rx + p.vz * pr.rz;
+    const ahead = pr.lateral + lateralSpeed * 0.5;
+    const side = Math.sign(ahead);
+    const limit = this.track.wallOffset - 1.4;
+    const overshoot = Math.abs(ahead) - limit;
+    if (overshoot <= 0 || lateralSpeed * side <= 0) return input;
+    const out = this.assisted;
+    Object.assign(out, input);
+    // Positive steer turns right; steer toward the centre line.
+    const away = -side * clamp(overshoot / 2.5, 0, 1) * k;
+    if (Math.sign(input.steer) !== Math.sign(away)) out.steer = clamp(input.steer + away, -1, 1);
+    return out;
+  }
+
   /** Advance one fixed step. Returns lap/finish events produced during the step. */
   step(playerInput: VehicleControls): RaceEvent[] {
     const dt = RaceSimulation.STEP;
@@ -222,7 +248,7 @@ export class RaceSimulation {
       const r = this.race.racers[car.id];
       let controls: VehicleControls;
       if (car.isPlayer && !car.autopilot) {
-        controls = playerInput;
+        controls = this.barrierAssist(car, playerInput);
       } else {
         controls = car.ai.drive(car.physics, car.proj, this.traffic, dt);
         if (r.finished && !car.isPlayer) {

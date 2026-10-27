@@ -6,7 +6,24 @@ import type { TrackTheme } from '../track/tracks';
 import { bamboo, broadleaf, bush, cedar, contactShadowMaterial, maple, pine, sakura, sugi, swayMaterial, type TreeShape } from './foliage';
 import { GeometryBuilder } from './GeometryBuilder';
 import { GrassField, type GroundField } from './Grass';
-import { groundMaterial } from './surfaces';
+import {
+  curveMirrors,
+  type Feature,
+  type HouseSpot,
+  japaneseHouses,
+  koinobori,
+  latticeSlopes,
+  MountFuji,
+  type Paddy,
+  powerLines,
+  Railway,
+  Ropeway,
+  ricePaddies,
+  type Spot,
+  vendingMachines,
+} from './japan';
+import { SUN_DIRECTION } from './Lighting';
+import { concreteNormalMap, groundMaterial, waterNormalMap } from './surfaces';
 import { glowTexture } from './textures';
 
 /**
@@ -211,8 +228,11 @@ export class NatureWorld {
   private readonly petals: FallingPetals | null;
   private readonly lanternMat: THREE.MeshBasicMaterial | null = null;
   private readonly lanternGlow: THREE.PointsMaterial | null = null;
-  private readonly fujiMat: THREE.MeshBasicMaterial;
-  private readonly fujiSnow: THREE.MeshBasicMaterial;
+  /** Japanese scenery (Fuji, power lines, houses, trains...). */
+  private readonly features: Feature[] = [];
+  /** Areas kept free of trees (houses, paddies, under the railway). */
+  private readonly blocked: { x: number; z: number; r: number }[] = [];
+  private railZ: number | null = null;
   /** Instanced vegetation and its full instance count, thinned by the graphics detail level. */
   private readonly detailMeshes: { mesh: THREE.InstancedMesh; count: number }[] = [];
   /** Trunks and crowns (they cast shadows on High). */
@@ -242,20 +262,46 @@ export class NatureWorld {
 
     this.buildTerrain();
     this.buildWater();
-    const fuji = this.buildFuji();
-    this.fujiMat = fuji.body;
-    this.fujiSnow = fuji.snow;
+    this.addFeature(new MountFuji(...this.cfg.fujiAt, () => SUN_DIRECTION));
     this.buildDistantRidges(rng);
+    const ground = (x: number, z: number) => this.heightAt(x, z);
+    const wall = track.wallOffset;
 
     if (theme === 'mountain') {
+      // A ryokan and its neighbours on the lake shore, a ropeway up the far mountain.
+      this.addFeature(japaneseHouses(this.village(rng, [-210, 62], 6, 46, 'ryokan')));
+      this.addFeature(new Ropeway([380, 560], [900, 1150], ground));
       this.buildForest(rng);
       this.buildLakeTorii();
       this.buildChevrons();
+      this.addFeature(curveMirrors(track, ground));
+      this.addFeature(latticeSlopes(track, ground, concreteNormalMap()));
+      this.addFeature(powerLines(track, { lateral: wall + 3.4, every: 36, sides: [-1], style: 'wood', ground }));
+      this.addFeature(vendingMachines(this.roadsideMachines([40, 260, 1100], wall + 2.6), rng));
       this.petals = null;
     } else {
+      // Flooded rice paddies and farming villages first, so the trees keep clear of them.
+      this.addFeature(ricePaddies(this.planPaddies(), waterNormalMap()));
+      const houses: HouseSpot[] = [];
+      for (const centre of this.villageCentres(rng, 3)) houses.push(...this.village(rng, centre, 7, 40));
+      this.addFeature(japaneseHouses(houses));
+      this.addFeature(koinobori(houses.filter((_, k) => k % 3 === 0).map((h) => this.besideHouse(h))));
+      // The Shinkansen crosses the valley (and the lake) on a viaduct between two tunnels.
+      this.railZ = 250;
+      const rail = new Railway({
+        from: [-1500, 250],
+        to: [1500, 250],
+        deckY: 25,
+        ground,
+        kind: 'shinkansen',
+        tunnels: true,
+        clear: (x, z) => this.field.query(x, z).d > wall + 4,
+      });
+      this.addFeature(rail);
       this.buildBlossoms(rng);
       this.buildPagoda();
-      this.buildFarmhouses(rng);
+      this.addFeature(powerLines(track, { lateral: wall + 4, every: 38, sides: [1], style: 'concrete', ground }));
+      this.addFeature(vendingMachines(this.roadsideMachines([30, 700, 1500], wall + 2.6), rng));
       const lanterns = this.buildLanterns();
       this.lanternMat = lanterns.light;
       this.lanternGlow = lanterns.glow;
@@ -270,6 +316,137 @@ export class NatureWorld {
     );
     this.group.add(this.grass.mesh);
     this.setDetail(detail, grassLevel);
+  }
+
+  private addFeature(f: Feature): void {
+    this.features.push(f);
+    this.group.add(f.group);
+  }
+
+  private isBlocked(x: number, z: number): boolean {
+    if (this.railZ !== null && Math.abs(z - this.railZ) < 14) return true;
+    return this.blocked.some((b) => (b.x - x) ** 2 + (b.z - z) ** 2 < b.r * b.r);
+  }
+
+  /** Stop grass growing within `r` of (x, z) (houses, paddies). */
+  private clearGround(x: number, z: number, r: number): void {
+    const g = this.ground;
+    const i0 = Math.max(0, Math.floor((x - r - g.originX) / g.res));
+    const i1 = Math.min(g.verts - 1, Math.ceil((x + r - g.originX) / g.res));
+    const j0 = Math.max(0, Math.floor((z - r - g.originZ) / g.res));
+    const j1 = Math.min(g.verts - 1, Math.ceil((z + r - g.originZ) / g.res));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) g.data[(j * g.verts + i) * 4 + 2] = 0;
+  }
+
+  /** Flat ground: no more than `tolerance` metres of rise across a `radius` around (x, z). */
+  private isFlat(x: number, z: number, radius: number, tolerance: number): number | null {
+    const hs = [
+      [0, 0],
+      [radius, 0],
+      [-radius, 0],
+      [0, radius],
+      [0, -radius],
+    ].map(([dx, dz]) => this.heightAt(x + dx, z + dz));
+    const lo = Math.min(...hs);
+    if (Math.max(...hs) - lo > tolerance || lo < this.cfg.waterLevel + 1) return null;
+    return lo;
+  }
+
+  /** Houses around a centre (the first can be a ryokan). */
+  private village(
+    rng: () => number,
+    centre: [number, number] | [number, number, number],
+    count: number,
+    radius: number,
+    first?: HouseSpot['kind'],
+  ): HouseSpot[] {
+    const [cx, cz] = centre.length === 3 ? [centre[0], centre[2]] : centre;
+    const out: HouseSpot[] = [];
+    for (let tries = 0; tries < count * 12 && out.length < count; tries++) {
+      // The ryokan goes first (near the centre); give up on it after a while and build houses.
+      const big = out.length === 0 && first === 'ryokan' && tries < count * 8;
+      const a = rng() * Math.PI * 2;
+      const r = big ? rng() * radius : 14 + rng() * radius;
+      const x = cx + Math.cos(a) * r;
+      const z = cz + Math.sin(a) * r;
+      if (this.field.query(x, z).d < this.track.wallOffset + (big ? 14 : 10) || this.isBlocked(x, z)) continue;
+      if (out.some((h) => Math.hypot(h.x - x, h.z - z) < 17)) continue;
+      const y = this.isFlat(x, z, big ? 10 : 6, big ? 4 : 2.6);
+      if (y === null) continue;
+      // Face the road, squared up to it.
+      const toRoad = Math.atan2(cx - x, cz - z);
+      const facing = big ? Math.PI : Math.round(toRoad / (Math.PI / 2)) * (Math.PI / 2) + (rng() - 0.5) * 0.2;
+      const kind: HouseSpot['kind'] = big ? 'ryokan' : this.theme === 'countryside' && rng() < 0.3 ? 'gassho' : 'minka';
+      out.push({ x, y: y + 0.1, z, facing, kind });
+      this.blocked.push({ x, z, r: big ? 20 : 11 });
+      this.clearGround(x, z, big ? 18 : 9);
+    }
+    return out;
+  }
+
+  /** Flat spots near the road for farming villages. */
+  private villageCentres(rng: () => number, count: number): [number, number, number][] {
+    const out: [number, number, number][] = [];
+    for (let tries = 0; tries < 400 && out.length < count; tries++) {
+      const p = this.randomSpot(rng, 45, 160);
+      if (!p || this.isFlat(p[0], p[2], 20, 3) === null) continue;
+      if (out.some((c) => Math.hypot(c[0] - p[0], c[2] - p[2]) < 220)) continue;
+      out.push(p);
+    }
+    return out;
+  }
+
+  private besideHouse(h: HouseSpot): Spot {
+    const x = h.x + Math.cos(h.facing) * 7.5;
+    const z = h.z - Math.sin(h.facing) * 7.5;
+    return { x, y: this.heightAt(x, z), z, facing: 0 };
+  }
+
+  /** Pairs of vending machines just off the road at these lap distances, facing it. */
+  private roadsideMachines(distances: number[], lateral: number): Spot[] {
+    const out: Spot[] = [];
+    for (const d of distances) {
+      const s = this.track.samples[this.track.indexAtDistance(d)];
+      for (const along of [0, 1.05]) {
+        const x = s.x + s.rx * lateral + s.tx * along;
+        const z = s.z + s.rz * lateral + s.tz * along;
+        out.push({ x, y: Math.max(this.heightAt(x, z), s.y - 0.3), z, facing: Math.atan2(-s.rx, -s.rz) });
+      }
+    }
+    return out;
+  }
+
+  /** Paddies on flat farmland: a grid of terraced, flooded fields in "paddy districts". */
+  private planPaddies(): Paddy[] {
+    const out: Paddy[] = [];
+    const cell = 24;
+    const b = this.track.bounds;
+    const L = this.cfg.lake;
+    const wall = this.track.wallOffset;
+    for (let x = b.minX - 320; x <= b.maxX + 320; x += cell) {
+      for (let z = b.minZ - 320; z <= b.maxZ + 320; z += cell) {
+        if (fbm(x / 240, z / 240, 91) < 0.08) continue;
+        if (((x - L.x) / L.rx) ** 2 + ((z - L.z) / L.rz) ** 2 < 1.6) continue;
+        const half = cell / 2;
+        const corners = [
+          [-half, -half],
+          [half, -half],
+          [half, half],
+          [-half, half],
+          [0, 0],
+        ];
+        if (corners.some(([dx, dz]) => this.field.query(x + dx, z + dz).d < wall + 14)) continue;
+        if (this.field.query(x, z).d > 320) continue;
+        const hs = corners.map(([dx, dz]) => this.heightAt(x + dx, z + dz));
+        const lo = Math.min(...hs);
+        const hi = Math.max(...hs);
+        if (hi - lo > 1.8 || lo < this.cfg.waterLevel + 1) continue;
+        out.push({ x, z, size: cell - 1.2, level: hi + 0.05, low: lo });
+        this.blocked.push({ x, z, r: cell * 0.72 });
+        this.clearGround(x, z, cell * 0.6);
+      }
+    }
+    return out;
   }
 
   /**
@@ -289,7 +466,8 @@ export class NatureWorld {
     const { d, y, field } = this.field.query(x, z);
     const corridor = this.corridor;
     // Exactly under the road near it, blending into a smooth field between road sections...
-    const roadish = lerp(y - 0.3, field, smoothstep(corridor, corridor + 28, d));
+    // (Mountain roads are cut into the hillside: the banks beside them rise much more steeply.)
+    const roadish = lerp(y - 0.3, field, smoothstep(corridor, corridor + (this.theme === 'mountain' ? 13 : 28), d));
     // ...then natural hills/mountains (and lakes) further out.
     const out = smoothstep(corridor + 4, corridor + 120, d);
     let h = roadish + this.cfg.natural(x, z, d) * out;
@@ -379,19 +557,6 @@ export class NatureWorld {
     this.group.add(water);
   }
 
-  private buildFuji(): { body: THREE.MeshBasicMaterial; snow: THREE.MeshBasicMaterial } {
-    const [fx, fz] = this.cfg.fujiAt;
-    const body = new THREE.MeshBasicMaterial({ color: 0x7f93b4, fog: false });
-    const snow = new THREE.MeshBasicMaterial({ color: 0xf6f8fc, fog: false });
-    const height = 950;
-    const cone = new THREE.Mesh(new THREE.CylinderGeometry(110, 1750, height, 48, 1, true), body);
-    cone.position.set(fx, height / 2 - 40, fz);
-    const cap = new THREE.Mesh(new THREE.CylinderGeometry(110, 430, 290, 48, 1, false), snow);
-    cap.position.set(fx, height - 40 - 145, fz);
-    this.group.add(cone, cap);
-    return { body, snow };
-  }
-
   private buildDistantRidges(rng: () => number): void {
     const b = this.track.bounds;
     const cx = (b.minX + b.maxX) / 2;
@@ -472,7 +637,7 @@ export class NatureWorld {
     const x = lerp(b.minX - 650, b.maxX + 650, rng());
     const z = lerp(b.minZ - 650, b.maxZ + 650, rng());
     const { d } = this.field.query(x, z);
-    if (d < minRoad || d > maxRoad) return null;
+    if (d < minRoad || d > maxRoad || this.isBlocked(x, z)) return null;
     const y = this.heightAt(x, z);
     if (y < this.cfg.waterLevel + 0.6) return null;
     return [x, y, z];
@@ -486,7 +651,7 @@ export class NatureWorld {
     const r = Math.sqrt(rng()) * radius;
     const x = centre[0] + Math.cos(a) * r;
     const z = centre[2] + Math.sin(a) * r;
-    if (this.field.query(x, z).d < minRoad) return null;
+    if (this.field.query(x, z).d < minRoad || this.isBlocked(x, z)) return null;
     const y = this.heightAt(x, z);
     return y > this.cfg.waterLevel + 0.6 ? [x, y, z] : null;
   }
@@ -499,7 +664,7 @@ export class NatureWorld {
     const lat = side * (this.track.wallOffset + near + rng() * (far - near));
     const x = s.x + s.rx * lat;
     const z = s.z + s.rz * lat;
-    if (this.field.query(x, z).d < this.track.wallOffset + near - 0.5) return null;
+    if (this.field.query(x, z).d < this.track.wallOffset + near - 0.5 || this.isBlocked(x, z)) return null;
     const y = this.heightAt(x, z);
     return y > this.cfg.waterLevel + 0.6 ? [x, y, z] : null;
   }
@@ -706,28 +871,6 @@ export class NatureWorld {
     this.group.add(pagoda);
   }
 
-  private buildFarmhouses(rng: () => number): void {
-    const walls = new GeometryBuilder();
-    const roofs = new THREE.Group();
-    const thatch = new THREE.MeshLambertMaterial({ color: 0x6e5a3c });
-    for (let k = 0; k < 9; k++) {
-      const p = this.randomSpot(rng, 40, 420);
-      if (!p) continue;
-      const [x, y, z] = p;
-      const w = 8 + rng() * 4;
-      const d = 6 + rng() * 3;
-      const rot = rng() * Math.PI;
-      walls.box(x, y - 0.5, z, w, 3.8, d, rot);
-      const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.hypot(w, d) * 0.62, 5, 4), thatch);
-      roof.position.set(x, y + 5.6, z);
-      roof.rotation.y = rot + Math.PI / 4;
-      roof.scale.set(1, 1, d / w);
-      roofs.add(roof);
-    }
-    this.group.add(new THREE.Mesh(walls.build(), new THREE.MeshLambertMaterial({ color: 0xd9cdb4 })));
-    this.group.add(roofs);
-  }
-
   /** Stone lanterns (toro) along the start straight; they glow after dark. */
   private buildLanterns(): { light: THREE.MeshBasicMaterial; glow: THREE.PointsMaterial } {
     const stone = new GeometryBuilder();
@@ -769,18 +912,17 @@ export class NatureWorld {
   // ---------- per frame / time of day ----------
 
   setTimeOfDay(tod: TimeOfDay): void {
-    const fuji = { day: [0x8fa2c2, 0xf6f8fc], sunset: [0x5b3f5e, 0xf2b8a8], night: [0x1d1a33, 0x5a5f7a] }[tod];
-    this.fujiMat.color.setHex(fuji[0]);
-    this.fujiSnow.color.setHex(fuji[1]);
+    for (const f of this.features) f.setTimeOfDay?.(tod);
     const lit = tod !== 'day';
     if (this.lanternMat) this.lanternMat.color.set(lit ? new THREE.Color(1.9, 1.05, 0.35) : new THREE.Color(0x555044));
     if (this.lanternGlow) this.lanternGlow.opacity = tod === 'night' ? 0.45 : tod === 'sunset' ? 0.18 : 0;
     this.petals?.setTimeOfDay(tod);
   }
 
-  update(dt: number, camera: THREE.Camera): void {
+  update(time: number, dt: number, camera: THREE.Camera): void {
     this.petals?.update(dt, camera);
     this.grass.update(camera);
+    for (const f of this.features) f.update?.(time);
   }
 }
 

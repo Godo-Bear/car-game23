@@ -2,12 +2,14 @@ import * as THREE from 'three';
 import type { TimeOfDay } from '../../shared/api';
 import type { RacingLine } from '../ai/RacingLine';
 import { gridSlot } from '../race/RaceSimulation';
-import { buildRubberLine, buildTrackVisual, type TrackVisual } from '../track/TrackMesh';
+import { BARRIER_THICKNESS, buildRubberLine, buildTrackVisual, SIDEWALK_WIDTH, type TrackVisual } from '../track/TrackMesh';
 import type { TrackPath } from '../track/TrackPath';
 import { tokyoCircuitLandmarks } from '../track/tokyoCircuit';
 import type { TrackDef } from '../track/tracks';
 import { City, placeLamps } from './City';
 import { windTime } from './foliage';
+import { type Feature, MountFuji, powerLines, Railway, trafficSignals, vendingMachines } from './japan';
+import { SUN_DIRECTION } from './Lighting';
 import { NatureWorld } from './Nature';
 import { ReflectionStreaks, roadWetness } from './surfaces';
 
@@ -44,7 +46,28 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
       lamps,
       crossings: tokyoCircuitLandmarks(track).crossings,
     });
-    const city = new City(track, lamps, rng);
+    // The JR line: a viaduct crossing the circuit north-south (no buildings underneath).
+    const RAIL_X = 80;
+    const city = new City(track, lamps, rng, (x, z, r) => Math.abs(x - RAIL_X) < r + 9 && z < 650);
+    const proj = { index: 0, lateral: 0, distance: 0, y: 0, heading: 0, slope: 0, tx: 0, tz: 0, rx: 0, rz: 0 };
+    const sidewalkEdge = track.wallOffset + BARRIER_THICKNESS + SIDEWALK_WIDTH - 0.5;
+    const features: Feature[] = [
+      new MountFuji(-3300, 3600, () => SUN_DIRECTION),
+      new Railway({
+        from: [RAIL_X, -1800],
+        to: [RAIL_X, 640],
+        deckY: 21,
+        ground: () => 0,
+        kind: 'commuter',
+        tunnels: false,
+        // Keep piers off the circuit.
+        clear: (x, z) => Math.abs(track.project(x, z, -1, proj).lateral) > sidewalkEdge + 2,
+      }),
+      powerLines(track, { lateral: sidewalkEdge, every: 32, sides: [-1, 1], style: 'concrete', ground: () => 0.14, skip: (i) => track.samples[i].y > 1.2 }),
+      vendingMachines(cityVending(track, sidewalkEdge - 0.2), rng),
+      trafficSignals(track, tokyoCircuitLandmarks(track).crossings, track.wallOffset + BARRIER_THICKNESS + 0.7),
+    ];
+    for (const f of features) group.add(f.group);
     const lampColor = new THREE.Color(1, 0.8, 0.55).multiplyScalar(0.6);
     const streaks = new ReflectionStreaks([
       ...lamps.map((l) => ({ x: l.x, y: track.samples[l.index].y, z: l.z, color: lampColor, width: 1.6, length: 26 })),
@@ -58,6 +81,7 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
       setTimeOfDay(tod) {
         city.setTimeOfDay(tod);
         trackVisual.setTimeOfDay(tod);
+        for (const f of features) f.setTimeOfDay?.(tod);
         // Tokyo at night has just had rain: glossy asphalt, puddles and neon reflections.
         roadWetness.value = tod === 'night' ? 1 : 0;
         streaks.mesh.visible = tod === 'night';
@@ -67,6 +91,7 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
       update(time) {
         city.update(time);
         streaks.update(time);
+        for (const f of features) f.update?.(time);
       },
       dispose: () => disposeTree(group),
     };
@@ -88,7 +113,7 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
     addRacingLine,
     update(time, dt, camera) {
       windTime.value = time;
-      nature.update(dt, camera);
+      nature.update(time, dt, camera);
     },
     dispose: () => disposeTree(group),
   };
@@ -110,4 +135,25 @@ function disposeTree(root: THREE.Object3D): void {
   // Shared textures (detail noise, contact shadows) stay alive for the next world.
   for (const t of textures) if (!t.userData.shared) t.dispose();
   root.removeFromParent();
+}
+
+/** Vending machines in pairs along the sidewalks, facing the road. */
+function cityVending(track: TrackPath, lateral: number) {
+  const spots = [];
+  const S = track.samples;
+  let side = 1;
+  for (let i = 40; i < S.length; i += 70) {
+    const s = S[i];
+    if (s.y > 1.2) continue;
+    for (const along of [0, 1.05]) {
+      spots.push({
+        x: s.x + s.rx * side * lateral + s.tx * along,
+        y: 0.14,
+        z: s.z + s.rz * side * lateral + s.tz * along,
+        facing: Math.atan2(-side * s.rx, -side * s.rz),
+      });
+    }
+    side = -side;
+  }
+  return spots;
 }

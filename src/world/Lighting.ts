@@ -85,8 +85,8 @@ const PRESETS: Record<TimeOfDay, Preset> = {
     hemiSky: 0xcfe4ff,
     hemiGround: 0x6b7a55,
     hemiIntensity: 1.35,
-    exposure: 0.92,
-    bloom: { strength: 0.18, radius: 0.4, threshold: 0.98 },
+    exposure: 0.84,
+    bloom: { strength: 0.14, radius: 0.4, threshold: 2.5 },
     shadows: true,
     fog: { city: [0xb4c8dc, 0.0007], mountain: [0xb9cfe0, 0.0008], countryside: [0xcfe3f2, 0.0006] },
   },
@@ -119,7 +119,7 @@ const PRESETS: Record<TimeOfDay, Preset> = {
     hemiGround: 0x4a3a48,
     hemiIntensity: 1.05,
     exposure: 1.0,
-    bloom: { strength: 0.45, radius: 0.5, threshold: 0.95 },
+    bloom: { strength: 0.4, radius: 0.5, threshold: 1.4 },
     shadows: true,
     fog: { city: [0x9a6a78, 0.0009], mountain: [0xc98a6a, 0.001], countryside: [0xe0a07a, 0.0008] },
   },
@@ -155,6 +155,9 @@ const PRESETS: Record<TimeOfDay, Preset> = {
     fog: { city: [0x1c1530, 0.0011], mountain: [0x0e1222, 0.0013], countryside: [0x111530, 0.0011] },
   },
 };
+
+/** Direction toward the sun for the current time of day (read by distant scenery shaders). */
+export const SUN_DIRECTION = new THREE.Vector3(0, 1, 0);
 
 /** Nature is much darker than a lit city at night. */
 const RURAL_NIGHT = { hemiIntensity: 0.75, sunIntensity: 0.6 };
@@ -252,6 +255,7 @@ export class Lighting {
     this.sun.intensity = rural ? RURAL_NIGHT.sunIntensity : p.sunIntensity;
     this.sunDir.set(...p.sky.sunDir).normalize();
     this.skySunDirection.copy(this.sunDir);
+    SUN_DIRECTION.copy(this.sunDir);
     // Low sunset sun still lights from a usable angle so the road isn't black.
     if (this.sunDir.y < 0.25) this.sunDir.y = 0.25;
     this.sunDir.normalize();
