@@ -211,6 +211,13 @@ code. From model files:
 - **Tokyo Tower** (`public/models/landmarks/`, by Kenta Imai): cut out of its diorama, it stands in
   Tokyo and once on the skyline of Hakone and Sakura Valley, lit orange after dark.
 
+- **Countryside landmarks** (`public/models/landmarks`, `nature`, `props`): a five-storey pagoda
+  by the Sakura Valley lake, a giant old cherry by its start line, a castle-style pagoda on the
+  Hakone lake shore, a giant autumn maple by the Hakone start, and wooden roadside signs painted
+  with place names in Japanese and English. Each is placed on level ground that fits it (lake
+  shore, roadside verge at road height) and only downloaded with the map that uses it. The two
+  trees and the castle were shrunk 3-4x (merged per material, quantized vertices).
+
 If a scenery file fails to load, the built-in buildings and tower are used
 (`src/world/sceneryModels.ts`).
 
@@ -232,6 +239,12 @@ be shrunk to JPEG before adding them.
 | Shiro Spyder | Convertible | Poly by Google (CC-BY) | Poly Pizza |
 | Oni 86R | Mazda RX-7 | IvOfficial | Poly Pizza |
 | Raijin V12 | Lamborghini Aventador | Ignition Labs | Poly Pizza |
+| Sakura Valley pagoda | Pagoda | Poly by Google (CC-BY) | Poly Pizza |
+| Hakone castle pagoda | Pagoda | Poly by Google (CC-BY) | Poly Pizza |
+| Sakura start tree | Big Sakura Bonsai | Michael Grönert | Poly Pizza |
+| Hakone start tree | Mystic Tree | Alexandre KOURNWSKY | Poly Pizza |
+| Roadside signs | Wooden Sign | iPoly3D | Poly Pizza |
+| Tokyo Tower | 東京タワー | Kenta Imai | Poly Pizza |
 
 Credits are also shown in the garage. Check each model's licence on its Poly Pizza page before
 using the game commercially (the real car names and designs may be trademarks).

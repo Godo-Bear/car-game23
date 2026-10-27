@@ -23,7 +23,8 @@ import { loadCarAsset, loadCarAssets, onCarAssetLoaded } from '../vehicles/impor
 import { Sparks } from '../vehicles/Sparks';
 import { type EffectsCar, TireEffects } from '../vehicles/TireEffects';
 import { Lighting } from '../world/Lighting';
-import { loadScenery } from '../world/sceneryModels';
+import { NATURE_PROPS } from '../world/Nature';
+import { loadProps, loadScenery } from '../world/sceneryModels';
 import { buildWorld, type World } from '../world/World';
 import { Cinematics } from './Cinematics';
 import { PerformanceMonitor } from './PerformanceMonitor';
@@ -242,8 +243,8 @@ export class Game {
     const track = this.loader.track(id);
     if (!world) {
       setLoading(`Loading ${def.name}…`);
-      // Buildings and Tokyo Tower come from model files (loaded once, then reused).
-      await loadScenery();
+      // Buildings, Tokyo Tower and the countryside landmarks come from model files (loaded once).
+      await Promise.all([loadScenery(), loadProps(def.theme === 'city' ? [] : NATURE_PROPS[def.theme])]);
       await nextFrame();
       await nextFrame();
       world = buildWorld(def, track, createRng(2023), this.pipeline.quality.detail, this.pipeline.quality.grass);

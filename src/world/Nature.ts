@@ -23,7 +23,7 @@ import {
   vendingMachines,
 } from './japan';
 import { SUN_DIRECTION } from './Lighting';
-import { tokyoTowerMesh } from './sceneryModels';
+import { type PropId, propAspect, propModel, tokyoTowerMesh, woodenSign } from './sceneryModels';
 import { concreteNormalMap, groundMaterial, waterNormalMap } from './surfaces';
 import { glowTexture } from './textures';
 
@@ -34,6 +34,28 @@ import { glowTexture } from './textures';
  */
 
 type RuralTheme = Exclude<TrackTheme, 'city'>;
+
+/** Model files each countryside map places (loaded before the map is built). */
+export const NATURE_PROPS: Record<RuralTheme, PropId[]> = {
+  mountain: ['castle', 'autumnTree', 'sign'],
+  countryside: ['pagoda', 'bonsai', 'sign'],
+};
+
+/** Roadside signs: Japanese name, English underneath. */
+const SIGNS: Record<RuralTheme, string[][]> = {
+  mountain: [
+    ['箱根峠', 'HAKONE PASS'],
+    ['芦ノ湖', 'LAKE ASHI'],
+    ['急カーブ', 'SHARP BENDS'],
+    ['ようこそ', 'WELCOME'],
+  ],
+  countryside: [
+    ['桜谷', 'SAKURA VALLEY'],
+    ['五重塔', 'PAGODA'],
+    ['田園', 'RICE FIELDS'],
+    ['ようこそ', 'WELCOME'],
+  ],
+};
 
 // ---------------------------------------------------------------- noise
 
@@ -265,6 +287,7 @@ export class NatureWorld {
     this.buildWater();
     this.addFeature(new MountFuji(...this.cfg.fujiAt, () => SUN_DIRECTION));
     this.placeTokyoTower();
+    this.placeModelLandmarks();
     this.buildDistantRidges(rng);
     const ground = (x: number, z: number) => this.heightAt(x, z);
     const wall = track.wallOffset;
@@ -346,6 +369,88 @@ export class NatureWorld {
       this.blocked.push({ x, z, r: 45 });
       return;
     }
+  }
+
+  /**
+   * Model landmarks: a giant tree by the start (an autumn maple in Hakone, an ancient cherry in
+   * Sakura Valley), a castle-style pagoda on Hakone's lake shore, and painted wooden signs along
+   * the road. Placed before the trees, which then keep clear of them.
+   */
+  private placeModelLandmarks(): void {
+    const track = this.track;
+    const wall = track.wallOffset;
+    const S = track.samples;
+    const ok = (x: number, z: number, clear: number) =>
+      !this.isBlocked(x, z) && this.field.query(x, z).d > clear && this.heightAt(x, z) > this.cfg.waterLevel + 1;
+    /** Height range of the ground under a footprint of radius r (to keep things off slopes). */
+    const footprint = (x: number, z: number, r: number) => {
+      const hs = [-r, 0, r].flatMap((dx) => [-r, 0, r].map((dz) => this.heightAt(x + dx, z + dz)));
+      return { low: Math.min(...hs), high: Math.max(...hs) };
+    };
+
+    const treeId: PropId = this.theme === 'mountain' ? 'autumnTree' : 'bonsai';
+    const treeHeight = this.theme === 'mountain' ? 15 : 17;
+    const reach = (propAspect(treeId) * treeHeight) / 2;
+    // The first level spot after the start (the mountain road is mostly cut into slopes).
+    tree: for (let along = 70; along < 900; along += 25) {
+      const s = S[track.indexAtDistance(along)];
+      for (const side of [1, -1]) {
+        const lateral = side * (wall + 5 + reach);
+        const x = s.x + s.rx * lateral;
+        const z = s.z + s.rz * lateral;
+        // Level ground, near road height: not hanging over a drop or buried in a bank.
+        const ground = footprint(x, z, 3);
+        if (!ok(x, z, wall + 4 + reach * 0.8) || ground.high - ground.low > 2 || Math.abs(ground.low - s.y) > 2.5) continue;
+        const model = propModel(treeId, treeHeight, x, ground.low - 0.3, z, along);
+        if (!model) break tree;
+        this.group.add(model);
+        this.blocked.push({ x, z, r: reach + 3 });
+        break tree;
+      }
+    }
+
+    if (this.theme === 'mountain') {
+      // A castle-style pagoda on the lake shore, like Hakone's lakeside shrines: the lowest,
+      // flattest dry spot around the lake, looking out over the water.
+      const L = this.cfg.lake;
+      let best: { x: number; z: number; y: number; score: number } | null = null;
+      for (let a = 0; a < Math.PI * 2; a += 0.15) {
+        for (const out of [20, 35, 50, 70, 95, 125]) {
+          const x = L.x + Math.cos(a) * (L.rx + out);
+          const z = L.z + Math.sin(a) * (L.rz + out);
+          if (!ok(x, z, wall + 22)) continue;
+          const ground = footprint(x, z, 9);
+          if (ground.low < this.cfg.waterLevel + 1.5) continue;
+          const score = ground.low + (ground.high - ground.low) * 4;
+          if (!best || score < best.score) best = { x, z, y: ground.low, score };
+        }
+      }
+      const castle = best && propModel('castle', 34, best.x, best.y - 0.5, best.z, Math.atan2(L.x - best.x, L.z - best.z));
+      if (best && castle) {
+        this.group.add(castle);
+        this.blocked.push({ x: best.x, z: best.z, r: 30 });
+      }
+    }
+
+    // Signs at the roadside, turned toward the cars coming up to them, on a level verge.
+    SIGNS[this.theme].forEach((lines, k) => {
+      for (let step = 0; step < 12; step++) {
+        const s = S[track.indexAtDistance(track.length * (0.06 + k * 0.24) + step * 18)];
+        const side = (k + step) % 2 ? 1 : -1;
+        const lateral = side * (wall + 3.2);
+        const x = s.x + s.rx * lateral;
+        const z = s.z + s.rz * lateral;
+        const ground = footprint(x, z, 1.2);
+        if (this.isBlocked(x, z) || ground.high - ground.low > 0.8 || Math.abs(ground.low - s.y) > 1) continue;
+        const fx = -s.tx * 0.8 - s.rx * side * 0.6;
+        const fz = -s.tz * 0.8 - s.rz * side * 0.6;
+        const sign = woodenSign(lines, 3.4, x, ground.low - 0.05, z, Math.atan2(fx, fz));
+        if (!sign) return;
+        this.group.add(sign);
+        this.blocked.push({ x, z, r: 4 });
+        return;
+      }
+    });
   }
 
   private addFeature(f: Feature): void {
@@ -876,6 +981,12 @@ export class NatureWorld {
     const x = L.x + 40;
     const z = L.z - L.rz - 18;
     const y = this.heightAt(x, z);
+    // The five-storey pagoda model, facing the lake; the built-in one if it didn't load.
+    const model = propModel('pagoda', 30, x, y - 0.4, z, Math.atan2(L.x - x, L.z - z));
+    if (model) {
+      this.group.add(model);
+      return;
+    }
     const pagoda = new THREE.Group();
     const wood = new THREE.MeshStandardMaterial({ color: 0xa8321f, roughness: 0.7 });
     const roof = new THREE.MeshStandardMaterial({ color: 0x2b3038, roughness: 0.8 });

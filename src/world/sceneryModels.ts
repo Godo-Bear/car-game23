@@ -66,6 +66,134 @@ export function loadScenery(): Promise<void> {
   return loading;
 }
 
+/** Single models placed on the countryside maps (loaded with the map that uses them). */
+export type PropId = 'pagoda' | 'castle' | 'bonsai' | 'autumnTree' | 'sign';
+
+const PROP_FILES: Record<PropId, string> = {
+  pagoda: 'landmarks/pagoda.glb',
+  castle: 'landmarks/castle-pagoda.glb',
+  bonsai: 'nature/sakura-bonsai.glb',
+  autumnTree: 'nature/autumn-tree.glb',
+  sign: 'props/wooden-sign.glb',
+};
+
+interface Prop {
+  /** Standing on y = 0, centred, one unit tall. */
+  model: THREE.Object3D;
+  /** Width / height. */
+  aspect: number;
+  /** The front of the material named "Light Wood" (the sign's board), in the same units. */
+  board: THREE.Box3 | null;
+}
+
+const props = new Map<PropId, Prop>();
+const propLoads = new Map<PropId, Promise<void>>();
+
+/** Load (once each) the given props. Never rejects: a prop that fails just isn't placed. */
+export function loadProps(ids: PropId[]): Promise<void> {
+  return Promise.all(
+    ids.map((id) => {
+      let promise = propLoads.get(id);
+      if (!promise) {
+        promise = (async () => {
+          try {
+            const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
+            const gltf = await new GLTFLoader().loadAsync(new URL(`models/${PROP_FILES[id]}`, document.baseURI).href);
+            props.set(id, normaliseProp(gltf.scene));
+          } catch (e) {
+            console.warn(`Scenery model ${PROP_FILES[id]} could not be loaded; leaving it out.`, e);
+          }
+        })();
+        propLoads.set(id, promise);
+      }
+      return promise;
+    }),
+  ).then(() => undefined);
+}
+
+function normaliseProp(root: THREE.Object3D): Prop {
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(root);
+  const size = box.getSize(new THREE.Vector3());
+  const centre = box.getCenter(new THREE.Vector3());
+  const model = new THREE.Group();
+  root.position.sub(new THREE.Vector3(centre.x, box.min.y, centre.z));
+  model.add(root);
+  model.scale.setScalar(1 / size.y);
+  model.updateMatrixWorld(true);
+  let board: THREE.Box3 | null = null;
+  model.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return;
+    o.userData.noAO = true;
+    const material = o.material as THREE.MeshStandardMaterial;
+    // Shared between worlds, so a world being thrown away mustn't free it.
+    if (material.map) material.map.userData.shared = true;
+    if (material.name === 'Light Wood') board = (board ?? new THREE.Box3()).union(new THREE.Box3().setFromObject(o));
+  });
+  return { model, aspect: Math.max(size.x, size.z) / size.y, board };
+}
+
+/** Width / height of a loaded prop (0 if it isn't loaded). */
+export const propAspect = (id: PropId): number => props.get(id)?.aspect ?? 0;
+
+/** A copy of a prop, `height` metres tall, standing at (x, y, z) and turned by `turn` radians. */
+export function propModel(id: PropId, height: number, x: number, y: number, z: number, turn = 0): THREE.Object3D | null {
+  const prop = props.get(id);
+  if (!prop) return null;
+  const outer = new THREE.Group();
+  outer.name = id;
+  outer.add(prop.model.clone(true));
+  outer.scale.setScalar(height);
+  outer.position.set(x, y, z);
+  outer.rotation.y = turn;
+  return outer;
+}
+
+/** A wooden roadside sign with `lines` painted on its board, facing +z before `turn`. */
+export function woodenSign(lines: string[], height: number, x: number, y: number, z: number, turn: number): THREE.Object3D | null {
+  const sign = propModel('sign', height, x, y, z, turn);
+  const board = props.get('sign')?.board;
+  if (!sign || !board) return sign;
+  const w = board.max.x - board.min.x;
+  const h = board.max.y - board.min.y;
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = Math.round((512 * h) / w);
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#8a5a34';
+  g.fillRect(0, 0, c.width, c.height);
+  // Wood grain.
+  g.strokeStyle = 'rgba(60, 35, 18, 0.25)';
+  for (let k = 0; k < 14; k++) {
+    g.beginPath();
+    g.moveTo(0, ((k + 0.5) * c.height) / 14);
+    g.bezierCurveTo(c.width / 3, ((k + 0.2) * c.height) / 14, (2 * c.width) / 3, ((k + 0.9) * c.height) / 14, c.width, ((k + 0.5) * c.height) / 14);
+    g.stroke();
+  }
+  g.fillStyle = '#2a170b';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  const font = '"Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif';
+  lines.forEach((line, i) => {
+    g.font = `bold ${i === 0 ? 104 : 64}px ${font}`;
+    g.fillText(line, c.width / 2, (c.height * (i + 0.6)) / (lines.length + 0.2), c.width * 0.9);
+  });
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  // Painted on both faces of the board (in the sign's one-unit-tall space).
+  const material = new THREE.MeshLambertMaterial({ map: tex });
+  const geometry = new THREE.PlaneGeometry(w * 0.94, h * 0.9);
+  for (const side of [1, -1]) {
+    const face = new THREE.Mesh(geometry, material);
+    face.position.set((board.min.x + board.max.x) / 2, (board.min.y + board.max.y) / 2, side > 0 ? board.max.z + 0.004 : board.min.z - 0.004);
+    face.rotation.y = side > 0 ? 0 : Math.PI;
+    face.userData.noAO = true;
+    sign.add(face);
+  }
+  return sign;
+}
+
 /** Each mesh baked into the building's space, base on the ground and centred. */
 function building(gltf: { scene: THREE.Object3D }): BuildingTemplate {
   const root = gltf.scene;
