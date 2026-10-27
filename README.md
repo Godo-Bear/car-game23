@@ -36,6 +36,10 @@ countryside, by day, at sunset or at night — running in the browser and hosted
 - **Settings:** graphics quality Low / Medium / High (auto-detected), speed blur and camera shake
   toggles, master / engine / effects volume, and fully rebindable keyboard controls with
   **Reset binds**. Stored per device.
+- **Runs on modest hardware:** if the frame rate stays under ~40 FPS, the game steps the quality
+  down by itself (High → Medium → Low, then a lower render resolution) and remembers it; this can
+  be switched off, and an FPS counter can be shown, in Settings → Graphics. Cars are merged per
+  material (~16 draw calls each), so a full race frame is ~180–490 draw calls depending on quality.
 - **HUD:** speed (KM/H), gear + RPM, position, lap, current/last/best lap time, standings, minimap.
 - **Accounts:** log in / create an account from the homescreen; career stats, best lap per circuit,
   recent races, race settings and your garage are saved to your account (Cloudflare D1). Without an
@@ -69,7 +73,8 @@ runs at a fixed 120 Hz, and is covered by unit tests — including a headless 8-
 │   │   ├── Game.ts             # State machine (home → intro → countdown → racing → finished), main loop
 │   │   ├── Cinematics.ts       # Grid fly-in, homescreen TV shots, garage turntable, slow-mo finish
 │   │   ├── RaceFeedback.ts     # Impacts, kerb rumble/shake, scrapes + sparks, drift points, wrong way
-│   │   └── TrackLoader.ts      # Track + racing-line cache (Web Worker, device cache)
+│   │   ├── TrackLoader.ts      # Track + racing-line cache (Web Worker, device cache)
+│   │   └── PerformanceMonitor.ts # FPS counter + automatic quality step-down
 │   ├── render/RenderPipeline.ts # Renderer, MSAA/FXAA, ambient occlusion, bloom, speed blur, quality levels
 │   ├── track/
 │   │   ├── tracks.ts           # Circuit registry (theme, names)

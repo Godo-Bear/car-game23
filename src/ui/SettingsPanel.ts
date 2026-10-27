@@ -60,6 +60,8 @@ export class SettingsPanel {
     $('quality-blurb').textContent = QUALITY_BLURB[s.quality];
     $<HTMLInputElement>('set-motion-blur').checked = s.motionBlur;
     $<HTMLInputElement>('set-camera-shake').checked = s.cameraShake;
+    $<HTMLInputElement>('set-auto-quality').checked = s.autoQuality;
+    $<HTMLInputElement>('set-show-fps').checked = s.showFps;
     for (const key of ['master', 'engine', 'effects'] as const) {
       const input = $<HTMLInputElement>(`vol-${key}`);
       input.value = String(Math.round(s.volume[key] * 100));
@@ -126,6 +128,8 @@ export class SettingsPanel {
     });
     $<HTMLInputElement>('set-motion-blur').addEventListener('change', (e) => this.store.update({ motionBlur: (e.target as HTMLInputElement).checked }));
     $<HTMLInputElement>('set-camera-shake').addEventListener('change', (e) => this.store.update({ cameraShake: (e.target as HTMLInputElement).checked }));
+    $<HTMLInputElement>('set-auto-quality').addEventListener('change', (e) => this.store.update({ autoQuality: (e.target as HTMLInputElement).checked }));
+    $<HTMLInputElement>('set-show-fps').addEventListener('change', (e) => this.store.update({ showFps: (e.target as HTMLInputElement).checked }));
     for (const key of ['master', 'engine', 'effects'] as const) {
       $<HTMLInputElement>(`vol-${key}`).addEventListener('input', (e) => {
         const v = Number((e.target as HTMLInputElement).value) / 100;

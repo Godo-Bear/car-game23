@@ -26,7 +26,10 @@ function crashScrub(car: VehiclePhysics, impact: number, threshold: number, perM
  */
 /** Where a car touched the barrier this step (for sparks and scrape sounds). */
 export interface WallContact {
+  /** Touching during the latest step. */
   active: boolean;
+  /** Steps with contact so far (never reset), so effects can tell if any step of a frame touched. */
+  count: number;
   x: number;
   z: number;
 }
@@ -67,6 +70,7 @@ export function collideWithWalls(car: VehiclePhysics, proj: TrackProjection, wal
   car.z += nz * worst;
   if (contact) {
     contact.active = true;
+    contact.count++;
     contact.x = car.x + ox;
     contact.z = car.z + oz;
   }

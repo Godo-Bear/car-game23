@@ -50,6 +50,9 @@ export interface LocalSettings {
   /** Speed blur and speed lines. */
   motionBlur: boolean;
   cameraShake: boolean;
+  /** Step graphics quality down by itself when the frame rate stays low. */
+  autoQuality: boolean;
+  showFps: boolean;
   volume: Volumes;
   bindings: Record<ActionId, string[]>;
 }
@@ -73,6 +76,8 @@ export function defaultSettings(gpu = ''): LocalSettings {
     quality: detectQuality(gpu),
     motionBlur: true,
     cameraShake: true,
+    autoQuality: true,
+    showFps: false,
     volume: { master: 0.8, engine: 0.8, effects: 0.8 },
     bindings: cloneBindings(DEFAULT_BINDINGS),
   };
@@ -142,6 +147,8 @@ function sanitize(raw: Partial<LocalSettings>, defaults: LocalSettings): LocalSe
     quality,
     motionBlur: typeof raw.motionBlur === 'boolean' ? raw.motionBlur : defaults.motionBlur,
     cameraShake: typeof raw.cameraShake === 'boolean' ? raw.cameraShake : defaults.cameraShake,
+    autoQuality: typeof raw.autoQuality === 'boolean' ? raw.autoQuality : defaults.autoQuality,
+    showFps: typeof raw.showFps === 'boolean' ? raw.showFps : defaults.showFps,
     volume: {
       master: vol(raw.volume?.master, defaults.volume.master),
       engine: vol(raw.volume?.engine, defaults.volume.engine),

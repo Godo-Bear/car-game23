@@ -146,7 +146,7 @@ export class RaceSimulation {
         autopilot: false,
         controls: neutralControls(),
         impact: 0,
-        wall: { active: false, x: 0, z: 0 },
+        wall: { active: false, count: 0, x: 0, z: 0 },
         stuckTime: 0,
         slipstream: 0,
         prevX: 0,

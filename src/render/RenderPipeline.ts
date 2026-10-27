@@ -110,6 +110,8 @@ export class RenderPipeline {
   private readonly speed: ShaderPass;
   private readonly fxaa: FXAAPass;
   private profile: QualityProfile;
+  /** Extra resolution scale on top of the quality level (dynamic resolution on slow GPUs). */
+  private renderScale = 1;
   private width = window.innerWidth;
   private height = window.innerHeight;
 
@@ -151,8 +153,7 @@ export class RenderPipeline {
   setQuality(quality: Quality): void {
     this.profile = qualityProfile(quality);
     const p = this.profile;
-    this.renderer.setPixelRatio(p.pixelRatio);
-    this.composer.setPixelRatio(p.pixelRatio);
+    this.applyPixelRatio();
     for (const rt of [this.composer.renderTarget1, this.composer.renderTarget2]) {
       if (rt.samples !== p.msaa) {
         rt.samples = p.msaa;
@@ -163,6 +164,29 @@ export class RenderPipeline {
     this.fxaa.enabled = p.fxaa;
     this.renderer.shadowMap.enabled = p.shadows;
     this.resize(this.width, this.height);
+  }
+
+  get scale(): number {
+    return this.renderScale;
+  }
+
+  /** Render below native resolution (1 = full) when even Low quality can't keep up. */
+  setRenderScale(scale: number): void {
+    this.renderScale = scale;
+    this.applyPixelRatio();
+    this.resize(this.width, this.height);
+  }
+
+  private applyPixelRatio(): void {
+    const ratio = this.profile.pixelRatio * this.renderScale;
+    this.renderer.setPixelRatio(ratio);
+    this.composer.setPixelRatio(ratio);
+  }
+
+  /** Draw calls and triangles of the last frame (all passes, shadows included). */
+  get stats(): { calls: number; triangles: number } {
+    const r = this.renderer.info.render;
+    return { calls: r.calls, triangles: r.triangles };
   }
 
   setBloom(b: BloomSettings): void {
@@ -189,6 +213,9 @@ export class RenderPipeline {
   }
 
   render(dt: number): void {
+    // Count every pass of the frame, not just the last one.
+    this.renderer.info.autoReset = false;
+    this.renderer.info.reset();
     this.composer.render(dt);
   }
 

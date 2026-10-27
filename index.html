@@ -164,6 +164,8 @@
       <footer class="hub-foot muted"><kbd>Enter</kbd> start race · <kbd>H</kbd> controls · <kbd>Esc</kbd> back</footer>
     </section>
 
+    <div id="fps" class="fps hidden" aria-hidden="true"></div>
+
     <!-- Cinematic letterbox + title card -->
     <div id="cinematic" class="cinematic hidden" aria-hidden="true">
       <div class="bar top"></div>
@@ -215,6 +217,8 @@
           <p id="quality-blurb" class="muted small-text"></p>
           <label class="toggle"><input type="checkbox" id="set-motion-blur" /> <span>Speed blur &amp; speed lines</span></label>
           <label class="toggle"><input type="checkbox" id="set-camera-shake" /> <span>Camera shake (kerbs &amp; impacts)</span></label>
+          <label class="toggle"><input type="checkbox" id="set-auto-quality" /> <span>Lower the quality automatically if the game runs slowly</span></label>
+          <label class="toggle"><input type="checkbox" id="set-show-fps" /> <span>Show frame rate (FPS)</span></label>
         </section>
 
         <section class="pane" data-pane="audio">

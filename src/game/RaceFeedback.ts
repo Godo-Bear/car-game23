@@ -17,6 +17,9 @@ export class RaceFeedback {
   private wrongWayTime = 0;
   private kerbPhase = 0;
   private sparkCarry = 0;
+  /** Wall-contact counts seen last frame, per car (a frame spans several physics steps). */
+  private readonly lastContacts = new WeakMap<object, number>();
+  private scrapeHold = 0;
 
   constructor(
     private readonly hud: Hud,
@@ -68,16 +71,20 @@ export class RaceFeedback {
     if (shake && kerb > 0) this.cam.addShake(kerb * clamp(p.speed / 30, 0.3, 1) * 2.2 * dt);
 
     // Barrier scrapes: sparks from the contact point (any car), grinding noise for the player.
-    let scrape = 0;
-    this.sparkCarry += dt * 90;
+    this.sparkCarry += dt * 110;
     const burst = Math.floor(this.sparkCarry);
     this.sparkCarry -= burst;
+    this.scrapeHold = Math.max(0, this.scrapeHold - dt);
     for (const car of sim.cars) {
       const c = car.physics;
-      if (!car.wall.active || c.speed < 6) continue;
-      if (car === player) scrape = clamp(c.speed / 30, 0.25, 1);
-      this.sparks.emit(car.wall.x, c.y + 0.35, car.wall.z, c.vx, c.vz, Math.max(1, Math.round(burst * clamp(c.speed / 40, 0.3, 1))));
+      const touched = car.wall.count !== (this.lastContacts.get(car) ?? 0);
+      this.lastContacts.set(car, car.wall.count);
+      if (!touched || c.speed < 6) continue;
+      // Hold the grinding sound briefly: a scrape is a series of tiny bounces off the barrier.
+      if (car === player) this.scrapeHold = 0.18;
+      this.sparks.emit(car.wall.x, c.y + 0.35, car.wall.z, c.vx, c.vz, Math.max(3, Math.round(burst * clamp(c.speed / 35, 0.4, 1))));
     }
+    const scrape = this.scrapeHold > 0 ? clamp(p.speed / 30, 0.25, 1) : 0;
     this.audio.surface(rumble, scrape);
     this.sparks.update(dt);
 

@@ -23,6 +23,7 @@ import { type EffectsCar, TireEffects } from '../vehicles/TireEffects';
 import { Lighting } from '../world/Lighting';
 import { buildWorld, type World } from '../world/World';
 import { Cinematics } from './Cinematics';
+import { PerformanceMonitor } from './PerformanceMonitor';
 import { RaceFeedback } from './RaceFeedback';
 import { TrackLoader } from './TrackLoader';
 
@@ -46,6 +47,7 @@ export class Game {
   private readonly cine = new Cinematics(this.cam.camera);
   private readonly effects = new TireEffects();
   private readonly sparks = new Sparks();
+  private readonly perf = new PerformanceMonitor();
   private feedback!: RaceFeedback;
   private lastTime = -1;
 
@@ -157,6 +159,8 @@ export class Game {
       this.lighting.setShadowQuality(q.shadows, q.shadowMapSize);
       for (const w of this.worlds.values()) w.setDetail(q.detail);
       if (s.quality === 'low') this.trimWorlds();
+      this.pipeline.setRenderScale(1);
+      this.perf.reset();
       // Shadow and light changes need shaders rebuilt.
       this.scene.traverse((o) => {
         const m = (o as THREE.Mesh).material;
@@ -414,15 +418,33 @@ export class Game {
     else this.input.clearActions();
   }
 
+  /** The frame rate has stayed low: step the graphics down (if the player allows it). */
+  private onSlowFrames(): void {
+    if (!this.applied.autoQuality) return;
+    const q = this.applied.quality;
+    if (q === 'high' || q === 'medium') {
+      this.store.update({ quality: q === 'high' ? 'medium' : 'low' });
+    } else if (this.pipeline.scale > 0.65) {
+      // Already on Low: render at a lower resolution instead.
+      this.pipeline.setRenderScale(Math.max(0.65, this.pipeline.scale - 0.15));
+    } else {
+      return;
+    }
+    if (this.inRace) this.hud.showMessage('Graphics lowered for a smoother frame rate', 2.5, 'small');
+  }
+
   // ---------------------------------------------------------------- main loop
 
   private frame(time: number): void {
     // Clamp so a stalled tab or debugger pause never fast-forwards the race.
-    const dt = this.lastTime < 0 ? 0 : Math.min((time - this.lastTime) / 1000, 0.1);
+    const rawDt = this.lastTime < 0 ? 0 : (time - this.lastTime) / 1000;
+    const dt = Math.min(rawDt, 0.1);
     this.lastTime = time;
     this.elapsed += dt;
     const controls = this.input.update();
     this.handleActions();
+    const measuring = !this.busy && !this.paused && !this.modalOpen && document.visibilityState === 'visible';
+    if (this.perf.update(rawDt, measuring, this.applied.showFps)) this.onSlowFrames();
     if (this.busy) {
       this.pipeline.render(dt);
       return;
