@@ -8,7 +8,9 @@ countryside, by day, at sunset or at night — running in the browser and hosted
 - **Menu hub (Dirt 5 style):** *Race* (circuit cards with preview pictures, time of day, laps,
   opponents, difficulty), *Garage*, *Career* and *Settings* tabs over a live homescreen: the field
   racing over the Hakone pass on a sunny day, filmed with TV-style camera shots.
-- **Garage:** five cars with their own handling and body — Kaze GT (all-rounder), Shiro Type-H
+- **Garage:** five cars with their own handling and body (wheel arches, real glasshouse with
+  pillars, swept lights, grilles, diffusers, exhausts, flares/intakes/vents per model, detailed
+  wheels with brake calipers) — Kaze GT (all-rounder), Shiro Type-H
   (hot hatch), Yama R4 (rally special), Oni 86R (drift coupe) and Raijin V12 (hypercar). Customise
   paint colour and finish (gloss / metallic / pearl / matte), livery (racing stripes, side stripe,
   two-tone, race livery), accent colour, rim colour and race number; saved per car to your account.
@@ -16,7 +18,8 @@ countryside, by day, at sunset or at night — running in the browser and hosted
 - **Vehicle physics:** semi-simulation bicycle model — tyre slip, weight transfer, 6-speed automatic
   gearbox, handbrake drifting with skid marks and tyre smoke, stability control, slipstream, and
   crashes that cost real speed. High-speed drifts are assisted: the car carves toward where it is
-  pointing instead of sliding wide into the barrier.
+  pointing instead of sliding wide into the barrier. Steering calms down at speed, and with
+  stability assist on a barrier assist nudges you away from walls you're about to hit.
 - **Three circuits:**
   - **Tokyo** — 2.48 km *Shinjuku–Bay Street Circuit*: neon towers, a Shibuya scramble chicane, an
     elevated Shuto-style expressway, Tokyo Tower, Skytree and Rainbow Bridge.
@@ -27,10 +30,19 @@ countryside, by day, at sunset or at night — running in the browser and hosted
     avenues with falling petals, a lake with a five-storey pagoda, and a torii gate over the start.
 - **Time of day:** day, sunset or night on any circuit — sky, sun position, shadows, fog, street
   lamps, lit windows, neon and headlights all change (Mt. Fuji is on the horizon everywhere).
-- **Graphics:** MSAA anti-aliasing (FXAA on Low), real-time ambient occlusion on High plus baked
-  contact shadows under trees and buildings, world-space terrain detail (grass, rock on slopes),
-  varied asphalt with rubbered-in racing line, rain-soaked Tokyo streets at night with puddles and
-  neon/lamp reflections, trees that sway in the wind (cedar, sugi, maple, pine, bamboo, sakura).
+- **Realistic look (Dirt 5-style):** physically based sky (Rayleigh/Mie scattering) with drifting
+  clouds that also lights and reflects in the scene; a camera "lens" pass with filmic grading,
+  vignette, subtle colour fringing and sun glare that only shows when the sun is unobstructed;
+  thousands of individually swaying grass blades (with wildflowers) planted on the terrain around
+  the camera; surface relief on asphalt, concrete and rock; tree shadows on High; MSAA anti-aliasing
+  (FXAA on Low), real-time ambient occlusion plus baked contact shadows; rubbered-in racing line;
+  rain-soaked Tokyo nights with puddles and neon/lamp reflections.
+- **Japan, everywhere you look:** Mt. Fuji with snow in its gullies on every horizon; power poles
+  with sagging wires; glowing vending machines; red lanterns outside izakaya; Japanese traffic
+  lights; a JR commuter line on a viaduct over Tokyo and a Shinkansen crossing Sakura Valley
+  between two tunnels; orange curve mirrors and concrete lattice cut slopes on the Hakone pass; a
+  lakeside ryokan and the Hakone ropeway; flooded rice paddies, tiled-roof and thatched gassho
+  farmhouses and carp streamers in the countryside; cedar, sugi, maple, pine, bamboo and sakura.
 - **Speed & impact feedback:** speed blur and speed lines above ~180 km/h, kerb rumble and camera
   shake, sparks and grinding when scraping a barrier, impact thuds.
 - **Settings:** graphics quality Low / Medium / High (auto-detected), speed blur and camera shake
@@ -102,8 +114,10 @@ runs at a fixed 120 Hz, and is covered by unit tests — including a headless 8-
 │   │   ├── City.ts             # Procedural Tokyo: buildings, neon, lamps, landmarks
 │   │   ├── Nature.ts           # Terrain, lakes, forests, cherry blossoms, petals, pagoda, Fuji
 │   │   ├── foliage.ts          # Tree shapes, wind sway, contact shadows
+│   │   ├── Grass.ts            # GPU grass field that travels with the camera
+│   │   ├── japan.ts            # Fuji, power lines, vending machines, trains, mirrors, houses, paddies…
 │   │   ├── surfaces.ts         # Terrain/road detail, wet asphalt, light reflections
-│   │   ├── Lighting.ts         # Sky, sun/moon, fog, shadows and reflections per time of day
+│   │   ├── Lighting.ts         # Physical sky, sun/moon, fog, shadows and reflections per time of day
 │   │   └── textures.ts         # Canvas-generated textures
 │   ├── camera/ChaseCamera.ts   # Chase / far chase / bonnet cams
 │   ├── core/                   # Input (rebindable keys + gamepad), settings store, audio, math

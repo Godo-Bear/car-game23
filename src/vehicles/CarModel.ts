@@ -497,6 +497,33 @@ function carGeometry(def: CarDef, pattern: CarSetup['pattern']): CarGeometry {
     put(p.box, 'trim', side * (cw + 0.08), g.topAt(mirrorZ) + 0.06, mirrorZ, 0.16, 0.035, 0.05);
     put(p.box, twotone ? 'accent' : 'paint', side * (cw + 0.2), g.topAt(mirrorZ) + 0.11, mirrorZ - 0.02, 0.17, 0.11, 0.13);
   }
+  // Signature details per car.
+  if (b.flares) {
+    // Bolt-on arch flares, painted, with a dark lip.
+    const flare = new THREE.TorusGeometry(archR + 0.02, 0.06, 6, 14, Math.PI);
+    flare.scale(1, 1, 0.9);
+    for (const axle of [b.frontAxle, b.rearAxle]) {
+      for (const side of [-1, 1]) put(flare, 'paint', side * (hw + 0.015), b.wheelRadius, axle, 1, 1, 1, 0, Math.PI / 2, 0);
+    }
+  }
+  if (b.sideIntakes) {
+    // Scoops ahead of the rear wheels and louvres over the engine.
+    for (const side of [-1, 1]) {
+      put(p.box, 'trim', side * (hw + 0.004), g.bottom + 0.34, b.rearAxle + archR + 0.32, 0.02, 0.24, 0.5);
+      put(p.box, 'carbon', side * (hw - 0.03), g.bottom + 0.48, b.rearAxle + archR + 0.32, 0.08, 0.04, 0.55);
+    }
+    for (let k = 0; k < 5; k++) {
+      const z = b.rearAxle - 0.1 + k * 0.16;
+      put(p.box, 'trim', 0, g.topAt(z) + 0.005, z, 0.9, 0.02, 0.07);
+    }
+  }
+  if (b.hoodVents) {
+    for (const side of [-1, 1]) {
+      const z = g.front - 0.85;
+      put(p.box, 'trim', side * 0.32, g.topAt(z) + 0.005, z, 0.28, 0.02, 0.32, 0, 0, 0);
+    }
+  }
+  if (b.rally) put(p.box, 'chrome', 0, g.bottom - 0.02, g.front - 0.45, b.width * 0.6, 0.03, 0.7);
   // Shark-fin antenna.
   put(p.box, 'trim', 0, b.roof.y + 0.04, b.roof.z - b.roof.length * 0.42, 0.05, 0.06, 0.16);
 

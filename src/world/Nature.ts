@@ -596,8 +596,11 @@ export class NatureWorld {
     const n = placed.length;
     const trunks = shape.trunk ? new THREE.InstancedMesh(shape.trunk, swayMaterial({ color: shape.trunkColor }, shape.sway, 0), n) : null;
     const crowns = new THREE.InstancedMesh(shape.crown, swayMaterial({ color: 0xffffff }, shape.sway, 0.04), n);
-    this.treeMeshes.push(crowns);
-    if (trunks) this.treeMeshes.push(trunks);
+    // Foliage stays out of the ambient-occlusion pass (its contact shadows do that job, and it
+    // would triple the cost of the forests). Trees cast sun shadows on High; bushes are too low.
+    crowns.userData.noAO = true;
+    if (trunks) trunks.userData.noAO = true;
+    if (trunks) this.treeMeshes.push(crowns, trunks);
     const shadows = new THREE.InstancedMesh(this.shadowGeo, this.shadowMat, n);
     shadows.userData.noAO = true;
     const m = new THREE.Matrix4();

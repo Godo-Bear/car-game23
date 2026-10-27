@@ -130,7 +130,7 @@ export function maple(): TreeShape {
 }
 
 export function sakura(): TreeShape {
-  const crown = merge([blob(2.6, 0, 4.3, 0, 0.78), blob(1.8, 1.5, 3.9, 0.6, 0.78), blob(1.9, -1.3, 4.0, -0.8, 0.78), blob(1.6, 0.3, 5.2, -0.6, 0.78)]);
+  const crown = merge([blob(2.6, 0, 4.3, 0, 0.78), blob(1.8, 1.5, 3.9, 0.6, 0.78, 0), blob(1.9, -1.3, 4.0, -0.8, 0.78, 0), blob(1.6, 0.3, 5.2, -0.6, 0.78, 0)]);
   return {
     trunk: trunk(3.2, 0.32, 0.2),
     crown,

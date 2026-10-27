@@ -525,7 +525,7 @@ export class Game {
       const p = this.sunScreen.copy(cam.position).addScaledVector(this.lighting.skySunDirection, 1000).project(cam);
       const edge = Math.max(Math.abs(p.x), Math.abs(p.y));
       if (p.z < 1 && edge < 1.15) strength = Math.min(1, (1.15 - edge) / 0.25);
-      this.pipeline.setSun(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5, strength, this.lighting.sun.color);
+      this.pipeline.setSun(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5, strength * this.lighting.grade.glare, this.lighting.sun.color);
     } else {
       this.pipeline.setSun(0.5, 0.5, 0, this.lighting.sun.color);
     }

@@ -26,6 +26,12 @@ export interface BodyDef {
   rally?: boolean;
   /** Bonnet scoop. */
   hoodScoop?: boolean;
+  /** Bolt-on wheel-arch flares. */
+  flares?: boolean;
+  /** Mid-engine side intakes and engine-cover louvres. */
+  sideIntakes?: boolean;
+  /** Vents on the bonnet. */
+  hoodVents?: boolean;
 }
 
 export interface CarDef {
@@ -81,6 +87,7 @@ export const CARS: Record<CarId, CarDef> = {
       frontAxle: 1.2,
       rearAxle: -1.4,
       wing: 'gt',
+      hoodVents: true,
     },
     setup: { paint: '#1e88ff', finish: 'metallic', pattern: 'stripes', accent: '#ffffff', rims: '#d6dae2', number: 23 },
   },
@@ -247,6 +254,7 @@ export const CARS: Record<CarId, CarDef> = {
       rearAxle: -1.35,
       wing: 'gt',
       hoodScoop: true,
+      flares: true,
     },
     setup: { paint: '#ff4fa3', finish: 'pearl', pattern: 'side', accent: '#1a1a1a', rims: '#c9a24a', number: 86 },
   },
@@ -304,6 +312,8 @@ export const CARS: Record<CarId, CarDef> = {
       frontAxle: 1.35,
       rearAxle: -1.45,
       wing: 'gt',
+      flares: true,
+      sideIntakes: true,
     },
     setup: { paint: '#ff6a00', finish: 'metallic', pattern: 'twotone', accent: '#111214', rims: '#111214', number: 1 },
   },

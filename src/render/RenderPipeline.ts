@@ -184,6 +184,8 @@ export interface LensGrade {
   contrast: number;
   saturation: number;
   tint: [number, number, number];
+  /** Sun-glare strength (0 at night). */
+  glare: number;
 }
 
 export class RenderPipeline {

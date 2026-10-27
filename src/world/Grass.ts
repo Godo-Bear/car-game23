@@ -178,7 +178,7 @@ export class GrassField {
   setDensity(level: 0 | 1 | 2): void {
     this.mesh.visible = level > 0;
     if (level === 0) return;
-    const n = level === 2 ? 190 : 130;
+    const n = level === 2 ? 170 : 130;
     const spacing = level === 2 ? 0.48 : 0.56;
     this.uniforms.uSpacing.value = spacing;
     this.uniforms.uN.value = n;

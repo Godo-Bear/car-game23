@@ -612,12 +612,12 @@ export function latticeSlopes(track: TrackPath, ground: Ground, normalMap: THREE
       g.fillStyle = `rgba(${40 + Math.random() * 60},${70 + Math.random() * 60},${30 + Math.random() * 30},0.6)`;
       g.fillRect(Math.random() * 128, Math.random() * 128, 3, 3);
     }
-    g.fillStyle = '#b9b6ab';
-    g.fillRect(0, 0, 128, 16);
-    g.fillRect(0, 0, 16, 128);
+    g.fillStyle = '#8e8b82';
+    g.fillRect(0, 0, 128, 11);
+    g.fillRect(0, 0, 11, 128);
     g.fillStyle = 'rgba(0,0,0,0.25)';
-    g.fillRect(16, 16, 112, 4);
-    g.fillRect(16, 16, 4, 112);
+    g.fillRect(11, 11, 117, 4);
+    g.fillRect(11, 11, 4, 117);
   });
   const group = new THREE.Group();
   group.name = 'lattice-slopes';
@@ -631,7 +631,11 @@ export function latticeSlopes(track: TrackPath, ground: Ground, normalMap: THREE
     for (let i = 0; i < n; i++) {
       const s0 = S[i];
       const s1 = S[(i + 1) % n];
-      const steep = (s: typeof s0) => ground(s.x + s.rx * side * (wall + 10), s.z + s.rz * side * (wall + 10)) - s.y > 3;
+      // Only tall cut banks that keep rising away from the road get frames.
+      const steep = (s: typeof s0) => {
+        const at = (o: number) => ground(s.x + s.rx * side * (wall + o), s.z + s.rz * side * (wall + o)) - s.y;
+        return at(10) > 5.5 && at(16) > at(10) + 1;
+      };
       if (!steep(s0) || !steep(s1)) continue;
       const pt = (s: typeof s0, off: number): V3 => {
         const x = s.x + s.rx * side * (wall + off);
