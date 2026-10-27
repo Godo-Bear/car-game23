@@ -35,8 +35,10 @@ countryside, by day, at sunset or at night — running in the browser and hosted
   quickly while drifting.
 - **Vehicle physics:** semi-simulation bicycle model — tyre slip, weight transfer, 6-speed automatic
   gearbox, handbrake drifting with skid marks and tyre smoke, stability control, slipstream, and
-  crashes that cost real speed. High-speed drifts are assisted: the car carves toward where it is
-  pointing instead of sliding wide into the barrier, and lifting off the throttle ends a drift
+  crashes that cost real speed. Drifts are assisted: there's no countersteering to do - once the
+  car is sideways the game countersteers for you and the steering sets the drift angle (into the
+  corner for more, centred for less, away to straighten up, never a spin). The car carves toward
+  where it is pointing instead of sliding wide into the barrier, and lifting off the throttle ends a drift
   cleanly (the rear grips up and the slide is reeled in). Steering calms down at speed, and with
   stability assist on a barrier assist nudges you away from walls you're about to hit.
 - **Ten circuits** (the track picker scrolls sideways):

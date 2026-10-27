@@ -61,20 +61,48 @@ describe('VehiclePhysics', () => {
     expect(Math.abs(drift.heading)).toBeGreaterThan(Math.abs(plain.heading) * 1.3);
   });
 
-  it('holds a handbrake-initiated drift on throttle without spinning', () => {
+  it('holds a handbrake-initiated drift on throttle without spinning or countersteering', () => {
+    // Flick it in, then just keep steering into the corner: the assist does the countersteer.
     const car = cruising(21);
     car.gear = 2;
     let maxSlip = 0;
     let drifting = 0;
     simulate(car, 4, (t) => {
       maxSlip = Math.max(maxSlip, Math.abs(car.driftAngle));
-      if (t > 1 && Math.abs(car.driftAngle) > 0.35) drifting += DT;
-      return input({ throttle: t > 0.5 ? 1 : 0.3, steer: t < 0.5 ? -0.8 : 0, handbrake: t > 0.1 && t < 0.5 });
+      if (t > 1 && Math.abs(car.driftAngle) > 0.3) drifting += DT;
+      return input({ throttle: t > 0.5 ? 1 : 0.3, steer: -0.8, handbrake: t > 0.1 && t < 0.5 });
     });
     expect(car.drifting).toBe(true);
     expect(drifting).toBeGreaterThan(2.5); // slide sustained for most of the 3 s after the flick
-    expect(maxSlip).toBeLessThan(0.95); // the limiter stops it becoming a spin
-    expect(car.speedKmh).toBeGreaterThan(40);
+    expect(maxSlip).toBeLessThan(0.7); // never a spin, however long you hold it
+    expect(car.speedKmh).toBeGreaterThan(70); // and it keeps its speed instead of scrubbing it off
+  });
+
+  it('sets the drift angle with the steering: into the corner for more, centred for less', () => {
+    const angleWith = (steer: number) => {
+      const car = cruising(24);
+      car.gear = 2;
+      simulate(car, 3, (t) => input({ throttle: t > 0.5 ? 1 : 0.3, steer: t < 0.5 ? -0.8 : steer, handbrake: t > 0.1 && t < 0.5 }));
+      return { slip: Math.abs(car.driftAngle), drifting: car.drifting };
+    };
+    const into = angleWith(-1);
+    const centred = angleWith(0);
+    expect(into.drifting && centred.drifting).toBe(true);
+    expect(into.slip).toBeGreaterThan(0.35);
+    expect(centred.slip).toBeGreaterThan(0.12);
+    expect(centred.slip).toBeLessThan(into.slip - 0.1);
+  });
+
+  it('straightens up without flicking the other way when you steer out of a drift', () => {
+    const car = cruising(30);
+    car.gear = 3;
+    let worstOtherWay = 0;
+    simulate(car, 4, (t) => {
+      if (t > 1.5) worstOtherWay = Math.min(worstOtherWay, car.driftAngle);
+      return input({ throttle: t > 0.5 ? 1 : 0.3, steer: t < 1.5 ? -0.8 : 0.8, handbrake: t > 0.1 && t < 0.5 });
+    });
+    expect(car.drifting).toBe(false);
+    expect(worstOtherWay).toBeGreaterThan(-0.2); // no tank-slapper
   });
 
   it('carves a high-speed drift round the corner instead of sliding wide or spinning', () => {

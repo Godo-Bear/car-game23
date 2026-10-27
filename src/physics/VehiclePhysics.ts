@@ -1,4 +1,4 @@
-import { clamp, lerp, moveTowards, smoothstep } from '../core/math';
+import { clamp, lerp, moveTowards, smoothstep, wrapAngle } from '../core/math';
 
 /**
  * Semi-arcade "bicycle model" vehicle simulation running in the world XZ plane.
@@ -7,8 +7,8 @@ import { clamp, lerp, moveTowards, smoothstep } from '../core/math';
  * - Longitudinal weight transfer changes axle loads under braking/acceleration (lift-off/trail-braking rotation).
  * - Rear-wheel drive through a 6-speed automatic gearbox and an engine torque curve.
  * - Rear tyres obey a (softened) friction circle so the handbrake and power oversteer can break traction.
- * - Pulling the handbrake starts a drift: the rear stays loose while you hold it with throttle and
- *   countersteer, with a little automatic countersteer and an angle limiter so it's controllable.
+ * - Pulling the handbrake starts a drift: the rear stays loose while you hold it with throttle. The
+ *   drift assist countersteers for you and the steering sets the drift angle; a limiter stops spins.
  * - Below ~6 m/s the model blends into a kinematic model so it is stable when parking or launching.
  *
  * Pure TypeScript with no rendering dependencies so it can be unit tested and shared by player and AI cars.
@@ -147,6 +147,18 @@ const DRIFT_CARVE_ACCEL_FAST = 5.5;
  */
 const DRIFT_REGRIP = 3.5;
 const DRIFT_RECOVER = 2.2;
+/**
+ * Drift assist: once a drift is going (handbrake released), the countersteer is done for you
+ * and the steering sets the drift angle instead - into the corner for more angle (up to
+ * DRIFT_ANGLE_MAX), centred for a medium drift, away from it to straighten up. The car's
+ * rotation is steered toward that angle at DRIFT_HOLD (1/s), converging at DRIFT_HOLD_GAIN.
+ */
+const DRIFT_ANGLE_MIN = 0.05;
+const DRIFT_ANGLE_MID = 0.26;
+const DRIFT_ANGLE_MAX = 0.5;
+const DRIFT_ANGLE_MAX_FAST = 0.4;
+const DRIFT_HOLD = 16;
+const DRIFT_HOLD_GAIN = 4;
 /** Nitro tank refill (tanks per second): slowly on its own, quickly while drifting. */
 const NITRO_REFILL = 1 / 45;
 const NITRO_REFILL_DRIFT = 1 / 6;
@@ -186,6 +198,8 @@ export class VehiclePhysics {
   /** Body slip angle in radians (positive: travelling to the right of where the nose points). */
   driftAngle = 0;
   private driftSettle = 0;
+  /** Direction of travel last step (for the drift assist), or null when not drifting. */
+  private travelDir: number | null = null;
   /** 0..1 how far the rear has regained its grip after a drift (1 = fully). */
   private regrip = 1;
   /** Nitro tank 0..1 (starts full). */
@@ -309,8 +323,11 @@ export class VehiclePhysics {
     if (this.drifting) {
       // Allow enough lock to countersteer the slide, and do some of it automatically.
       limit = Math.max(limit, Math.min(s.maxSteer, Math.abs(bodySlip) + 0.25));
-      const counter = DRIFT_COUNTERSTEER + 0.25 * fast;
-      target = clamp(clamp(input.steer, -1, 1) * limit + bodySlip * counter, -limit, limit);
+      // While the handbrake is held you flick the car in; after that the assist countersteers
+      // fully (front wheels along the direction of travel) and the steering only trims it.
+      const counter = input.handbrake ? DRIFT_COUNTERSTEER + 0.25 * fast : 1;
+      const own = input.handbrake ? 1 : 0.25;
+      target = clamp(clamp(input.steer, -1, 1) * limit * own + bodySlip * counter, -limit, limit);
     }
     const returning = Math.abs(target) < Math.abs(this.steerAngle) && Math.sign(target) !== -Math.sign(this.steerAngle);
     // Steering speed shrinks with the available lock, so the wheel takes a similar time to reach
@@ -470,7 +487,22 @@ export class VehiclePhysics {
         const k = Math.min(1, DRIFT_RECOVER * (0.6 + 0.6 * this.stabilityAssist) * dt);
         r = lerp(r, (-uNew * Math.tan(delta)) / L, k);
         wNew -= wNew * k;
+      } else if (!input.handbrake) {
+        // Drift assist: hold the angle the steering asks for (no countersteering needed).
+        const side = Math.sign(bodySlip) || 1;
+        const into = clamp(-input.steer * side, -1, 1);
+        const most = lerp(DRIFT_ANGLE_MAX, DRIFT_ANGLE_MAX_FAST, fast);
+        const want = side * (into >= 0 ? lerp(DRIFT_ANGLE_MID, most, into) : lerp(DRIFT_ANGLE_MID, DRIFT_ANGLE_MIN, -into));
+        const slipNow = Math.atan2(wNew, uNew);
+        // The travel direction turns at `turn`; rotating the body at turn - gain * error makes
+        // the slip angle settle on the wanted one.
+        const dir = this.heading - slipNow;
+        const turn = this.travelDir === null ? r : wrapAngle(dir - this.travelDir) / dt;
+        r = lerp(r, turn - DRIFT_HOLD_GAIN * (slipNow - want), Math.min(1, DRIFT_HOLD * dt));
       }
+      this.travelDir = this.heading - Math.atan2(wNew, uNew);
+    } else {
+      this.travelDir = null;
     }
 
     // Low-speed kinematic blend.
