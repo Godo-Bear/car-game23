@@ -5,7 +5,7 @@ import type { TrackPath } from '../track/TrackPath';
 import type { TrackTheme } from '../track/tracks';
 import { bamboo, broadleaf, bush, cedar, contactShadowMaterial, maple, pine, sakura, sugi, swayMaterial, type TreeShape } from './foliage';
 import { GeometryBuilder } from './GeometryBuilder';
-import { GrassField, type GroundField } from './Grass';
+import { GrassField, type GrassStyle, type GroundField } from './Grass';
 import {
   curveMirrors,
   type Feature,
@@ -33,31 +33,49 @@ import { glowTexture } from './textures';
  * falling petals and landmarks. Vegetation sways in the wind and sits on soft contact shadows.
  */
 
-type RuralTheme = Exclude<TrackTheme, 'city'>;
+export type RuralTheme = Exclude<TrackTheme, 'city'>;
 
-/** Model files each countryside map places (loaded before the map is built). */
-export const NATURE_PROPS: Record<RuralTheme, PropId[]> = {
-  mountain: ['castle', 'autumnTree', 'sign'],
-  countryside: ['pagoda', 'bonsai', 'sign'],
-};
+/** Vegetation mixes: what grows along the road and on the hills. */
+export type Vegetation = 'cedar' | 'autumn' | 'snow' | 'blossom' | 'bamboo' | 'coast';
 
-/** Roadside signs: Japanese name, English underneath. */
-const SIGNS: Record<RuralTheme, string[][]> = {
-  mountain: [
-    ['箱根峠', 'HAKONE PASS'],
-    ['芦ノ湖', 'LAKE ASHI'],
-    ['急カーブ', 'SHARP BENDS'],
-    ['ようこそ', 'WELCOME'],
-  ],
-  countryside: [
-    ['桜谷', 'SAKURA VALLEY'],
-    ['五重塔', 'PAGODA'],
-    ['田園', 'RICE FIELDS'],
-    ['ようこそ', 'WELCOME'],
-  ],
-};
+/** Everything that makes one countryside or mountain map its own. */
+export interface RuralScene {
+  theme: RuralTheme;
+  terrain: ThemeConfig;
+  vegetation: Vegetation;
+  /** Model files the map places (loaded before it is built). */
+  props: PropId[];
+  /** Roadside signs: Japanese name, English underneath. */
+  signs: string[][];
+  /** A giant tree on the first level verge after the start. */
+  startTree?: { id: PropId; height: number };
+  /** A landmark on the lowest, flattest dry spot of the lake shore (or sea shore). */
+  shoreLandmark?: { id: PropId | 'lighthouse'; height: number };
+  /** Sakura Valley's pagoda on the lake shore. */
+  pagoda?: boolean;
+  /** A torii gate standing in the lake. */
+  torii?: boolean;
+  /** A ryokan and its neighbours around this spot. */
+  ryokan?: [number, number];
+  /** Number of farming villages near the road. */
+  villages?: number;
+  koinobori?: boolean;
+  paddies?: boolean;
+  ropeway?: [[number, number], [number, number]];
+  /** A railway viaduct crossing the map east-west at this z. */
+  rail?: { z: number; kind: 'commuter' | 'shinkansen'; deckY: number };
+  /** Lap distances of the roadside vending machines. */
+  machines: number[];
+  /** Stone lanterns along the start straight. */
+  lanterns?: boolean;
+  /** Red-and-white arrow poles marking the road edges for the snowploughs (Hokkaido). */
+  snowPoles?: boolean;
+  particles?: ParticleKind;
+  /** Grass tufts (null: none, e.g. under snow). */
+  grass: GrassStyle | null;
+}
 
-// ---------------------------------------------------------------- noise
+// ---------------------------------------------------------------- noise// ---------------------------------------------------------------- noise
 
 function hash2(x: number, z: number, seed: number): number {
   let h = Math.imul(x | 0, 374761393) ^ Math.imul(z | 0, 668265263) ^ Math.imul(seed, 2246822519);
@@ -180,7 +198,7 @@ interface Ellipse {
   rz: number;
 }
 
-interface ThemeConfig {
+export interface ThemeConfig {
   seed: number;
   waterLevel: number;
   lake: Ellipse;
@@ -188,56 +206,130 @@ interface ThemeConfig {
   natural(x: number, z: number, d: number): number;
   color(h: number, slope: number, x: number, z: number, d: number, out: THREE.Color): void;
   waterColor: number;
-  fujiAt: [number, number];
+  /** A frozen lake: pale, matt ice instead of water. */
+  ice?: boolean;
+  /** The big snow-capped volcano on the horizon (Fuji, or a local one), if any. */
+  fujiAt: [number, number] | null;
+  ground: 'rocky' | 'meadow';
+  farColor: number;
+  ridgeColor: number;
+  ridgeHeight: number;
+  /** Slope range over which grass gives way to rock. */
+  rockSlope: [number, number];
+  /** How much of the ground grows grass. */
+  grassCover: number;
+  /** Beaches (no grass) up to this height above the water. */
+  sandLine: number;
 }
 
 const C = (hex: number) => new THREE.Color(hex);
 
-const MOUNTAIN: ThemeConfig = {
-  seed: 11,
-  waterLevel: -2.5,
-  lake: { x: 0, z: 290, rx: 390, rz: 165 },
-  natural(x, z, d) {
-    const hills = fbm(x / 380, z / 380, 11) * 40 + fbm(x / 110, z / 110, 23) * 10;
-    // Mountains rise steeply away from the pass.
-    const rise = smoothstep(60, 650, d) * (150 + fbm(x / 600, z / 600, 5) * 110);
-    return hills + rise;
-  },
-  color(h, slope, x, z, d, out) {
-    const n = fbm(x / 60, z / 60, 3) * 0.5 + 0.5;
-    out.copy(C(0x2f4a26)).lerp(C(0x56702f), n);
-    if (slope > 0.55) out.lerp(C(0x6c6a63), smoothstep(0.55, 0.95, slope));
-    if (h > 170) out.lerp(C(0xe6edf3), smoothstep(170, 230, h));
-    if (h < this.waterLevel + 1.2) out.copy(C(0x8a7d62));
-    if (d < 9) out.lerp(C(0x6b6455), smoothstep(9, 6, d));
-  },
-  waterColor: 0x1d3a3e,
-  fujiAt: [-3200, 3000],
-};
+interface TerrainOptions {
+  seed: number;
+  lake: Ellipse;
+  fujiAt: [number, number] | null;
+  waterLevel?: number;
+  waterColor?: number;
+}
 
-const COUNTRYSIDE: ThemeConfig = {
-  seed: 29,
-  waterLevel: -1.5,
-  lake: { x: -60, z: 200, rx: 205, rz: 100 },
-  natural(x, z, d) {
-    const hills = fbm(x / 260, z / 260, 29) * 14 + fbm(x / 90, z / 90, 41) * 3;
-    const far = smoothstep(220, 760, d) * (55 + fbm(x / 420, z / 420, 7) * 50);
-    return hills + far;
-  },
-  color(h, slope, x, z, d, out) {
-    const n = fbm(x / 120, z / 120, 9) * 0.5 + 0.5;
-    out.copy(C(0x5d8f35)).lerp(C(0x9ab84a), n);
-    // Wildflower meadows.
-    const f = fbm(x / 45, z / 45, 77);
-    if (f > 0.28) out.lerp(C(0xd9a3c4), smoothstep(0.28, 0.5, f) * 0.45);
-    else if (f < -0.32) out.lerp(C(0xe8d36a), smoothstep(-0.32, -0.5, f) * 0.4);
-    if (slope > 0.6) out.lerp(C(0x7a7460), smoothstep(0.6, 1, slope));
-    if (h < this.waterLevel + 0.8) out.copy(C(0xb9a77a));
-    if (d < 9) out.lerp(C(0x7d8a52), smoothstep(9, 6, d) * 0.6);
-  },
-  waterColor: 0x2d5c78,
-  fujiAt: [-3400, 2900],
-};
+/** Steep, forested mountains rising away from the pass (green, or the reds and golds of autumn). */
+export function mountainTerrain(o: TerrainOptions & { autumn?: boolean }): ThemeConfig {
+  const { seed } = o;
+  const [low, high] = o.autumn ? [0x46421f, 0x7a6230] : [0x2f4a26, 0x56702f];
+  return {
+    seed,
+    waterLevel: o.waterLevel ?? -2.5,
+    lake: o.lake,
+    natural(x, z, d) {
+      const hills = fbm(x / 380, z / 380, seed) * 40 + fbm(x / 110, z / 110, seed + 12) * 10;
+      // Mountains rise steeply away from the pass.
+      const rise = smoothstep(60, 650, d) * (150 + fbm(x / 600, z / 600, seed - 6) * 110);
+      return hills + rise;
+    },
+    color(h, slope, x, z, d, out) {
+      const n = fbm(x / 60, z / 60, seed - 8) * 0.5 + 0.5;
+      out.copy(C(low)).lerp(C(high), n);
+      if (slope > 0.55) out.lerp(C(0x6c6a63), smoothstep(0.55, 0.95, slope));
+      if (h > 170) out.lerp(C(0xe6edf3), smoothstep(170, 230, h));
+      if (h < this.waterLevel + 1.2) out.copy(C(0x8a7d62));
+      if (d < 9) out.lerp(C(0x6b6455), smoothstep(9, 6, d));
+    },
+    waterColor: o.waterColor ?? 0x1d3a3e,
+    fujiAt: o.fujiAt,
+    ground: 'rocky',
+    farColor: low,
+    ridgeColor: o.autumn ? 0x4f4a36 : 0x3b5242,
+    ridgeHeight: 380,
+    rockSlope: [0.42, 0.75],
+    grassCover: 0.8,
+    sandLine: 1.2,
+  };
+}
+
+/** Mountains under deep snow: white slopes, grey rock faces, slush at the roadside, a frozen lake. */
+export function snowTerrain(o: TerrainOptions): ThemeConfig {
+  const base = mountainTerrain(o);
+  const { seed } = o;
+  return {
+    ...base,
+    color(h, slope, x, z, d, out) {
+      const n = fbm(x / 70, z / 70, seed - 8) * 0.5 + 0.5;
+      out.copy(C(0xd9e2ea)).lerp(C(0xf4f7fa), n);
+      // Bare rock on the steep mountainsides (the lake shore stays under snow).
+      if (slope > 0.6) out.lerp(C(0x5f6166), smoothstep(0.6, 1.05, slope) * 0.85 * smoothstep(this.waterLevel + 2, this.waterLevel + 14, h));
+      if (h < this.waterLevel + 1.2) out.copy(C(0xe2eaf0));
+      if (d < 9) out.lerp(C(0xa9afb6), smoothstep(9, 6.5, d));
+    },
+    waterColor: 0xc6dbe8,
+    ice: true,
+    ground: 'meadow',
+    farColor: 0xe6edf3,
+    ridgeColor: 0xc9d3dc,
+    ridgeHeight: 420,
+    grassCover: 0,
+  };
+}
+
+/** Rolling farmland and hills (with a sandy shore and lower hills toward the sea on the coast). */
+export function valleyTerrain(o: TerrainOptions & { coast?: boolean; hills?: number; moss?: boolean }): ThemeConfig {
+  const { seed } = o;
+  const hillsScale = o.hills ?? 1;
+  const [low, high] = o.moss ? [0x4d7a2e, 0x7d9a3e] : [0x5d8f35, 0x9ab84a];
+  const sand = o.coast ? 1.5 : 0.8;
+  return {
+    seed,
+    waterLevel: o.waterLevel ?? -1.5,
+    lake: o.lake,
+    natural(x, z, d) {
+      const hills = (fbm(x / 260, z / 260, seed) * 14 + fbm(x / 90, z / 90, seed + 12) * 3) * Math.sqrt(hillsScale);
+      const far = smoothstep(220, 760, d) * (55 + fbm(x / 420, z / 420, seed - 22) * 50) * hillsScale;
+      // On the coast the hills fall away toward the sea.
+      const L = o.lake;
+      const inland = o.coast ? smoothstep(2.4, 4.5, ((x - L.x) / L.rx) ** 2 + ((z - L.z) / L.rz) ** 2) : 1;
+      return (hills + far) * inland;
+    },
+    color(h, slope, x, z, d, out) {
+      const n = fbm(x / 120, z / 120, seed - 20) * 0.5 + 0.5;
+      out.copy(C(low)).lerp(C(high), n);
+      // Wildflower meadows.
+      const f = fbm(x / 45, z / 45, seed + 48);
+      if (f > 0.28) out.lerp(C(0xd9a3c4), smoothstep(0.28, 0.5, f) * (o.moss ? 0.15 : 0.45));
+      else if (f < -0.32) out.lerp(C(0xe8d36a), smoothstep(-0.32, -0.5, f) * 0.4);
+      if (slope > 0.6) out.lerp(C(0x7a7460), smoothstep(0.6, 1, slope));
+      if (h < this.waterLevel + sand) out.copy(C(o.coast ? 0xd8c99a : 0xb9a77a));
+      if (d < 9) out.lerp(C(0x7d8a52), smoothstep(9, 6, d) * 0.6);
+    },
+    waterColor: o.waterColor ?? 0x2d5c78,
+    fujiAt: o.fujiAt,
+    ground: 'meadow',
+    farColor: low,
+    ridgeColor: 0x4f6e52,
+    ridgeHeight: 220,
+    rockSlope: [0.5, 0.9],
+    grassCover: 1,
+    sandLine: sand,
+  };
+}
 
 // ---------------------------------------------------------------- world
 
@@ -248,7 +340,7 @@ export class NatureWorld {
   private readonly corridor: number;
   /** Terrain extent; heights taper down to the far ground near its edge (no visible wall). */
   private readonly extent: { cx: number; cz: number; half: number };
-  private readonly petals: FallingPetals | null;
+  private readonly particles: FallingParticles | null;
   private readonly lanternMat: THREE.MeshBasicMaterial | null = null;
   private readonly lanternGlow: THREE.PointsMaterial | null = null;
   /** Japanese scenery (Fuji, power lines, houses, trains...). */
@@ -265,15 +357,19 @@ export class NatureWorld {
   private readonly shadowMat = contactShadowMaterial();
   private readonly shadowGeo = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
 
+  readonly theme: RuralTheme;
+
   constructor(
-    readonly theme: RuralTheme,
+    private readonly scene: RuralScene,
     private readonly track: TrackPath,
     rng: () => number,
     detail = 1,
     grassLevel: 0 | 1 | 2 = 1,
   ) {
+    const theme = scene.theme;
+    this.theme = theme;
     this.group.name = `nature-${theme}`;
-    this.cfg = theme === 'mountain' ? MOUNTAIN : COUNTRYSIDE;
+    this.cfg = scene.terrain;
     this.field = new RoadField(track);
     this.corridor = track.wallOffset + 3;
     const b = track.bounds;
@@ -285,60 +381,61 @@ export class NatureWorld {
 
     this.buildTerrain();
     this.buildWater();
-    this.addFeature(new MountFuji(...this.cfg.fujiAt, () => SUN_DIRECTION));
+    if (this.cfg.fujiAt) this.addFeature(new MountFuji(...this.cfg.fujiAt, () => SUN_DIRECTION));
     this.placeTokyoTower();
     this.placeModelLandmarks();
     this.buildDistantRidges(rng);
     const ground = (x: number, z: number) => this.heightAt(x, z);
     const wall = track.wallOffset;
 
+    // Paddies, houses and the railway first, so the trees keep clear of them.
+    if (scene.paddies) this.addFeature(ricePaddies(this.planPaddies(), waterNormalMap()));
+    const houses: HouseSpot[] = [];
+    // A ryokan and its neighbours (on the lake shore in the mountains).
+    if (scene.ryokan) houses.push(...this.village(rng, scene.ryokan, 6, 46, 'ryokan'));
+    for (const centre of this.villageCentres(rng, scene.villages ?? 0)) houses.push(...this.village(rng, centre, 7, 40));
+    if (houses.length) this.addFeature(japaneseHouses(houses));
+    if (scene.koinobori) this.addFeature(koinobori(houses.filter((_, k) => k % 3 === 0).map((h) => this.besideHouse(h))));
+    if (scene.ropeway) this.addFeature(new Ropeway(...scene.ropeway, ground));
+    if (scene.rail) {
+      // A viaduct across the valley (and the lake), between two tunnels.
+      this.railZ = scene.rail.z;
+      this.addFeature(
+        new Railway({
+          from: [-1500, scene.rail.z],
+          to: [1500, scene.rail.z],
+          deckY: scene.rail.deckY,
+          ground,
+          kind: scene.rail.kind,
+          tunnels: true,
+          clear: (x, z) => this.field.query(x, z).d > wall + 4,
+        }),
+      );
+    }
+
+    if (theme === 'mountain') this.buildForest(rng, scene.vegetation);
+    else this.buildBlossoms(rng, scene.vegetation);
+    if (scene.torii) this.buildLakeTorii();
+    if (scene.pagoda) this.buildPagoda();
     if (theme === 'mountain') {
-      // A ryokan and its neighbours on the lake shore, a ropeway up the far mountain.
-      this.addFeature(japaneseHouses(this.village(rng, [-210, 62], 6, 46, 'ryokan')));
-      this.addFeature(new Ropeway([380, 560], [900, 1150], ground));
-      this.buildForest(rng);
-      this.buildLakeTorii();
       this.buildChevrons();
       this.addFeature(curveMirrors(track, ground));
       this.addFeature(latticeSlopes(track, ground, concreteNormalMap()));
       this.addFeature(powerLines(track, { lateral: wall + 3.4, every: 36, sides: [-1], style: 'wood', ground }));
-      this.addFeature(vendingMachines(this.roadsideMachines([40, 260, 1100], wall + 2.6), rng));
-      this.petals = null;
     } else {
-      // Flooded rice paddies and farming villages first, so the trees keep clear of them.
-      this.addFeature(ricePaddies(this.planPaddies(), waterNormalMap()));
-      const houses: HouseSpot[] = [];
-      for (const centre of this.villageCentres(rng, 3)) houses.push(...this.village(rng, centre, 7, 40));
-      this.addFeature(japaneseHouses(houses));
-      this.addFeature(koinobori(houses.filter((_, k) => k % 3 === 0).map((h) => this.besideHouse(h))));
-      // The Shinkansen crosses the valley (and the lake) on a viaduct between two tunnels.
-      this.railZ = 250;
-      const rail = new Railway({
-        from: [-1500, 250],
-        to: [1500, 250],
-        deckY: 25,
-        ground,
-        kind: 'shinkansen',
-        tunnels: true,
-        clear: (x, z) => this.field.query(x, z).d > wall + 4,
-      });
-      this.addFeature(rail);
-      this.buildBlossoms(rng);
-      this.buildPagoda();
       this.addFeature(powerLines(track, { lateral: wall + 4, every: 38, sides: [1], style: 'concrete', ground }));
-      this.addFeature(vendingMachines(this.roadsideMachines([30, 700, 1500], wall + 2.6), rng));
+    }
+    if (scene.snowPoles) this.buildSnowPoles();
+    this.addFeature(vendingMachines(this.roadsideMachines(scene.machines, wall + 2.6), rng));
+    if (scene.lanterns) {
       const lanterns = this.buildLanterns();
       this.lanternMat = lanterns.light;
       this.lanternGlow = lanterns.glow;
-      this.petals = new FallingPetals(rng);
-      this.group.add(this.petals.points);
     }
-    this.grass = new GrassField(
-      this.ground,
-      theme === 'mountain'
-        ? { base: 0x2c4a1c, tip: 0x86a043, flowers: [0xf2efe4], height: 0.5 }
-        : { base: 0x3b6a20, tip: 0xa3c84e, flowers: [0xf4a6c8, 0xf6f2e8, 0xf1d24a], height: 0.6 },
-    );
+    this.particles = scene.particles ? new FallingParticles(rng, scene.particles) : null;
+    if (this.particles) this.group.add(this.particles.points);
+    this.grass = new GrassField(this.ground, scene.grass ?? { base: 0xffffff, tip: 0xffffff, flowers: [0xffffff], height: 0.01 });
+    this.grass.mesh.visible = scene.grass !== null;
     this.group.add(this.grass.mesh);
     this.setDetail(detail, grassLevel);
   }
@@ -388,11 +485,12 @@ export class NatureWorld {
       return { low: Math.min(...hs), high: Math.max(...hs) };
     };
 
-    const treeId: PropId = this.theme === 'mountain' ? 'autumnTree' : 'bonsai';
-    const treeHeight = this.theme === 'mountain' ? 15 : 17;
+    const startTree = this.scene.startTree;
+    const treeId = startTree?.id ?? 'bonsai';
+    const treeHeight = startTree?.height ?? 0;
     const reach = (propAspect(treeId) * treeHeight) / 2;
     // The first level spot after the start (the mountain road is mostly cut into slopes).
-    tree: for (let along = 70; along < 900; along += 25) {
+    tree: for (let along = 70; startTree && along < 900; along += 25) {
       const s = S[track.indexAtDistance(along)];
       for (const side of [1, -1]) {
         const lateral = side * (wall + 5 + reach);
@@ -409,31 +507,39 @@ export class NatureWorld {
       }
     }
 
-    if (this.theme === 'mountain') {
-      // A castle-style pagoda on the lake shore, like Hakone's lakeside shrines: the lowest,
-      // flattest dry spot around the lake, looking out over the water.
+    const shore = this.scene.shoreLandmark;
+    if (shore) {
+      // A landmark on the shore (a castle-style pagoda like Hakone's lakeside shrines, a
+      // lighthouse on the coast): the lowest, flattest dry spot, looking out over the water.
       const L = this.cfg.lake;
       let best: { x: number; z: number; y: number; score: number } | null = null;
-      for (let a = 0; a < Math.PI * 2; a += 0.15) {
+      const step = Math.min(0.15, 160 / Math.max(L.rx, L.rz));
+      for (let a = 0; a < Math.PI * 2; a += step) {
         for (const out of [20, 35, 50, 70, 95, 125]) {
           const x = L.x + Math.cos(a) * (L.rx + out);
           const z = L.z + Math.sin(a) * (L.rz + out);
-          if (!ok(x, z, wall + 22)) continue;
+          // In sight of the road, with room around it.
+          if (!ok(x, z, wall + 22) || this.field.query(x, z).d > 420) continue;
+          if (this.blocked.some((b) => (b.x - x) ** 2 + (b.z - z) ** 2 < (b.r + shore.height) ** 2)) continue;
           const ground = footprint(x, z, 9);
           if (ground.low < this.cfg.waterLevel + 1.5) continue;
           const score = ground.low + (ground.high - ground.low) * 4;
           if (!best || score < best.score) best = { x, z, y: ground.low, score };
         }
       }
-      const castle = best && propModel('castle', 34, best.x, best.y - 0.5, best.z, Math.atan2(L.x - best.x, L.z - best.z));
-      if (best && castle) {
-        this.group.add(castle);
-        this.blocked.push({ x: best.x, z: best.z, r: 30 });
+      const landmark =
+        best &&
+        (shore.id === 'lighthouse'
+          ? this.lighthouse(shore.height, best.x, best.y - 0.5, best.z)
+          : propModel(shore.id, shore.height, best.x, best.y - 0.5, best.z, Math.atan2(L.x - best.x, L.z - best.z)));
+      if (best && landmark) {
+        this.group.add(landmark);
+        this.blocked.push({ x: best.x, z: best.z, r: shore.height * 0.9 });
       }
     }
 
     // Signs at the roadside, turned toward the cars coming up to them, on a level verge.
-    SIGNS[this.theme].forEach((lines, k) => {
+    this.scene.signs.forEach((lines, k) => {
       for (let step = 0; step < 12; step++) {
         const s = S[track.indexAtDistance(track.length * (0.06 + k * 0.24) + step * 18)];
         const side = (k + step) % 2 ? 1 : -1;
@@ -591,7 +697,7 @@ export class NatureWorld {
    */
   setDetail(detail: number, grass: 0 | 1 | 2): void {
     for (const { mesh, count } of this.detailMeshes) mesh.count = Math.max(1, Math.floor(count * detail));
-    if (this.petals) this.petals.points.visible = detail > 0.6;
+    if (this.particles) this.particles.points.visible = detail > 0.6;
     this.grass.setDensity(grass);
     for (const m of this.treeMeshes) m.castShadow = grass === 2;
   }
@@ -646,10 +752,10 @@ export class NatureWorld {
         this.cfg.color(heights[k], slope, pos[k * 3], pos[k * 3 + 2], dists[k], color);
         col.set([color.r, color.g, color.b], k * 3);
         // Where grass grows: not on rock, beaches, under water or high snow.
-        const wet = smoothstep(this.cfg.waterLevel + 0.4, this.cfg.waterLevel + 1.4, heights[k]);
-        const rock = 1 - smoothstep(this.theme === 'mountain' ? 0.42 : 0.5, this.theme === 'mountain' ? 0.75 : 0.9, slope);
+        const wet = smoothstep(this.cfg.waterLevel + this.cfg.sandLine - 0.4, this.cfg.waterLevel + this.cfg.sandLine + 0.6, heights[k]);
+        const rock = 1 - smoothstep(...this.cfg.rockSlope, slope);
         const snow = 1 - smoothstep(140, 175, heights[k]);
-        field.set([heights[k], dists[k], wet * rock * snow * (this.theme === 'mountain' ? 0.8 : 1), 0], k * 4);
+        field.set([heights[k], dists[k], wet * rock * snow * this.cfg.grassCover, 0], k * 4);
       }
     }
     const index = new Uint32Array(n * n * 6);
@@ -667,13 +773,13 @@ export class NatureWorld {
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
     geo.setIndex(new THREE.BufferAttribute(index, 1));
     geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, groundMaterial({ vertexColors: true }, this.theme === 'mountain' ? 'rocky' : 'meadow'));
+    const mesh = new THREE.Mesh(geo, groundMaterial({ vertexColors: true }, this.cfg.ground));
     mesh.receiveShadow = true;
     mesh.name = 'terrain';
     this.group.add(mesh);
 
     // Far ground so the horizon never shows the edge of the terrain.
-    const far = new THREE.Mesh(new THREE.PlaneGeometry(20000, 20000), groundMaterial({ color: this.theme === 'mountain' ? 0x2f4a26 : 0x5d8f35 }, 'meadow'));
+    const far = new THREE.Mesh(new THREE.PlaneGeometry(20000, 20000), groundMaterial({ color: this.cfg.farColor }, 'meadow'));
     far.rotation.x = -Math.PI / 2;
     far.position.set(cx, this.cfg.waterLevel - 6, cz);
     this.group.add(far);
@@ -683,7 +789,9 @@ export class NatureWorld {
     const L = this.cfg.lake;
     const water = new THREE.Mesh(
       new THREE.CircleGeometry(1, 64),
-      new THREE.MeshStandardMaterial({ color: this.cfg.waterColor, roughness: 0.06, metalness: 0.6 }),
+      this.cfg.ice
+        ? new THREE.MeshStandardMaterial({ color: this.cfg.waterColor, roughness: 0.35, metalness: 0.1 })
+        : new THREE.MeshStandardMaterial({ color: this.cfg.waterColor, roughness: 0.06, metalness: 0.6 }),
     );
     water.rotation.x = -Math.PI / 2;
     water.scale.set(L.rx * 1.3, L.rz * 1.3, 1);
@@ -698,11 +806,11 @@ export class NatureWorld {
     const cz = (b.minZ + b.maxZ) / 2;
     const builder = new GeometryBuilder(true);
     const color = new THREE.Color();
-    const base = this.theme === 'mountain' ? 0x3b5242 : 0x4f6e52;
+    const base = this.cfg.ridgeColor;
     for (let k = 0; k < 46; k++) {
       const a = (k / 46) * Math.PI * 2 + rng() * 0.1;
       const r = 2100 + rng() * 900;
-      const h = (this.theme === 'mountain' ? 380 : 220) + rng() * 300;
+      const h = this.cfg.ridgeHeight + rng() * 300;
       color.setHex(base).offsetHSL(0, 0, (rng() - 0.5) * 0.08);
       builder.cylinder(cx + Math.cos(a) * r, -20, cz + Math.sin(a) * r, 520 + rng() * 380, 30, h, 7, color);
     }
@@ -811,85 +919,109 @@ export class NatureWorld {
     return Array.from({ length: count }, () => this.randomSpot(rng, minRoad, maxRoad)).filter((p): p is [number, number, number] => !!p);
   }
 
-  private buildForest(rng: () => number): void {
+  private buildForest(rng: () => number, kind: Vegetation): void {
     const minRoad = this.track.wallOffset + 4;
+    const snow = kind === 'snow';
+    const autumn = kind === 'autumn';
+    // Under snow the firs are frosted white-green and the bushes are drifts.
+    const snowy = (shape: TreeShape, palette: number[]): TreeShape => (snow ? { ...shape, palette } : shape);
     // Cedar forest everywhere, thicker in the valleys and thinning out on high bare slopes.
     this.scatter(
-      3200,
+      autumn ? 2300 : 3200,
       () => {
         const p = this.randomSpot(rng, minRoad, 750);
         if (!p) return null;
         const density = 0.55 + fbm(p[0] / 140, p[2] / 140, 51) * 0.6 - smoothstep(140, 210, p[1]);
         return rng() < density ? p : null;
       },
-      cedar(),
+      snowy(cedar(), [0x9fb5ae, 0xb9cbc6, 0x88a198, 0xd2ddda]),
       rng,
     );
     // Giant sugi lining the road like an old mountain highway.
-    this.scatter(700, () => this.roadsideSpot(rng, 5, 24), sugi(), rng);
-    // Autumn maples in clusters by the road and on the lake shore.
-    const maples = [...this.groves(rng, 22, 12, 160), ...this.groves(rng, 6, 20, 400)];
-    this.scatter(420, () => this.clusterSpot(rng, maples, 26, minRoad), maple(), rng);
-    // Broadleaf trees in the low valleys.
+    this.scatter(autumn ? 450 : 700, () => this.roadsideSpot(rng, 5, 24), snowy(sugi(), [0x7f9a8f, 0x96ada5, 0x6c887c]), rng);
+    if (!snow) {
+      // Autumn maples in clusters by the road and on the lake shore (everywhere at Irohazaka).
+      const maples = [...this.groves(rng, autumn ? 60 : 22, 12, 160), ...this.groves(rng, autumn ? 20 : 6, 20, 400)];
+      this.scatter(autumn ? 1300 : 420, () => this.clusterSpot(rng, maples, autumn ? 34 : 26, minRoad), maple(), rng);
+      // Broadleaf trees in the low valleys (turned gold in autumn).
+      this.scatter(
+        autumn ? 900 : 600,
+        () => {
+          const p = this.randomSpot(rng, minRoad, 500);
+          return p && p[1] < 60 ? p : null;
+        },
+        autumn ? { ...broadleaf(), palette: [0xd9a02f, 0xc77a26, 0xe3b94a, 0x9c7a2c, 0x5c7a30] } : broadleaf(),
+        rng,
+      );
+    }
     this.scatter(
-      600,
-      () => {
-        const p = this.randomSpot(rng, minRoad, 500);
-        return p && p[1] < 60 ? p : null;
-      },
-      broadleaf(),
+      snow ? 500 : 900,
+      () => this.roadsideSpot(rng, 1.5, 12),
+      snow ? { ...bush(), palette: [0xe9eef2, 0xdde5eb, 0xf3f6f8] } : autumn ? { ...bush(), palette: [0x8a5a24, 0x9c3a1e, 0x6f6a2a] } : bush(),
       rng,
     );
-    this.scatter(900, () => this.roadsideSpot(rng, 1.5, 12), bush(), rng);
   }
 
-  private buildBlossoms(rng: () => number): void {
-    const avenue: [number, number, number][] = [];
+  private buildBlossoms(rng: () => number, kind: Vegetation): void {
+    const wall = this.track.wallOffset;
     const S = this.track.samples;
-    // Cherry-blossom avenues lining much of the road.
+    const bamboos = kind === 'bamboo';
+    const coast = kind === 'coast';
+    // Cherry-blossom avenues lining much of the road (Kawazu cherries here and there on the
+    // coast); at Arashiyama, the bamboo grove walls in a third of the lap and maples the rest.
+    const avenue: [number, number, number][] = [];
+    const grove: [number, number, number][] = [];
     for (let i = 0; i < S.length; i += 6) {
       const s = S[i];
+      const inGrove = bamboos && s.dist > this.track.length * 0.3 && s.dist < this.track.length * 0.62;
       for (const side of [-1, 1]) {
-        if (rng() > 0.72) continue;
-        const lat = side * (this.track.wallOffset + 5 + rng() * 4);
-        const x = s.x + s.rx * lat;
-        const z = s.z + s.rz * lat;
-        const y = this.heightAt(x, z);
-        if (y > this.cfg.waterLevel + 0.6 && this.field.query(x, z).d > this.track.wallOffset + 3.5) avenue.push([x, y, z]);
+        if (rng() > (inGrove ? 1 : coast ? 0.3 : 0.72)) continue;
+        for (let k = 0; k < (inGrove ? 3 : 1); k++) {
+          const lat = side * (wall + (inGrove ? 3.2 + k * 2.6 : 5) + rng() * (inGrove ? 1.5 : 4));
+          const x = s.x + s.rx * lat + s.tx * (rng() - 0.5) * 6;
+          const z = s.z + s.rz * lat + s.tz * (rng() - 0.5) * 6;
+          const y = this.heightAt(x, z);
+          if (y > this.cfg.waterLevel + 0.6 && this.field.query(x, z).d > wall + 2.5 && !this.isBlocked(x, z)) (inGrove ? grove : avenue).push([x, y, z]);
+        }
       }
     }
     // ...and groves scattered over the hills.
-    const groves = this.groves(rng, 26, 30, 650);
+    const groves = this.groves(rng, bamboos ? 10 : coast ? 12 : 26, 30, 650);
     let a = 0;
     this.scatter(
       avenue.length + groves.length * 14,
-      () => (a < avenue.length ? avenue[a++] : this.clusterSpot(rng, groves, 30, this.track.wallOffset + 5)),
-      sakura(),
+      () => (a < avenue.length ? avenue[a++] : this.clusterSpot(rng, groves, 30, wall + 5)),
+      bamboos ? maple() : sakura(),
       rng,
     );
+    if (grove.length) {
+      let g = 0;
+      this.scatter(grove.length, () => grove[g++] ?? null, bamboo(), rng);
+    }
     // Ordinary green trees in between.
     this.scatter(
       900,
       () => {
-        const p = this.randomSpot(rng, this.track.wallOffset + 10, 800);
+        const p = this.randomSpot(rng, wall + 10, 800);
         return p && fbm(p[0] / 160, p[2] / 160, 63) > -0.05 ? p : null;
       },
       broadleaf(),
       rng,
     );
-    // Black pines on the hills and around the lake.
+    // Black pines on the hills and around the lake (lining the shore on the coast).
     const L = this.cfg.lake;
-    const shore: [number, number, number][] = Array.from({ length: 10 }, (_, k) => {
-      const ang = (k / 10) * Math.PI * 2;
+    const points = coast ? 40 : 10;
+    const shore = Array.from({ length: points }, (_, k): [number, number, number] => {
+      const ang = (k / points) * Math.PI * 2;
       const x = L.x + Math.cos(ang) * L.rx * 1.15;
       const z = L.z + Math.sin(ang) * L.rz * 1.15;
       return [x, this.heightAt(x, z), z];
-    });
-    this.scatter(260, () => this.clusterSpot(rng, shore, 30, this.track.wallOffset + 6), pine(), rng);
-    this.scatter(260, () => this.randomSpot(rng, 60, 700), pine(), rng);
+    }).filter((p) => !coast || this.field.query(p[0], p[2]).d < 700);
+    this.scatter(coast ? 900 : 260, () => this.clusterSpot(rng, shore, coast ? 70 : 30, wall + 6), pine(), rng);
+    this.scatter(coast ? 700 : 260, () => this.randomSpot(rng, 60, 700), pine(), rng);
     // Bamboo groves.
-    const thickets = this.groves(rng, 14, 18, 300);
-    this.scatter(220, () => this.clusterSpot(rng, thickets, 14, this.track.wallOffset + 6), bamboo(), rng);
+    const thickets = this.groves(rng, bamboos ? 40 : 14, 18, 300);
+    this.scatter(bamboos ? 900 : 220, () => this.clusterSpot(rng, thickets, 14, wall + 6), bamboo(), rng);
     this.scatter(800, () => this.roadsideSpot(rng, 1.5, 14), bush(), rng);
   }
 
@@ -1053,6 +1185,79 @@ export class NatureWorld {
     return { light, glow };
   }
 
+  /** A white lighthouse with a red cap; its lamp glows from sunset. */
+  private lighthouse(height: number, x: number, y: number, z: number): THREE.Group {
+    const g = new THREE.Group();
+    g.name = 'lighthouse';
+    g.position.set(x, y, z);
+    const white = new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.6 });
+    const red = new THREE.MeshStandardMaterial({ color: 0xc8302a, roughness: 0.5 });
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(5.5, 6.2, 3, 16), new THREE.MeshLambertMaterial({ color: 0x9a968c }));
+    base.position.y = 1.5;
+    const towerH = height * 0.78;
+    const tower = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 3.6, towerH, 20), white);
+    tower.position.y = 3 + towerH / 2;
+    const gallery = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.4, 0.5, 20), red);
+    gallery.position.y = 3 + towerH;
+    const lamp = new THREE.MeshBasicMaterial({ color: 0x8a8670 });
+    const lantern = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, 2.6, 12), lamp);
+    lantern.position.y = 3 + towerH + 1.55;
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(2.4, 2.4, 12), red);
+    cap.position.y = 3 + towerH + 4;
+    g.add(base, tower, gallery, lantern, cap);
+    const glow = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: glowTexture(), color: 0xfff0c0, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }),
+    );
+    glow.scale.setScalar(26);
+    glow.position.y = lantern.position.y;
+    g.add(glow);
+    this.features.push({
+      group: g,
+      setTimeOfDay: (tod) => {
+        lamp.color.set(tod === 'day' ? new THREE.Color(0x8a8670) : new THREE.Color(3, 2.6, 1.6));
+        glow.material.opacity = tod === 'night' ? 0.9 : tod === 'sunset' ? 0.45 : 0;
+      },
+    });
+    return g;
+  }
+
+  /** Hokkaido road-edge markers: tall red-and-white poles with a downward arrow, for the snowploughs. */
+  private buildSnowPoles(): void {
+    const b = new GeometryBuilder(true);
+    const red = new THREE.Color(0xd42a22);
+    const white = new THREE.Color(0xf4f4f0);
+    const S = this.track.samples;
+    const step = Math.round(30 / this.track.spacing);
+    for (let i = 0; i < S.length; i += step) {
+      const s = S[i];
+      for (const side of [-1, 1]) {
+        const lat = side * (this.track.wallOffset + 1.4);
+        const x = s.x + s.rx * lat;
+        const z = s.z + s.rz * lat;
+        const y = Math.max(s.y, this.heightAt(x, z)) - 0.2;
+        for (let k = 0; k < 10; k++) b.box(x, y + k * 0.5, z, 0.12, 0.5, 0.12, s.heading, { color: k % 2 ? white : red });
+        // An arm out over the road edge with an arrow pointing down at it.
+        const ox = -s.rx * side;
+        const oz = -s.rz * side;
+        b.box(x + ox * 0.45, y + 4.85, z + oz * 0.45, 0.9, 0.12, 0.12, s.heading + Math.PI / 2, { color: red });
+        const tip = [x + ox * 0.9, y + 3.75, z + oz * 0.9] as const;
+        const l = [tip[0] - s.tx * 0.45, y + 4.8, tip[2] - s.tz * 0.45] as const;
+        const r = [tip[0] + s.tx * 0.45, y + 4.8, tip[2] + s.tz * 0.45] as const;
+        for (const [p0, p1] of [
+          [l, r],
+          [r, l],
+        ]) {
+          const n: [number, number, number] = [s.tx, 0, s.tz];
+          const i0 = b.vertex([...p0], n, 0, 0, red);
+          const i1 = b.vertex([...p1], n, 1, 0, red);
+          const i2 = b.vertex([...tip], n, 0.5, 1, white);
+          b.triangle(i0, i1, i2);
+        }
+      }
+    }
+    this.group.add(new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true })));
+  }
+
   // ---------- per frame / time of day ----------
 
   setTimeOfDay(tod: TimeOfDay): void {
@@ -1060,11 +1265,11 @@ export class NatureWorld {
     const lit = tod !== 'day';
     if (this.lanternMat) this.lanternMat.color.set(lit ? new THREE.Color(1.9, 1.05, 0.35) : new THREE.Color(0x555044));
     if (this.lanternGlow) this.lanternGlow.opacity = tod === 'night' ? 0.45 : tod === 'sunset' ? 0.18 : 0;
-    this.petals?.setTimeOfDay(tod);
+    this.particles?.setTimeOfDay(tod);
   }
 
   update(time: number, dt: number, camera: THREE.Camera): void {
-    this.petals?.update(dt, camera);
+    this.particles?.update(dt, camera);
     this.grass.update(camera);
     for (const f of this.features) f.update?.(time);
   }
@@ -1072,9 +1277,18 @@ export class NatureWorld {
 
 // ---------------------------------------------------------------- petals
 
-class FallingPetals {
+export type ParticleKind = 'petals' | 'leaves' | 'snow';
+
+const PARTICLE_STYLE: Record<ParticleKind, { colors: number[]; fall: [number, number]; drift: number; shape: number; size: number }> = {
+  petals: { colors: [0xffc7dc, 0xffb3cf, 0xffe3ee, 0xf8a8c4], fall: [0.5, 0.7], drift: 0.8, shape: 1.6, size: 90 },
+  leaves: { colors: [0xd9481f, 0xe0702a, 0xc8321e, 0xe8a23a, 0xb8862a], fall: [0.9, 0.8], drift: 0.9, shape: 1.9, size: 110 },
+  snow: { colors: [0xffffff, 0xf2f6fa, 0xe8eef6], fall: [0.8, 0.6], drift: 0.35, shape: 1, size: 70 },
+};
+
+/** Cherry petals, autumn leaves or snowflakes drifting down around the camera. */
+class FallingParticles {
   readonly points: THREE.Points;
-  private readonly count = 700;
+  private readonly count: number = 700;
   private readonly pos: Float32Array;
   private readonly phase: Float32Array;
   private readonly speed: Float32Array;
@@ -1082,7 +1296,12 @@ class FallingPetals {
   private time = 0;
   private readonly box = { x: 70, y: 26, z: 70 };
 
-  constructor(rng: () => number) {
+  private readonly drift: number;
+
+  constructor(rng: () => number, kind: ParticleKind) {
+    const style = PARTICLE_STYLE[kind];
+    this.drift = style.drift;
+    if (kind === 'snow') this.count = 1600;
     this.pos = new Float32Array(this.count * 3);
     this.phase = new Float32Array(this.count);
     this.speed = new Float32Array(this.count);
@@ -1091,31 +1310,33 @@ class FallingPetals {
     for (let i = 0; i < this.count; i++) {
       this.pos.set([(rng() - 0.5) * this.box.x, rng() * this.box.y, (rng() - 0.5) * this.box.z], i * 3);
       this.phase[i] = rng() * Math.PI * 2;
-      this.speed[i] = 0.5 + rng() * 0.7;
-      c.setHex([0xffc7dc, 0xffb3cf, 0xffe3ee, 0xf8a8c4][Math.floor(rng() * 4)]);
+      this.speed[i] = style.fall[0] + rng() * style.fall[1];
+      c.setHex(style.colors[Math.floor(rng() * style.colors.length)]);
       tint.set([c.r, c.g, c.b], i * 3);
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
     geo.setAttribute('tint', new THREE.BufferAttribute(tint, 3));
     this.material = new THREE.ShaderMaterial({
-      uniforms: { brightness: { value: 1 } },
+      uniforms: { brightness: { value: 1 }, shape: { value: style.shape }, size: { value: style.size } },
       vertexShader: /* glsl */ `
         attribute vec3 tint;
+        uniform float size;
         varying vec3 vTint;
         void main() {
           vTint = tint;
           vec4 mv = modelViewMatrix * vec4(position, 1.0);
-          gl_PointSize = clamp(90.0 / -mv.z, 1.5, 9.0);
+          gl_PointSize = clamp(size / -mv.z, 1.5, 9.0);
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: /* glsl */ `
         uniform float brightness;
+        uniform float shape;
         varying vec3 vTint;
         void main() {
           vec2 p = gl_PointCoord - 0.5;
-          // A petal: an ellipse, slightly notched at the top.
-          float d = length(p * vec2(1.0, 1.6));
+          // A petal or leaf: an ellipse (a round snowflake when shape is 1).
+          float d = length(p * vec2(1.0, shape));
           if (d > 0.5) discard;
           gl_FragColor = vec4(vTint * brightness, 0.9);
         }`,
@@ -1138,7 +1359,7 @@ class FallingPetals {
     for (let i = 0; i < this.count; i++) {
       const o = i * 3;
       const ph = this.phase[i];
-      let x = this.pos[o] + Math.sin(this.time * 1.3 + ph) * 0.6 * dt + 0.8 * dt;
+      let x = this.pos[o] + Math.sin(this.time * 1.3 + ph) * 0.6 * dt + this.drift * dt;
       let y = this.pos[o + 1] - this.speed[i] * dt;
       let z = this.pos[o + 2] + Math.cos(this.time * 1.1 + ph) * 0.5 * dt;
       // Wrap relative to the camera.

@@ -5,7 +5,7 @@ import type { Input } from '../core/Input';
 import type { SettingsStore } from '../core/Settings';
 import { formatTime, type RacerState } from '../race/RaceManager';
 import { TrackPath } from '../track/TrackPath';
-import { TRACKS, type TrackTheme } from '../track/tracks';
+import { TRACKS } from '../track/tracks';
 import { CARS } from '../vehicles/cars';
 import { AdminPanel } from './AdminPanel';
 import { GarageScreen } from './GarageScreen';
@@ -49,8 +49,6 @@ export interface ResultsData {
 }
 
 type AuthMode = 'login' | 'register';
-
-const THEME_LABEL: Record<TrackTheme, string> = { city: 'City streets', mountain: 'Mountain pass', countryside: 'Countryside' };
 
 /** Owns every menu/overlay outside the in-race HUD. */
 export class Screens {
@@ -275,7 +273,7 @@ export class Screens {
         img.addEventListener('load', () => (img.style.visibility = ''));
         const label = document.createElement('span');
         label.className = 'label';
-        label.innerHTML = `<b>${t.short}</b><small>${THEME_LABEL[t.theme]} · ${trackLengthKm(t.id).toFixed(2)} km</small>`;
+        label.innerHTML = `<b>${t.short}</b><small>${t.label} · ${trackLengthKm(t.id).toFixed(2)} km</small>`;
         b.append(img, label);
         b.addEventListener('click', () => this.update({ track: t.id }, false));
         return b;
@@ -289,6 +287,8 @@ export class Screens {
     $('track-blurb').textContent = track.blurb;
     document.querySelectorAll<HTMLButtonElement>('#track-cards .track-card').forEach((b) => {
       const active = b.dataset.value === s.track;
+      // Bring a newly picked track into view (the strip scrolls sideways).
+      if (active && !b.classList.contains('active')) b.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       b.classList.toggle('active', active);
       b.setAttribute('aria-pressed', String(active));
       const img = b.querySelector('img')!;

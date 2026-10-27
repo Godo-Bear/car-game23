@@ -39,16 +39,32 @@ countryside, by day, at sunset or at night — running in the browser and hosted
   pointing instead of sliding wide into the barrier, and lifting off the throttle ends a drift
   cleanly (the rear grips up and the slide is reeled in). Steering calms down at speed, and with
   stability assist on a barrier assist nudges you away from walls you're about to hit.
-- **Three circuits:**
-  - **Tokyo** — 2.48 km *Shinjuku–Bay Street Circuit*: neon towers, a Shibuya scramble chicane, an
+- **Ten circuits** (the track picker scrolls sideways):
+  - **Tokyo** — 2.43 km *Shinjuku–Bay Street Circuit*: neon towers, a Shibuya scramble chicane, an
     elevated Shuto-style expressway, Tokyo Tower, Skytree and Rainbow Bridge.
-  - **Hakone** — 2.87 km mountain pass (touge): a ladder of hairpin switchbacks climbing through
+  - **Osaka** — 3.02 km *Namba–Dotonbori Street Circuit*: a neon main straight, a square block
+    through Namba, the elevated Hanshin Expressway, Osaka Castle in its park, a big wheel and
+    Umeda's supertall tower.
+  - **Yokohama** — 2.98 km *Minato Mirai Bay Circuit*: downtown blocks, then an elevated run along
+    the harbour past the Cosmo Clock big wheel, the Landmark Tower, the Marine Tower and the Bay
+    Bridge.
+  - **Hakone** — 2.85 km mountain pass (touge): a ladder of hairpin switchbacks climbing through
     cedar forest, a ridge road and a long descent to the lake with its floating torii; guardrails
     and hairpin chevrons.
+  - **Irohazaka** — 2.84 km: Nikko's famous hairpin road, four tight switchbacks in a row through
+    blazing autumn maples and gold broadleaf trees, falling leaves, a pagoda by the lake.
+  - **Mt. Haruna** — 2.27 km touge: back-to-back hairpins up from the lake, a fast ridge and a run
+    of esses on the way down; lakeside ryokan, torii and ropeway.
+  - **Niseko** — 2.59 km Hokkaido snow pass: wide, flowing road between frosted firs, a frozen
+    lake, falling snow, red-and-white arrow poles marking the road edges, Mt. Yotei on the horizon.
   - **Sakura Valley** — 2.59 km fast countryside circuit through rolling grassland, cherry-blossom
     avenues with falling petals, a lake with a five-storey pagoda, and a torii gate over the start.
+  - **Arashiyama** — 2.48 km through Kyoto's western hills: a third of the lap walled in by the
+    bamboo grove, red maples, a temple pagoda by the pond and the Sagano line.
+  - **Izu Coast** — 2.42 km: a long beachfront straight along the sea, pine-lined shore and a
+    lighthouse, then up into the hills, with Mt. Fuji across the bay.
 - **Time of day:** day, sunset or night on any circuit — sky, sun position, shadows, fog, street
-  lamps, lit windows, neon and headlights all change (Mt. Fuji is on the horizon everywhere).
+  lamps, lit windows, neon and headlights all change.
 - **Realistic look (Dirt 5-style):** physically based sky (Rayleigh/Mie scattering) with drifting
   clouds that also lights and reflects in the scene; a camera "lens" pass with filmic grading,
   vignette, subtle colour fringing and sun glare that only shows when the sun is unobstructed;
@@ -56,7 +72,7 @@ countryside, by day, at sunset or at night — running in the browser and hosted
   the camera; surface relief on asphalt, concrete and rock; tree shadows on High; MSAA anti-aliasing
   (FXAA on Low), real-time ambient occlusion plus baked contact shadows; rubbered-in racing line;
   rain-soaked Tokyo nights with puddles and neon/lamp reflections.
-- **Japan, everywhere you look:** Mt. Fuji with snow in its gullies on every horizon; power poles
+- **Japan, everywhere you look:** Mt. Fuji with snow in its gullies on the horizon; power poles
   with sagging wires; glowing vending machines; red lanterns outside izakaya; Japanese traffic
   lights; a JR commuter line on a viaduct over Tokyo and a Shinkansen crossing Sakura Valley
   between two tunnels; orange curve mirrors and concrete lattice cut slopes on the Hakone pass; a
@@ -110,7 +126,8 @@ runs at a fixed 120 Hz, and is covered by unit tests — including a headless 8-
 │   ├── track/
 │   │   ├── tracks.ts           # Circuit registry (theme, names)
 │   │   ├── tokyoCircuit.ts     # Tokyo layout (corner points, radii, elevation)
-│   │   ├── circuits.ts         # Hakone and Sakura Valley layouts
+│   │   ├── cityCircuits.ts     # Osaka and Yokohama layouts
+│   │   ├── circuits.ts         # Mountain and countryside layouts
 │   │   ├── TrackPath.ts        # Centre-line sampling, projection (lap distance / lateral offset)
 │   │   ├── TrackMesh.ts        # Road, barriers, catch fences, kerbs, rubber line, start gantry
 │   │   └── racingLine.worker.ts # Racing-line relaxation off the main thread
@@ -132,7 +149,8 @@ runs at a fixed 120 Hz, and is covered by unit tests — including a headless 8-
 │   │   └── Sparks.ts           # Barrier-scrape sparks
 │   ├── world/
 │   │   ├── World.ts            # Builds the scenery for a circuit
-│   │   ├── City.ts             # Procedural Tokyo: buildings, neon, lamps, landmarks
+│   │   ├── scenes.ts           # What surrounds each circuit (landmarks, lake, trees, signs...)
+│   │   ├── City.ts             # Procedural city: buildings, neon, lamps, landmarks
 │   │   ├── Nature.ts           # Terrain, lakes, forests, cherry blossoms, petals, pagoda, Fuji
 │   │   ├── foliage.ts          # Tree shapes, wind sway, contact shadows
 │   │   ├── Grass.ts            # GPU grass field that travels with the camera
@@ -206,15 +224,17 @@ Most of the world — terrain, trees, signs, sky, textures, sound, the rally car
 code. From model files:
 
 - **Cars:** five car bodies (below).
-- **City Kit buildings** (`public/models/city/`): the Tokyo lots near the circuit, merged into a
-  few meshes with Tokyo wall colours and windows that light up at night.
-- **Tokyo Tower** (`public/models/landmarks/`, by Kenta Imai): cut out of its diorama, it stands in
-  Tokyo and once on the skyline of Hakone and Sakura Valley, lit orange after dark.
+- **City Kit buildings** (`public/models/city/`): the city lots near the circuit, merged into a
+  few meshes with Japanese wall colours and windows that light up at night.
+- **Tokyo Tower** (`public/models/landmarks/`, by Kenta Imai): cut out of its diorama, it stands
+  once on every map (in Tokyo, as Osaka's and Yokohama's red towers, and on the skyline of every
+  countryside map), lit orange after dark.
 
 - **Countryside landmarks** (`public/models/landmarks`, `nature`, `props`): a five-storey pagoda
-  by the Sakura Valley lake, a giant old cherry by its start line, a castle-style pagoda on the
-  Hakone lake shore, a giant autumn maple by the Hakone start, and wooden roadside signs painted
-  with place names in Japanese and English. Each is placed on level ground that fits it (lake
+  by the Sakura Valley lake (and by the lakes at Irohazaka and Arashiyama), a giant old cherry by
+  the start line (Sakura Valley, Izu), a castle-style pagoda on the Hakone lake shore (and as Osaka
+  Castle's keep), a giant autumn maple by the start (Hakone, Irohazaka, Haruna, Arashiyama), and
+  wooden roadside signs painted with place names in Japanese and English. Each is placed on level ground that fits it (lake
   shore, roadside verge at road height) and only downloaded with the map that uses it. The two
   trees and the castle were shrunk 3-4x (merged per material, quantized vertices).
 

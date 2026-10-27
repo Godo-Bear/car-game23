@@ -4,13 +4,14 @@ import type { TimeOfDay } from '../../shared/api';
 import { BARRIER_THICKNESS, SIDEWALK_WIDTH } from '../track/TrackMesh';
 import type { TrackPath } from '../track/TrackPath';
 import { GeometryBuilder } from './GeometryBuilder';
-import { type BuildingTemplate, cityKit, tokyoTowerMesh } from './sceneryModels';
+import { type BuildingTemplate, cityKit, propModel, tokyoTowerMesh } from './sceneryModels';
 import { applyContactShading, type StreakLight } from './surfaces';
 import { billboardTexture, type FacadeTextures, facadeTexture, glowTexture, neonSignTexture, SIGN_COLORS, shopfrontTexture } from './textures';
 
 /**
- * Procedural Tokyo: dense blocks of lit buildings, protruding neon signs, rooftop billboards,
- * street lamps along the circuit, Tokyo Tower, Skytree, Rainbow Bridge and the bay.
+ * Procedural Japanese city: dense blocks of lit buildings, protruding neon signs, rooftop
+ * billboards, street lamps along the circuit, the bay and each map's landmarks (Tokyo Tower,
+ * Skytree, Rainbow Bridge, a big wheel, a castle...).
  *
  * Everything is merged per material so the whole city costs ~40 draw calls.
  */
@@ -23,10 +24,31 @@ export interface Lamp {
   side: number;
 }
 
-/** The waterfront: no buildings south of this line (the bay). */
-const BAY_Z = 610;
-const TOKYO_TOWER = { x: 720, z: -430 };
-const SKYTREE = { x: 1150, z: -1500 };
+/** What makes each city map its own: waterfront, skyline districts and landmarks. */
+export interface CityScene {
+  /** The waterfront: no buildings south of this line (the bay). */
+  bayZ: number;
+  /** The red lattice tower (Tokyo Tower, or a stand-in for the local one). */
+  tower: { x: number; z: number; height: number };
+  skytree?: { x: number; z: number };
+  /** A suspension bridge across the bay, lit up at night. */
+  bridge?: { x: number; z: number };
+  /** A big wheel by the water, its rim and spokes lit after dark. */
+  ferrisWheel?: { x: number; z: number; radius: number };
+  /** A supertall glass tower (Yokohama Landmark Tower, Abeno Harukas...). */
+  supertall?: { x: number; z: number; height: number };
+  /** A castle keep on a stone base in a park. */
+  castle?: { x: number; z: number };
+  /** Building height for a lot, by district (tall office towers, low shopping streets...). */
+  height(x: number, z: number, rng: () => number): number;
+  /** Centre of the ring of distant towers on the horizon. */
+  skyline: [number, number];
+  /** A railway viaduct running north-south at this x, from far north to `toZ`. */
+  rail: { x: number; toZ: number };
+  /** Zebra crossings (with signals) across the circuit near these points. */
+  crossings: [number, number][];
+  fujiAt: [number, number] | null;
+}
 
 export function placeLamps(track: TrackPath): Lamp[] {
   const lamps: Lamp[] = [];
@@ -62,6 +84,7 @@ export class City {
   private signLevel = 1.9;
   private nightLights = true;
   private towerModel: ReturnType<typeof tokyoTowerMesh> = null;
+  private readonly animated: ((time: number) => void)[] = [];
 
   /** Register a self-lit material: full brightness at night, dimmer (or just painted) by day. */
   private glowing<T extends THREE.MeshBasicMaterial>(mat: T, night: THREE.Color, sunset: THREE.Color, day: THREE.Color): T {
@@ -73,7 +96,13 @@ export class City {
    * `keepOut` reserves corridors (e.g. under the railway viaduct) where no building may stand:
    * it gets a building's centre and radius.
    */
-  constructor(track: TrackPath, lamps: Lamp[], rng: () => number, keepOut: (x: number, z: number, r: number) => boolean = () => false) {
+  constructor(
+    track: TrackPath,
+    lamps: Lamp[],
+    rng: () => number,
+    private readonly scene: CityScene,
+    keepOut: (x: number, z: number, r: number) => boolean = () => false,
+  ) {
     this.group.name = 'city';
     this.rng = rng;
     const coarse = track.samples.filter((_, i) => i % 3 === 0);
@@ -122,11 +151,18 @@ export class City {
     const b = track.bounds;
     const cell = 32;
     let signIndex = 0;
+    // Room around the landmarks.
+    const landmarks = [
+      { ...scene.tower, r: 70 },
+      ...(scene.supertall ? [{ ...scene.supertall, r: 45 }] : []),
+      ...(scene.castle ? [{ ...scene.castle, r: 95 }] : []),
+      ...(scene.ferrisWheel ? [{ ...scene.ferrisWheel, r: scene.ferrisWheel.radius + 20 }] : []),
+    ];
     for (let gx = b.minX - 420; gx <= b.maxX + 420; gx += cell) {
-      for (let gz = b.minZ - 420; gz <= BAY_Z - 20; gz += cell) {
+      for (let gz = b.minZ - 420; gz <= scene.bayZ - 20; gz += cell) {
         const cx = gx + (rng() - 0.5) * 6;
         const cz = gz + (rng() - 0.5) * 6;
-        if (Math.hypot(cx - TOKYO_TOWER.x, cz - TOKYO_TOWER.z) < 70) continue;
+        if (landmarks.some((l) => Math.hypot(cx - l.x, cz - l.z) < l.r)) continue;
         if (keepOut(cx, cz, 14)) continue;
         let w = 13 + rng() * 15;
         let d = 13 + rng() * 15;
@@ -139,11 +175,7 @@ export class City {
           d *= maxR / r;
         }
 
-        // Height by district: Shinjuku towers north of the main straight, Shiodome towers by the hairpin.
-        let h = 9 + rng() ** 2 * 45;
-        if (cz < -40 && cx > -520 && cx < 320) h = 55 + rng() ** 1.4 * 170;
-        else if (cx < -260 && cz > 280) h = 35 + rng() * 95;
-        else if (rng() < 0.05) h = 90 + rng() * 80;
+        let h = scene.height(cx, cz, rng);
         if (dist > 320) h *= 0.75;
         if (kit && dist - r < KIT_RANGE && h < 140) {
           // A City Kit building on the lot, its front to the circuit.
@@ -245,11 +277,21 @@ export class City {
     for (let k = 0; k < 260; k++) {
       const ang = rng() * Math.PI * 2;
       const rad = 1500 + rng() * 1300;
-      const x = 150 + Math.cos(ang) * rad;
-      const z = -100 + Math.sin(ang) * rad;
-      if (z > BAY_Z + 300 && Math.abs(x) < 2500) continue;
+      const x = scene.skyline[0] + Math.cos(ang) * rad;
+      const z = scene.skyline[1] + Math.sin(ang) * rad;
+      if (z > scene.bayZ + 300 && Math.abs(x) < 2500) continue;
       const h = 30 + rng() ** 2 * 200;
       builders[rng() < 0.5 ? 'glass' : 'office'].box(x, 0, z, 30 + rng() * 30, h, 30 + rng() * 30, rng() * Math.PI, { tileU: 12, tileV: 14, roof: roofs });
+    }
+
+    if (scene.supertall) {
+      // Stepped glass tower with a crown, lit after dark like the rest of the glass towers.
+      const { x, z, height } = scene.supertall;
+      const glass = builders.glass;
+      glass.box(x, 0, z, 60, height * 0.62, 60, 0.3, { tileU: 16, tileV: 40, roof: roofs });
+      glass.box(x, height * 0.62, z, 48, height * 0.26, 48, 0.3, { tileU: 13, tileV: 16, roof: roofs });
+      glass.box(x, height * 0.88, z, 34, height * 0.12, 34, 0.3, { tileU: 9, tileV: 8, roof: roofs });
+      beacons.box(x, height, z, 1.2, 1.2, 1.2);
     }
 
     for (const style of STYLES) {
@@ -307,7 +349,9 @@ export class City {
     this.buildLamps(track, lamps);
     this.buildGround();
     this.buildTokyoTower();
-    this.buildSkytree();
+    if (scene.skytree) this.buildSkytree(scene.skytree);
+    if (scene.ferrisWheel) this.buildFerrisWheel(scene.ferrisWheel);
+    if (scene.castle) this.buildCastle(scene.castle);
     this.buildBay();
   }
 
@@ -373,13 +417,15 @@ export class City {
   }
 
   private buildTokyoTower(): void {
-    this.towerModel = tokyoTowerMesh(333, TOKYO_TOWER.x, 0, TOKYO_TOWER.z);
+    const at = this.scene.tower;
+    this.towerModel = tokyoTowerMesh(at.height, at.x, 0, at.z);
     if (this.towerModel) {
       this.group.add(this.towerModel.mesh);
       return;
     }
     const tower = new THREE.Group();
-    tower.position.set(TOKYO_TOWER.x, 0, TOKYO_TOWER.z);
+    tower.position.set(at.x, 0, at.z);
+    tower.scale.setScalar(at.height / 333);
     const lattice = this.latticeTexture();
     // Lit orange at night ("Landmark Light"), international-orange and white paint by day.
     const orange = this.glowing(
@@ -425,9 +471,9 @@ export class City {
     this.group.add(tower);
   }
 
-  private buildSkytree(): void {
+  private buildSkytree(at: { x: number; z: number }): void {
     const tree = new THREE.Group();
-    tree.position.set(SKYTREE.x, 0, SKYTREE.z);
+    tree.position.set(at.x, 0, at.z);
     const lattice = this.latticeTexture();
     const mat = this.glowing(
       new THREE.MeshBasicMaterial({ map: lattice, transparent: true, alphaTest: 0.4, side: THREE.DoubleSide, fog: false }),
@@ -464,15 +510,16 @@ export class City {
   private buildBay(): void {
     const water = new THREE.Mesh(new THREE.PlaneGeometry(9000, 4000), new THREE.MeshStandardMaterial({ color: 0x07101e, roughness: 0.08, metalness: 0.7 }));
     water.rotation.x = -Math.PI / 2;
-    water.position.set(0, -1.2, BAY_Z + 2000);
+    water.position.set(0, -1.2, this.scene.bayZ + 2000);
     this.group.add(water);
     const seawall = new THREE.Mesh(new THREE.BoxGeometry(9000, 2.5, 3), new THREE.MeshLambertMaterial({ color: 0x3c3e45 }));
-    seawall.position.set(0, -0.2, BAY_Z);
+    seawall.position.set(0, -0.2, this.scene.bayZ);
+    if (!this.scene.bridge) return;
     this.group.add(seawall);
 
     // Rainbow Bridge: towers, deck and "pearl necklace" cable lights.
     const bridge = new THREE.Group();
-    bridge.position.set(700, 0, BAY_Z + 650);
+    bridge.position.set(this.scene.bridge.x, 0, this.scene.bridge.z);
     const white = this.glowing(
       new THREE.MeshBasicMaterial({ fog: false }),
       new THREE.Color(1.6, 1.6, 1.7),
@@ -523,6 +570,107 @@ export class City {
     this.group.add(bridge);
   }
 
+  /** A big wheel by the water: steel rim and spokes, gondolas, and lights that come on after dark. */
+  private buildFerrisWheel(at: { x: number; z: number; radius: number }): void {
+    const R = at.radius;
+    const hub = R + 6;
+    const wheel = new THREE.Group();
+    wheel.name = 'ferris-wheel';
+    wheel.position.set(at.x, hub, at.z);
+    const steel = new THREE.MeshStandardMaterial({ color: 0xdfe3e8, metalness: 0.5, roughness: 0.45 });
+    for (const side of [-3, 3]) {
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(R, 0.6, 6, 96), steel);
+      rim.position.z = side;
+      wheel.add(rim);
+    }
+    const bars: THREE.BufferGeometry[] = [];
+    const bar = (x0: number, y0: number, x1: number, y1: number, z: number, thick: number) =>
+      bars.push(
+        new THREE.BoxGeometry(Math.hypot(x1 - x0, y1 - y0), thick, thick).rotateZ(Math.atan2(y1 - y0, x1 - x0)).translate((x0 + x1) / 2, (y0 + y1) / 2, z),
+      );
+    const SPOKES = 32;
+    for (let k = 0; k < SPOKES; k++) {
+      const a = (k / SPOKES) * Math.PI * 2;
+      for (const side of [-3, 3]) bar(0, 0, Math.cos(a) * R, Math.sin(a) * R, side, 0.3);
+    }
+    wheel.add(new THREE.Mesh(mergeGeometries(bars)!, steel));
+    for (const g of bars) g.dispose();
+    wheel.add(new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.4, 9, 16).rotateX(Math.PI / 2), steel));
+    // Gondolas hang from the rim (they stay level as the wheel turns).
+    const GONDOLAS = 48;
+    const gondola = new THREE.InstancedMesh(new THREE.BoxGeometry(2.6, 3, 2.6), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 }), GONDOLAS);
+    const palette = [0xe8463c, 0x2f8fd8, 0xf2c230, 0x3cb371, 0xe86fb0];
+    for (let k = 0; k < GONDOLAS; k++) gondola.setColorAt(k, new THREE.Color(palette[k % palette.length]));
+    // Lights along the rim (LED patterns at night).
+    const ledPos: number[] = [];
+    for (let k = 0; k < 160; k++) {
+      const a = (k / 160) * Math.PI * 2;
+      ledPos.push(Math.cos(a) * R, Math.sin(a) * R, 3.4, Math.cos(a) * R, Math.sin(a) * R, -3.4);
+    }
+    for (let k = 0; k < SPOKES; k++) {
+      const a = (k / SPOKES) * Math.PI * 2;
+      for (let t = 0.2; t < 1; t += 0.2) ledPos.push(Math.cos(a) * R * t, Math.sin(a) * R * t, 3.4);
+    }
+    const ledGeo = new THREE.BufferGeometry();
+    ledGeo.setAttribute('position', new THREE.Float32BufferAttribute(ledPos, 3));
+    const leds = new THREE.PointsMaterial({
+      map: glowTexture(),
+      color: 0x9fe0ff,
+      size: 5,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    this.glows.push({ mat: leds, opacity: { night: 1, sunset: 0.55, day: 0 } });
+    const spin = new THREE.Group();
+    spin.add(...wheel.children);
+    spin.add(new THREE.Points(ledGeo, leds));
+    wheel.add(spin);
+    const swing = new THREE.Group();
+    swing.add(gondola);
+    wheel.add(swing);
+    // Two A-frame legs down to the ground (they don't turn).
+    const legs: THREE.BufferGeometry[] = [];
+    for (const side of [-1, 1])
+      for (const dz of [-5, 5]) {
+        const footX = side * R * 0.42;
+        legs.push(new THREE.BoxGeometry(1.6, Math.hypot(footX, hub), 1.6).rotateZ(Math.atan2(footX, hub)).translate(footX / 2, -hub / 2, dz));
+      }
+    wheel.add(new THREE.Mesh(mergeGeometries(legs)!, steel));
+    for (const g of legs) g.dispose();
+    this.group.add(wheel);
+    const m = new THREE.Matrix4();
+    this.animated.push((time) => {
+      const turn = time * 0.02;
+      spin.rotation.z = turn;
+      for (let k = 0; k < GONDOLAS; k++) {
+        const a = (k / GONDOLAS) * Math.PI * 2 + turn;
+        gondola.setMatrixAt(k, m.makeTranslation(Math.cos(a) * R, Math.sin(a) * R - 2.2, 0));
+      }
+      gondola.instanceMatrix.needsUpdate = true;
+    });
+  }
+
+  /** A castle keep on a stone base, in a park of lawns and pines. */
+  private buildCastle(at: { x: number; z: number }): void {
+    const base = new GeometryBuilder();
+    // Battered stone walls in two tiers.
+    base.box(at.x, 0, at.z, 70, 9, 70, 0.2);
+    base.box(at.x, 9, at.z, 52, 7, 52, 0.2);
+    this.group.add(new THREE.Mesh(base.build(), new THREE.MeshLambertMaterial({ color: 0x6f6b62 })));
+    const park = new THREE.Mesh(new THREE.CircleGeometry(92, 48).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x4f7a34 }));
+    park.position.set(at.x, 0.02, at.z);
+    this.group.add(park);
+    const moat = new THREE.Mesh(
+      new THREE.RingGeometry(46, 56, 4, 1, Math.PI / 4 + 0.2).rotateX(-Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: 0x1d3a3e, roughness: 0.1, metalness: 0.5 }),
+    );
+    moat.position.set(at.x, 0.05, at.z);
+    this.group.add(moat);
+    const keep = propModel('castle', 46, at.x, 16, at.z, 0.2);
+    if (keep) this.group.add(keep);
+  }
+
   setTimeOfDay(tod: TimeOfDay): void {
     const windows = { night: 0.7, sunset: 0.4, day: 0.04 }[tod];
     for (const m of this.facadeMats) m.emissiveIntensity = windows;
@@ -534,6 +682,7 @@ export class City {
   }
 
   update(time: number): void {
+    for (const f of this.animated) f(time);
     const on = this.nightLights && Math.sin(time * 2.4) > 0.55;
     this.beacon.color.setRGB(on ? 6 : 0.3, on ? 0.15 : 0.01, on ? 0.15 : 0.01);
     for (const m of this.flicker) {

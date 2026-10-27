@@ -12,6 +12,8 @@ type V3 = [number, number, number];
 
 export interface TrackVisualOptions {
   theme: TrackTheme;
+  /** Subtitle on the start/finish gantry. */
+  banner: string;
   gridSlots: { distance: number; lateral: number }[];
   /** World positions of street lamps (used to bake light pools into the road). */
   lamps: { x: number; z: number; index: number }[];
@@ -26,12 +28,6 @@ export interface TrackVisual {
   /** Street-light pools on the road only show after dark. */
   setTimeOfDay(tod: TimeOfDay): void;
 }
-
-const BANNER_SUBTITLE: Record<TrackTheme, string> = {
-  city: '東京 ストリート サーキット',
-  mountain: '箱根 峠 · HAKONE PASS',
-  countryside: '桜 バレー · SAKURA VALLEY',
-};
 
 const BARRIER_HEIGHT = 1.05;
 export const BARRIER_THICKNESS = 0.5;
@@ -342,7 +338,7 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
   const bannerWidth = Math.min(span * 1.6, 15);
   const banner = new THREE.Mesh(
     new THREE.PlaneGeometry(bannerWidth, bannerWidth * (160 / 1024)),
-    new THREE.MeshBasicMaterial({ map: bannerTexture(BANNER_SUBTITLE[opts.theme]) }),
+    new THREE.MeshBasicMaterial({ map: bannerTexture(opts.banner) }),
   );
   banner.rotation.y = Math.PI;
   banner.position.set(0, bannerY, -0.37);

@@ -1,12 +1,13 @@
 // Renders the track-picker pictures (public/previews/<track>-<time>.jpg) from the real game.
-// Usage: start `npm run dev`, then `node scripts/render-previews.mjs [http://localhost:5173]`.
+// Usage: start `npm run dev`, then `node scripts/render-previews.mjs [http://localhost:5173] [track...]`.
 // Needs Playwright with Chromium (`npx playwright install chromium` if you don't have it).
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 
 const url = process.argv[2] ?? 'http://localhost:5173';
 const out = new URL('../public/previews/', import.meta.url);
-const tracks = ['tokyo', 'hakone', 'sakura'];
+const all = ['tokyo', 'osaka', 'yokohama', 'hakone', 'irohazaka', 'haruna', 'niseko', 'sakura', 'arashiyama', 'izu'];
+const tracks = process.argv.length > 3 ? process.argv.slice(3) : all;
 const times = ['day', 'sunset', 'night'];
 
 let chromium;

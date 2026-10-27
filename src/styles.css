@@ -882,11 +882,20 @@ input {
 
 /* Track cards with preview pictures */
 .track-cards {
+  /* Two rows of cards that scroll sideways (about three columns in view). */
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-auto-flow: column;
+  grid-template-rows: repeat(2, auto);
+  grid-auto-columns: calc((100% - 20px) / 3.25);
   gap: 10px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  padding-bottom: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
 }
 .track-card {
+  scroll-snap-align: start;
   position: relative;
   padding: 0;
   overflow: hidden;
@@ -1225,7 +1234,7 @@ input {
 
 @media (max-width: 640px) {
   .track-cards {
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-auto-columns: calc((100% - 12px) / 3.2);
     gap: 6px;
   }
   .hub-tabs button {

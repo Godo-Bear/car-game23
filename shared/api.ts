@@ -1,7 +1,7 @@
 /** Request/response shapes shared by the game client (src/) and the Cloudflare Pages Functions (functions/). */
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
-export type TrackId = 'tokyo' | 'hakone' | 'sakura';
+export type TrackId = 'tokyo' | 'osaka' | 'yokohama' | 'hakone' | 'irohazaka' | 'haruna' | 'niseko' | 'sakura' | 'arashiyama' | 'izu';
 export type TimeOfDay = 'day' | 'sunset' | 'night';
 export type CameraModeSetting = 'chase' | 'far' | 'hood';
 export type CarId = 'starter' | 'hatch' | 'gt' | 'drift' | 'rally' | 'super';
@@ -96,7 +96,7 @@ export const PASSWORD_MIN = 8;
 export const PASSWORD_MAX = 128;
 export const DIFFICULTIES: Difficulty[] = ['easy', 'normal', 'hard'];
 export const CAMERA_MODES: CameraModeSetting[] = ['chase', 'far', 'hood'];
-export const TRACK_IDS: TrackId[] = ['tokyo', 'hakone', 'sakura'];
+export const TRACK_IDS: TrackId[] = ['tokyo', 'osaka', 'yokohama', 'hakone', 'irohazaka', 'haruna', 'niseko', 'sakura', 'arashiyama', 'izu'];
 export const TIMES_OF_DAY: TimeOfDay[] = ['day', 'sunset', 'night'];
 /** Cheapest to dearest (the shop's order). */
 export const CAR_IDS: CarId[] = ['starter', 'hatch', 'gt', 'drift', 'rally', 'super'];
