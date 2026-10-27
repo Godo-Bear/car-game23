@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import type { CarSetup, TimeOfDay } from '../../shared/api';
+import type { CarSetup, Plate, TimeOfDay } from '../../shared/api';
 import { damp, lerp, wrapAngle } from '../core/math';
 import type { SimCar } from '../race/RaceSimulation';
 import type { BodyDef, CarDef } from './cars';
@@ -31,11 +31,13 @@ interface BodyGeometry {
   rear: number;
   bottom: number;
   topAt: (z: number) => number;
+  /** Rear-most and front-most z of the body at height y. */
+  extentAt: (y: number) => [number, number];
   cabinFront: number;
 }
 
 const cache = new Map<string, BodyGeometry>();
-let parts: Record<'headlight' | 'exhaust' | 'taillight' | 'box' | 'number' | 'shadow' | 'beam', THREE.BufferGeometry> | null = null;
+let parts: Record<'headlight' | 'exhaust' | 'taillight' | 'box' | 'number' | 'plate' | 'shadow' | 'beam', THREE.BufferGeometry> | null = null;
 let shadowTexture: THREE.Texture | null = null;
 let beamTexture: THREE.Texture | null = null;
 let common: Record<'wheel' | 'glass' | 'carbon' | 'headlight' | 'trim' | 'chrome', THREE.Material> | null = null;
@@ -104,6 +106,21 @@ function insetProfile(points: [number, number][], amount: number, raiseBottom: n
     const k = Math.min(amount, len * 0.5) / len;
     return [z - dz * k, Math.max(y - dy * k, minY + raiseBottom)];
   });
+}
+
+/** Rear-most and front-most z where a horizontal line at `y` crosses a closed profile. */
+function profileExtent(points: [number, number][], y: number): [number, number] {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i < points.length; i++) {
+    const [z0, y0] = points[i];
+    const [z1, y1] = points[(i + 1) % points.length];
+    if (y < Math.min(y0, y1) || y > Math.max(y0, y1) || y0 === y1) continue;
+    const z = z0 + ((z1 - z0) * (y - y0)) / (y1 - y0);
+    lo = Math.min(lo, z);
+    hi = Math.max(hi, z);
+  }
+  return [lo, hi];
 }
 
 /** Highest point of a closed profile at `z` (or -Infinity outside it). */
@@ -183,11 +200,12 @@ function bodyGeometry(def: CarDef): BodyGeometry {
   const rear = Math.min(...profile.map((p) => p[0]));
   const bottom = b.profile[0][1];
   const topAt = (z: number) => profileTop(profile, z);
+  const extentAt = (y: number) => profileExtent(profile, y);
   const cabinFront = Math.max(...cabinProfile.map((p) => p[0]));
   const cabinRear = Math.min(...cabinProfile.map((p) => p[0]));
   const roofFront = b.roof.z + b.roof.length / 2;
   const roofRear = b.roof.z - b.roof.length / 2;
-  const g0 = { front, rear, bottom, topAt };
+  const g0 = { front, rear, bottom, topAt, extentAt };
 
   // Painted surfaces only: bonnet, roof panel, boot lid (not the glass in between).
   const paintedTop = (z: number): number | null => {
@@ -313,6 +331,44 @@ function numberTexture(num: number, ring: string): THREE.Texture {
   return tex;
 }
 
+/** A Japanese private-car plate: white with green characters. */
+function plateTexture(plate: Plate, classNo: string): THREE.Texture {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 128;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#f3f3ec';
+  g.beginPath();
+  g.roundRect(2, 2, 252, 124, 10);
+  g.fill();
+  g.strokeStyle = '#0b6b3a';
+  g.lineWidth = 4;
+  g.stroke();
+  g.fillStyle = '#b8b8b0';
+  for (const x of [46, 210]) {
+    g.beginPath();
+    g.arc(x, 18, 5, 0, Math.PI * 2);
+    g.fill();
+  }
+  const font = '"Hiragino Sans", "Yu Gothic", "Meiryo", "Noto Sans JP", "Noto Sans CJK JP", sans-serif';
+  g.fillStyle = '#0b6b3a';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = `bold 28px ${font}`;
+  g.fillText(`${plate.region} ${classNo}`, 128, 30);
+  g.font = `bold 30px ${font}`;
+  g.fillText(plate.kana, 32, 88);
+  // Four places: "12-34", or dots in place of leading zeros ("・・86").
+  const n = String(plate.number);
+  const text = plate.number >= 1000 ? `${n.slice(0, 2)}-${n.slice(2)}` : '・'.repeat(4 - n.length) + n;
+  g.font = `bold 62px ${font}`;
+  g.fillText(text, 150, 88);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
 function getParts() {
   if (parts) return parts;
   const shadow = new THREE.PlaneGeometry(1, 1);
@@ -326,6 +382,8 @@ function getParts() {
     taillight: new THREE.BoxGeometry(1, 0.06, 0.05),
     box: new THREE.BoxGeometry(1, 1, 1),
     number: new THREE.PlaneGeometry(0.58, 0.58),
+    // Japanese plates are 330 x 165 mm.
+    plate: new THREE.PlaneGeometry(0.33, 0.165),
     shadow,
     beam,
   };
@@ -346,7 +404,7 @@ function getCommon() {
   return common;
 }
 
-type Slot = 'paint' | 'accent' | 'glass' | 'carbon' | 'light' | 'brake' | 'reverse' | 'number' | 'trim' | 'chrome';
+type Slot = 'paint' | 'accent' | 'glass' | 'carbon' | 'light' | 'brake' | 'reverse' | 'number' | 'plate' | 'trim' | 'chrome';
 
 interface WheelGeometry {
   tyre: THREE.BufferGeometry;
@@ -419,6 +477,7 @@ function carGeometry(def: CarDef, pattern: CarSetup['pattern']): CarGeometry {
     brake: [],
     reverse: [],
     number: [],
+    plate: [],
     trim: [],
     chrome: [],
   };
@@ -427,7 +486,7 @@ function carGeometry(def: CarDef, pattern: CarSetup['pattern']): CarGeometry {
   const e = new THREE.Euler();
   const put = (geo: THREE.BufferGeometry, slot: Slot, x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1, rx = 0, ry = 0, rz = 0) => {
     matrix.compose(new THREE.Vector3(x, y, z), q.setFromEuler(e.set(rx, ry, rz)), new THREE.Vector3(sx, sy, sz));
-    parts[slot].push(prep(geo, matrix, slot === 'number' ? ['position', 'normal', 'uv'] : ['position', 'normal']));
+    parts[slot].push(prep(geo, matrix, slot === 'number' || slot === 'plate' ? ['position', 'normal', 'uv'] : ['position', 'normal']));
   };
   const twotone = pattern === 'twotone';
 
@@ -473,7 +532,12 @@ function carGeometry(def: CarDef, pattern: CarSetup['pattern']): CarGeometry {
   // Rear: corner tail lights joined by a thin light bar, reverse light, diffuser, exhausts.
   for (const side of [-1, 1]) put(p.taillight, 'brake', side * (hw - 0.24), rearY - 0.1, g.rear - 0.02, 0.36, 1.6, 1);
   put(p.taillight, 'brake', 0, rearY - 0.1, g.rear - 0.015, b.width - 0.5, 0.35, 1);
-  put(p.headlight, 'reverse', 0, rearY - 0.3, g.rear - 0.03, 0.4, 1, 1);
+  put(p.headlight, 'reverse', 0, rearY - 0.22, g.rear - 0.03, 0.4, 1, 1);
+  // Number plates on the bumpers, flush with the bodywork.
+  const frontPlateY = g.bottom + 0.1;
+  put(p.plate, 'plate', 0, frontPlateY, g.extentAt(frontPlateY)[1] + 0.012);
+  const rearPlateY = g.bottom + 0.24;
+  put(p.plate, 'plate', 0, rearPlateY, g.extentAt(rearPlateY)[0] - 0.012, 1, 1, 1, 0, Math.PI, 0);
   put(p.box, 'trim', 0, g.bottom + 0.07, g.rear + 0.06, b.width * 0.62, 0.13, 0.16);
   for (const x of [-0.24, 0, 0.24]) put(p.box, 'carbon', x, g.bottom + 0.07, g.rear + 0.02, 0.02, 0.14, 0.2);
   for (const side of [-1, 1]) put(p.exhaust, 'chrome', side * 0.42, g.bottom + 0.1, g.rear - 0.02, 1, 1, 1, Math.PI / 2, 0, 0);
@@ -676,6 +740,7 @@ export class CarModel {
       brake: this.brakeMat,
       reverse: this.reverseMat,
       number: own(new THREE.MeshStandardMaterial({ map: own(numberTexture(setup.number, setup.accent)), roughness: 0.5, transparent: true })),
+      plate: own(new THREE.MeshStandardMaterial({ map: own(plateTexture(setup.plate, def.id === 'hatch' ? '500' : '300')), roughness: 0.45, metalness: 0.15 })),
       trim: m.trim,
       chrome: m.chrome,
     };

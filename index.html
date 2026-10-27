@@ -107,6 +107,7 @@
             <button type="button" role="tab" data-ctab="livery">Livery</button>
             <button type="button" role="tab" data-ctab="wheels">Wheels</button>
             <button type="button" role="tab" data-ctab="number">Number</button>
+            <button type="button" role="tab" data-ctab="plate">Plate</button>
           </div>
           <section data-cpane="paint">
             <div id="sw-paint" class="swatches"></div>
@@ -126,6 +127,14 @@
           </section>
           <section data-cpane="number" class="hidden">
             <label class="number-pick">Race number <input type="number" id="car-number" min="1" max="99" inputmode="numeric" /></label>
+          </section>
+          <section data-cpane="plate" class="hidden">
+            <div class="plate-row">
+              <label>Region <select id="plate-region"></select></label>
+              <label>Kana <select id="plate-kana"></select></label>
+              <label>Number <input type="number" id="plate-number" min="1" max="9999" inputmode="numeric" /></label>
+            </div>
+            <button type="button" id="plate-random" class="secondary">🎲 Random plate</button>
           </section>
           <div class="row">
             <button type="button" id="btn-garage-race" class="primary">Race with this car ▶</button>

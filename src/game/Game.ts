@@ -17,7 +17,7 @@ import { Hud } from '../ui/Hud';
 import { Minimap } from '../ui/Minimap';
 import { type HubPanel, Screens } from '../ui/Screens';
 import { CarModel } from '../vehicles/CarModel';
-import { AI_LIVERIES, CARS, carSetup } from '../vehicles/cars';
+import { AI_LIVERIES, CARS, carSetup, randomPlate } from '../vehicles/cars';
 import { Sparks } from '../vehicles/Sparks';
 import { type EffectsCar, TireEffects } from '../vehicles/TireEffects';
 import { Lighting } from '../world/Lighting';
@@ -289,7 +289,9 @@ export class Game {
     let ai = 0;
     this.sim.cars.forEach((c, i) => {
       const model = this.carModels[i];
-      const setup = c.isPlayer ? carSetup(settings.car, settings.garage) : { finish: 'metallic' as const, ...AI_LIVERIES[ai++ % AI_LIVERIES.length] };
+      const setup = c.isPlayer
+        ? carSetup(settings.car, settings.garage)
+        : { finish: 'metallic' as const, plate: randomPlate(i + 1), ...AI_LIVERIES[ai++ % AI_LIVERIES.length] };
       model.build(car, setup);
       this.colors[c.id] = setup.paint;
     });

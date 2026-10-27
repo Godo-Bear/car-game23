@@ -8,6 +8,13 @@ export type CarId = 'gt' | 'hatch' | 'rally' | 'drift' | 'super';
 export type PaintFinish = 'gloss' | 'metallic' | 'matte' | 'pearl';
 export type LiveryPattern = 'none' | 'stripes' | 'side' | 'twotone' | 'race';
 
+/** A Japanese number plate: region, hiragana and serial number (1-9999). */
+export interface Plate {
+  region: string;
+  kana: string;
+  number: number;
+}
+
 /** The player's car and how it's painted (saved per car, so each car keeps its own look). */
 export interface CarSetup {
   paint: string;
@@ -16,6 +23,7 @@ export interface CarSetup {
   accent: string;
   rims: string;
   number: number;
+  plate: Plate;
 }
 
 export interface CareerStats {
@@ -84,6 +92,32 @@ export const CAR_IDS: CarId[] = ['gt', 'hatch', 'rally', 'drift', 'super'];
 export const PAINT_FINISHES: PaintFinish[] = ['gloss', 'metallic', 'matte', 'pearl'];
 export const LIVERY_PATTERNS: LiveryPattern[] = ['none', 'stripes', 'side', 'twotone', 'race'];
 
+/** Plate regions (kanji as printed, with a reading for the menu). */
+export const PLATE_REGIONS: { id: string; label: string }[] = [
+  { id: '品川', label: 'Shinagawa' },
+  { id: '練馬', label: 'Nerima' },
+  { id: '足立', label: 'Adachi' },
+  { id: '多摩', label: 'Tama' },
+  { id: '横浜', label: 'Yokohama' },
+  { id: '湘南', label: 'Shonan' },
+  { id: '富士山', label: 'Fujisan' },
+  { id: 'なにわ', label: 'Naniwa' },
+  { id: '京都', label: 'Kyoto' },
+  { id: '札幌', label: 'Sapporo' },
+];
+/** Hiragana used on private cars' plates (お, し, へ and ん are never issued). */
+export const PLATE_KANA = 'さすせそたちつてとなにぬねのはひふほまみむめもやゆよらりるれろわ'.split('');
+export const DEFAULT_PLATE: Plate = { region: '品川', kana: 'さ', number: 2023 };
+
+export function cleanPlate(raw: unknown): Plate | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const region = PLATE_REGIONS.find((p) => p.id === r.region)?.id;
+  const kana = PLATE_KANA.find((k) => k === r.kana);
+  const number = typeof r.number === 'number' && Number.isInteger(r.number) && r.number >= 1 && r.number <= 9999 ? r.number : null;
+  return region && kana && number !== null ? { region, kana, number } : null;
+}
+
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
 /** Validate a car setup from an untrusted source (request body, local storage). */
@@ -98,5 +132,6 @@ export function cleanCarSetup(raw: unknown): CarSetup | null {
   const pattern = LIVERY_PATTERNS.find((p) => p === r.pattern);
   const number = typeof r.number === 'number' && Number.isInteger(r.number) && r.number >= 1 && r.number <= 99 ? r.number : null;
   if (!paint || !accent || !rims || !finish || !pattern || number === null) return null;
-  return { paint, finish, pattern, accent, rims, number };
+  // Saved before plates existed: keep the paint job, give it the default plate.
+  return { paint, finish, pattern, accent, rims, number, plate: cleanPlate(r.plate) ?? DEFAULT_PLATE };
 }

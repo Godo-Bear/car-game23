@@ -1,4 +1,4 @@
-import type { CarId, CarSetup } from '../../shared/api';
+import { type CarId, type CarSetup, PLATE_KANA, PLATE_REGIONS, type Plate } from '../../shared/api';
 import { SPORTS_CAR, type VehicleSpec } from '../physics/VehiclePhysics';
 
 /**
@@ -89,7 +89,15 @@ export const CARS: Record<CarId, CarDef> = {
       wing: 'gt',
       hoodVents: true,
     },
-    setup: { paint: '#1e88ff', finish: 'metallic', pattern: 'stripes', accent: '#ffffff', rims: '#d6dae2', number: 23 },
+    setup: {
+      paint: '#1e88ff',
+      finish: 'metallic',
+      pattern: 'stripes',
+      accent: '#ffffff',
+      rims: '#d6dae2',
+      number: 23,
+      plate: { region: '品川', kana: 'さ', number: 2323 },
+    },
   },
   hatch: {
     id: 'hatch',
@@ -145,7 +153,15 @@ export const CARS: Record<CarId, CarDef> = {
       rearAxle: -1.3,
       wing: 'roof',
     },
-    setup: { paint: '#f2f2f2', finish: 'gloss', pattern: 'race', accent: '#e8202a', rims: '#23262b', number: 8 },
+    setup: {
+      paint: '#f2f2f2',
+      finish: 'gloss',
+      pattern: 'race',
+      accent: '#e8202a',
+      rims: '#23262b',
+      number: 8,
+      plate: { region: '練馬', kana: 'た', number: 88 },
+    },
   },
   rally: {
     id: 'rally',
@@ -203,7 +219,15 @@ export const CARS: Record<CarId, CarDef> = {
       wing: 'roof',
       rally: true,
     },
-    setup: { paint: '#0a3d91', finish: 'gloss', pattern: 'race', accent: '#ffd400', rims: '#ffd400', number: 5 },
+    setup: {
+      paint: '#0a3d91',
+      finish: 'gloss',
+      pattern: 'race',
+      accent: '#ffd400',
+      rims: '#ffd400',
+      number: 5,
+      plate: { region: '富士山', kana: 'ら', number: 555 },
+    },
   },
   drift: {
     id: 'drift',
@@ -256,7 +280,15 @@ export const CARS: Record<CarId, CarDef> = {
       hoodScoop: true,
       flares: true,
     },
-    setup: { paint: '#ff4fa3', finish: 'pearl', pattern: 'side', accent: '#1a1a1a', rims: '#c9a24a', number: 86 },
+    setup: {
+      paint: '#ff4fa3',
+      finish: 'pearl',
+      pattern: 'side',
+      accent: '#1a1a1a',
+      rims: '#c9a24a',
+      number: 86,
+      plate: { region: '湘南', kana: 'は', number: 8686 },
+    },
   },
   super: {
     id: 'super',
@@ -315,7 +347,15 @@ export const CARS: Record<CarId, CarDef> = {
       flares: true,
       sideIntakes: true,
     },
-    setup: { paint: '#ff6a00', finish: 'metallic', pattern: 'twotone', accent: '#111214', rims: '#111214', number: 1 },
+    setup: {
+      paint: '#ff6a00',
+      finish: 'metallic',
+      pattern: 'twotone',
+      accent: '#111214',
+      rims: '#111214',
+      number: 1,
+      plate: { region: '品川', kana: 'す', number: 1 },
+    },
   },
 };
 
@@ -339,7 +379,7 @@ export const PAINT_SWATCHES = [
 export const RIM_SWATCHES = ['#d6dae2', '#23262b', '#c9a24a', '#ffd400', '#f5f5f5', '#e8202a', '#8a5a2b'];
 
 /** Livery colours for AI cars (one-make series: same car, team colours). */
-export const AI_LIVERIES: Omit<CarSetup, 'finish'>[] = [
+export const AI_LIVERIES: Omit<CarSetup, 'finish' | 'plate'>[] = [
   { paint: '#e8202a', pattern: 'stripes', accent: '#ffffff', rims: '#d6dae2', number: 1 },
   { paint: '#f5f5f5', pattern: 'race', accent: '#d01020', rims: '#23262b', number: 7 },
   { paint: '#ffb000', pattern: 'side', accent: '#111111', rims: '#23262b', number: 11 },
@@ -352,6 +392,19 @@ export const AI_LIVERIES: Omit<CarSetup, 'finish'>[] = [
   { paint: '#6b8e23', pattern: 'none', accent: '#ffffff', rims: '#8a5a2b', number: 9 },
   { paint: '#ff7a1a', pattern: 'race', accent: '#0a2a6a', rims: '#d6dae2', number: 77 },
 ];
+
+/** A random but valid plate for an AI car. */
+export function randomPlate(seed: number): Plate {
+  const h = (k: number) => {
+    const x = Math.sin(seed * 12.9898 + k * 78.233) * 43758.5453;
+    return x - Math.floor(x);
+  };
+  return {
+    region: PLATE_REGIONS[Math.floor(h(1) * PLATE_REGIONS.length)].id,
+    kana: PLATE_KANA[Math.floor(h(2) * PLATE_KANA.length)],
+    number: 1 + Math.floor(h(3) * 9999),
+  };
+}
 
 export function carSetup(id: CarId, garage: Partial<Record<CarId, CarSetup>> | undefined): CarSetup {
   return { ...CARS[id].setup, ...garage?.[id] };

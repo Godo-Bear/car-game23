@@ -1105,3 +1105,32 @@ input {
     monospace;
   pointer-events: none;
 }
+
+.plate-row {
+  display: grid;
+  grid-template-columns: 1.4fr 0.8fr 1fr;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.plate-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.plate-row select,
+.plate-row input {
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 8px;
+  width: 100%;
+}
+.plate-row option {
+  color: #111;
+}
