@@ -1,12 +1,15 @@
 import * as THREE from 'three';
+import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import type { TimeOfDay } from '../../shared/api';
 import { createRng } from '../core/math';
+import type { LensGrade } from '../render/RenderPipeline';
 import type { TrackTheme } from '../track/tracks';
 
 /**
  * Sky, sun/moon, ambient light, fog, reflections and post-processing for each time of day.
- * Everything is generated (no HDRI files): the sky is painted on a canvas and the same picture
- * is prefiltered into the reflection map, so car paint reflects the sky you see.
+ * Everything is generated (no HDRI files). By day and at sunset the sky is a physically based
+ * atmosphere (Rayleigh/Mie scattering with drifting clouds); at night it is painted (stars,
+ * moon). The same sky is prefiltered into the reflection map, so paint and wet roads reflect it.
  */
 
 export interface BloomSettings {
@@ -28,8 +31,22 @@ interface SkyPreset {
   fujiSnow: string;
 }
 
+/** Physical-sky settings (day and sunset). */
+interface Atmosphere {
+  /** Brightness of the sky (the scattering model is in physical units; this calibrates it). */
+  gain: number;
+  turbidity: number;
+  rayleigh: number;
+  mie: number;
+  mieG: number;
+  clouds: number;
+  cloudDensity: number;
+}
+
 interface Preset {
   sky: SkyPreset;
+  atmosphere: Atmosphere | null;
+  grade: LensGrade;
   sunColor: number;
   sunIntensity: number;
   hemiSky: number;
@@ -61,6 +78,8 @@ const PRESETS: Record<TimeOfDay, Preset> = {
       fuji: '#7f93b4',
       fujiSnow: 'rgba(250,252,255,0.95)',
     },
+    grade: { contrast: 1.06, saturation: 1.08, tint: [1, 1, 0.98] },
+    atmosphere: { gain: 0.36, turbidity: 3.5, rayleigh: 1.1, mie: 0.004, mieG: 0.8, clouds: 0.38, cloudDensity: 0.55 },
     sunColor: 0xfff2dc,
     sunIntensity: 2.4,
     hemiSky: 0xcfe4ff,
@@ -92,6 +111,8 @@ const PRESETS: Record<TimeOfDay, Preset> = {
       fuji: '#3b2a4a',
       fujiSnow: 'rgba(255,200,190,0.75)',
     },
+    grade: { contrast: 1.08, saturation: 1.06, tint: [1.05, 0.98, 0.9] },
+    atmosphere: { gain: 0.8, turbidity: 7, rayleigh: 2.4, mie: 0.006, mieG: 0.86, clouds: 0.42, cloudDensity: 0.5 },
     sunColor: 0xff9a5a,
     sunIntensity: 2.0,
     hemiSky: 0xffb48a,
@@ -121,6 +142,8 @@ const PRESETS: Record<TimeOfDay, Preset> = {
       fuji: '#1d1630',
       fujiSnow: 'rgba(200,205,230,0.45)',
     },
+    grade: { contrast: 1.1, saturation: 1.05, tint: [0.95, 0.98, 1.06] },
+    atmosphere: null,
     sunColor: 0xaab8ff,
     sunIntensity: 0.8,
     hemiSky: 0x7d84c4,
@@ -146,6 +169,9 @@ export class Lighting {
   private readonly pmrem: THREE.PMREMGenerator;
   private shadowsAllowed = true;
   private presetShadows = true;
+  /** Physical sky shown by day and at sunset (follows the camera; drawn at the far plane). */
+  private readonly skyDome = makeSky();
+  private tod: TimeOfDay = 'day';
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -163,6 +189,28 @@ export class Lighting {
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.04;
     scene.add(this.hemi, this.sun, this.sun.target);
+    this.skyDome.scale.setScalar(10000);
+    this.skyDome.frustumCulled = false;
+    this.skyDome.renderOrder = -10;
+    this.skyDome.userData.noAO = true;
+    scene.add(this.skyDome);
+  }
+
+  /** Direction toward the sun (or moon), for lens glare. */
+  get sunDirection(): THREE.Vector3 {
+    return this.sunDir;
+  }
+
+  /** Where the sun really is in the sky (lighting uses a raised angle at sunset). */
+  readonly skySunDirection = new THREE.Vector3();
+
+  /** Is the sun up and worth a lens flare? */
+  get sunVisible(): boolean {
+    return this.tod !== 'night';
+  }
+
+  get grade(): LensGrade {
+    return PRESETS[this.tod].grade;
   }
 
   /** Graphics quality: whether the sun casts shadows, and how sharp they are. */
@@ -179,11 +227,21 @@ export class Lighting {
   /** Apply a time of day for a track theme. Returns the bloom settings to use. */
   apply(theme: TrackTheme, tod: TimeOfDay): BloomSettings {
     const p = PRESETS[tod];
+    this.tod = tod;
     const rural = theme !== 'city' && tod === 'night';
-    const sky = this.sky(tod);
-    this.scene.background = sky;
-    this.scene.environment = this.env(theme, tod, sky);
-    this.scene.environmentIntensity = tod === 'day' ? 0.8 : 0.9;
+    if (p.atmosphere) {
+      configureSky(this.skyDome, p);
+      this.skyDome.visible = true;
+      this.scene.background = null;
+      this.scene.environment = this.atmosphereEnv(tod, p);
+    } else {
+      const sky = this.sky(tod);
+      this.skyDome.visible = false;
+      this.scene.background = sky;
+      this.scene.environment = this.env(theme, tod, sky);
+    }
+    // The physical sky is brighter than the painted night sky, so its reflections are scaled down.
+    this.scene.environmentIntensity = tod === 'day' ? 0.55 : tod === 'sunset' ? 0.7 : 0.9;
     const [fogColor, density] = p.fog[theme];
     this.scene.fog = new THREE.FogExp2(fogColor, density);
 
@@ -193,6 +251,7 @@ export class Lighting {
     this.sun.color.setHex(p.sunColor);
     this.sun.intensity = rural ? RURAL_NIGHT.sunIntensity : p.sunIntensity;
     this.sunDir.set(...p.sky.sunDir).normalize();
+    this.skySunDirection.copy(this.sunDir);
     // Low sunset sun still lights from a usable angle so the road isn't black.
     if (this.sunDir.y < 0.25) this.sunDir.y = 0.25;
     this.sunDir.normalize();
@@ -200,6 +259,12 @@ export class Lighting {
     this.sun.castShadow = p.shadows && this.shadowsAllowed;
     this.renderer.toneMappingExposure = p.exposure;
     return p.bloom;
+  }
+
+  /** Per frame: keep the sky around the camera and let the clouds drift. */
+  update(time: number, camera: THREE.Camera): void {
+    this.skyDome.position.copy(camera.position);
+    (this.skyDome.material as THREE.ShaderMaterial).uniforms.time.value = time;
   }
 
   /** Keep the shadow-casting area centred on the player. */
@@ -213,6 +278,24 @@ export class Lighting {
     if (!tex) {
       tex = paintSky(PRESETS[tod].sky, createRng(77));
       this.skies.set(tod, tex);
+    }
+    return tex;
+  }
+
+  /** Reflections from the physical sky (rendered once per time of day). */
+  private atmosphereEnv(tod: TimeOfDay, p: Preset): THREE.Texture {
+    const key = `atmosphere-${tod}`;
+    let tex = this.envs.get(key);
+    if (!tex) {
+      const scene = new THREE.Scene();
+      const sky = makeSky();
+      sky.scale.setScalar(10000);
+      configureSky(sky, p);
+      scene.add(sky);
+      tex = this.pmrem.fromScene(scene, 0.02).texture;
+      sky.geometry.dispose();
+      (sky.material as THREE.Material).dispose();
+      this.envs.set(key, tex);
     }
     return tex;
   }
@@ -251,6 +334,33 @@ export class Lighting {
     panel.dispose();
     return tex;
   }
+}
+
+/** Three's physical sky, with a brightness control added. */
+function makeSky(): Sky {
+  const sky = new Sky();
+  const material = sky.material as THREE.ShaderMaterial;
+  material.uniforms.skyGain = { value: 1 };
+  material.fragmentShader = material.fragmentShader
+    .replace('uniform float time;', 'uniform float time;\nuniform float skyGain;')
+    .replace('gl_FragColor = vec4( texColor, 1.0 );', 'gl_FragColor = vec4( texColor * skyGain, 1.0 );');
+  return sky;
+}
+
+function configureSky(sky: Sky, p: Preset): void {
+  const a = p.atmosphere!;
+  const u = (sky.material as THREE.ShaderMaterial).uniforms;
+  u.skyGain.value = a.gain;
+  u.turbidity.value = a.turbidity;
+  u.rayleigh.value = a.rayleigh;
+  u.mieCoefficient.value = a.mie;
+  u.mieDirectionalG.value = a.mieG;
+  u.cloudCoverage.value = a.clouds;
+  u.cloudDensity.value = a.cloudDensity;
+  u.cloudScale.value = 0.00022;
+  u.cloudSpeed.value = 0.000015;
+  u.cloudElevation.value = 0.55;
+  u.sunPosition.value.set(...p.sky.sunDir).normalize();
 }
 
 /** Direction -> equirectangular pixel (three.js convention: u = atan2(z, x) / 2PI + 0.5). */

@@ -19,17 +19,19 @@ export interface QualityProfile {
   ambientOcclusion: boolean;
   /** Multiplier for trees / particles when a world is built. */
   detail: number;
+  /** Grass around the camera: 0 none, 1 normal, 2 dense (+ tree shadows). */
+  grass: 0 | 1 | 2;
 }
 
 export function qualityProfile(q: Quality): QualityProfile {
   const dpr = window.devicePixelRatio || 1;
   switch (q) {
     case 'low':
-      return { pixelRatio: Math.min(dpr, 1), msaa: 0, fxaa: true, shadows: false, shadowMapSize: 1024, ambientOcclusion: false, detail: 0.55 };
+      return { pixelRatio: Math.min(dpr, 1), msaa: 0, fxaa: true, shadows: false, shadowMapSize: 1024, ambientOcclusion: false, detail: 0.55, grass: 0 };
     case 'medium':
-      return { pixelRatio: Math.min(dpr, 1.5), msaa: 4, fxaa: false, shadows: true, shadowMapSize: 1024, ambientOcclusion: false, detail: 1 };
+      return { pixelRatio: Math.min(dpr, 1.5), msaa: 4, fxaa: false, shadows: true, shadowMapSize: 1024, ambientOcclusion: false, detail: 1, grass: 1 };
     case 'high':
-      return { pixelRatio: Math.min(dpr, 2), msaa: 4, fxaa: false, shadows: true, shadowMapSize: 2048, ambientOcclusion: true, detail: 1 };
+      return { pixelRatio: Math.min(dpr, 2), msaa: 4, fxaa: false, shadows: true, shadowMapSize: 2048, ambientOcclusion: true, detail: 1, grass: 2 };
   }
 }
 
@@ -102,6 +104,88 @@ const SpeedShader = {
     }`,
 };
 
+/**
+ * The camera's "lens" (runs last, on the display image): filmic grade per time of day, vignette,
+ * slight colour fringing toward the edges, fine grain, and sun glare - a soft bloom, an
+ * anamorphic streak and ghosts - that only appears when the sun itself is unobstructed.
+ */
+const LensShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    aspect: { value: 1 },
+    time: { value: 0 },
+    contrast: { value: 1.05 },
+    saturation: { value: 1.05 },
+    tint: { value: new THREE.Vector3(1, 1, 1) },
+    vignette: { value: 0.28 },
+    aberration: { value: 0.0016 },
+    sunScreen: { value: new THREE.Vector2(0.5, 0.5) },
+    sunColor: { value: new THREE.Vector3(1, 0.9, 0.75) },
+    flare: { value: 0 },
+  },
+  vertexShader: /* glsl */ `
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse;
+    uniform float aspect;
+    uniform float time;
+    uniform float contrast;
+    uniform float saturation;
+    uniform vec3 tint;
+    uniform float vignette;
+    uniform float aberration;
+    uniform vec2 sunScreen;
+    uniform vec3 sunColor;
+    uniform float flare;
+    varying vec2 vUv;
+    float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+    float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+    void main() {
+      vec2 c = vUv - 0.5;
+      vec2 off = c * aberration * dot(c, c) * 4.0;
+      vec3 col = vec3(texture2D(tDiffuse, vUv + off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - off).b);
+
+      if (flare > 0.0) {
+        // Is the sun itself visible? (Bright pixels where it is = open sky, not a tree or hill.)
+        float vis = 0.0;
+        for (int i = 0; i < 5; i++) {
+          float a = float(i) * 1.2566;
+          vec2 p = sunScreen + (i == 0 ? vec2(0.0) : vec2(cos(a), sin(a)) * 0.008);
+          vis += smoothstep(0.78, 0.97, luma(texture2D(tDiffuse, clamp(p, 0.001, 0.999)).rgb));
+        }
+        vis *= 0.2 * flare;
+        vec2 d = (vUv - sunScreen) * vec2(aspect, 1.0);
+        float r = length(d);
+        vec3 glare = sunColor * (exp(-r * 6.0) * 0.16 + exp(-r * 24.0) * 0.4);
+        glare += sunColor * exp(-abs(d.y) * 220.0) * exp(-abs(d.x) * 2.5) * 0.28;
+        // Ghosts mirrored through the centre of the image.
+        vec2 axis = vec2(0.5) - sunScreen;
+        for (int i = 1; i < 5; i++) {
+          vec2 gp = sunScreen + axis * (float(i) * 0.48);
+          float gr = length((vUv - gp) * vec2(aspect, 1.0));
+          float size = 0.025 + 0.02 * float(i);
+          vec3 tintG = mix(vec3(0.4, 0.7, 1.0), vec3(1.0, 0.6, 0.35), fract(float(i) * 0.37));
+          glare += tintG * smoothstep(size, size * 0.6, gr) * 0.06;
+        }
+        col += glare * vis;
+      }
+
+      col = (col - 0.5) * contrast + 0.5;
+      col = mix(vec3(luma(col)), col, saturation) * tint;
+      float v = smoothstep(0.95, 0.3, length(c * vec2(aspect * 0.8, 1.0)));
+      col *= mix(1.0 - vignette, 1.0, v);
+      col += (hash(vUv * 1000.0 + time) - 0.5) * 0.014;
+      gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+    }`,
+};
+
+export interface LensGrade {
+  contrast: number;
+  saturation: number;
+  tint: [number, number, number];
+}
+
 export class RenderPipeline {
   readonly renderer: THREE.WebGLRenderer;
   private readonly composer: EffectComposer;
@@ -109,6 +193,7 @@ export class RenderPipeline {
   private readonly bloom: UnrealBloomPass;
   private readonly speed: ShaderPass;
   private readonly fxaa: FXAAPass;
+  private readonly lens: ShaderPass;
   private profile: QualityProfile;
   /** Extra resolution scale on top of the quality level (dynamic resolution on slow GPUs). */
   private renderScale = 1;
@@ -141,6 +226,8 @@ export class RenderPipeline {
     this.speed = new ShaderPass(SpeedShader);
     this.composer.addPass(this.speed);
     this.composer.addPass(new OutputPass());
+    this.lens = new ShaderPass(LensShader);
+    this.composer.addPass(this.lens);
     this.fxaa = new FXAAPass();
     this.composer.addPass(this.fxaa);
     this.setQuality(quality);
@@ -195,12 +282,28 @@ export class RenderPipeline {
     this.bloom.threshold = b.threshold;
   }
 
+  setGrade(g: LensGrade): void {
+    const u = this.lens.uniforms;
+    u.contrast.value = g.contrast;
+    u.saturation.value = g.saturation;
+    u.tint.value.set(...g.tint);
+  }
+
+  /** Sun glare: screen position (0..1) of the sun and its strength (0 = none). */
+  setSun(x: number, y: number, strength: number, color: THREE.Color): void {
+    const u = this.lens.uniforms;
+    u.sunScreen.value.set(x, y);
+    u.flare.value = strength;
+    u.sunColor.value.set(color.r, color.g, color.b);
+  }
+
   /** 0..1 speed-effect intensity (0 disables the pass entirely). */
   setSpeedEffect(amount: number, time: number): void {
     this.speed.enabled = amount > 0.01;
     this.speed.uniforms.blur.value = amount * 0.06;
     this.speed.uniforms.lines.value = amount;
     this.speed.uniforms.time.value = time;
+    this.lens.uniforms.time.value = time % 100;
   }
 
   resize(width: number, height: number): void {
@@ -210,6 +313,7 @@ export class RenderPipeline {
     this.composer.setSize(width, height);
     this.bloom.resolution.set(width / 2, height / 2);
     this.speed.uniforms.aspect.value = width / height;
+    this.lens.uniforms.aspect.value = width / height;
   }
 
   render(dt: number): void {

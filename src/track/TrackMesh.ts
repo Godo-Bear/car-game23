@@ -3,7 +3,7 @@ import type { TimeOfDay } from '../../shared/api';
 import type { RacingLine } from '../ai/RacingLine';
 import { mod } from '../core/math';
 import { GeometryBuilder } from '../world/GeometryBuilder';
-import { applyRoadDetail } from '../world/surfaces';
+import { applyRoadDetail, asphaltNormalMap, concreteNormalMap } from '../world/surfaces';
 import { asphaltTexture, bannerTexture, checkerTexture, fenceTexture, ROAD_TEXTURE_LENGTH, ruralAsphaltTexture, sidewalkTexture } from '../world/textures';
 import type { TrackPath } from './TrackPath';
 import type { TrackTheme } from './tracks';
@@ -97,7 +97,18 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
   }
   const asphalt = city ? asphaltTexture(rng) : ruralAsphaltTexture(rng, opts.theme === 'mountain' ? 'yellow' : 'dashed');
   asphalt.wrapS = THREE.ClampToEdgeWrapping;
-  const roadMaterial = new THREE.MeshStandardMaterial({ map: asphalt, vertexColors: city, roughness: 0.82, metalness: 0.05 });
+  // Relief from the aggregate catches low sun and headlights (tiles every ~1.5 m).
+  const roadNormals = asphaltNormalMap().clone();
+  roadNormals.repeat.set(track.width / 1.5, texLen / 1.5);
+  roadNormals.userData.shared = false;
+  const roadMaterial = new THREE.MeshStandardMaterial({
+    map: asphalt,
+    vertexColors: city,
+    roughness: 0.82,
+    metalness: 0.05,
+    normalMap: roadNormals,
+    normalScale: new THREE.Vector2(0.28, 0.28),
+  });
   applyRoadDetail(roadMaterial);
   const roadMesh = new THREE.Mesh(road.build(), roadMaterial);
   roadMesh.name = 'road';
@@ -105,6 +116,7 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
   group.add(roadMesh);
 
   // ---------- Barriers, catch fence, sidewalks, curbs ----------
+  const concreteRelief = concreteNormalMap();
   const barrier = new GeometryBuilder(true);
   const fence = new GeometryBuilder();
   const sidewalk = new GeometryBuilder();
@@ -223,7 +235,7 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
   }
 
   if (city) {
-    group.add(new THREE.Mesh(barrier.build(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 })));
+    group.add(new THREE.Mesh(barrier.build(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, normalMap: concreteRelief })));
     const fenceTex = fenceTexture();
     group.add(
       new THREE.Mesh(
@@ -231,7 +243,7 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
         new THREE.MeshBasicMaterial({ map: fenceTex, color: 0x9aa0ad, transparent: true, alphaTest: 0.3, side: THREE.DoubleSide, depthWrite: false }),
       ),
     );
-    const walk = new THREE.Mesh(sidewalk.build(), new THREE.MeshStandardMaterial({ map: sidewalkTexture(rng), roughness: 0.9 }));
+    const walk = new THREE.Mesh(sidewalk.build(), new THREE.MeshStandardMaterial({ map: sidewalkTexture(rng), roughness: 0.9, normalMap: concreteRelief }));
     walk.receiveShadow = true;
     group.add(walk);
   } else {
@@ -239,7 +251,7 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
     group.add(new THREE.Mesh(rail.build(), new THREE.MeshStandardMaterial({ color: railColor, metalness: 0.55, roughness: 0.35 })));
     group.add(new THREE.Mesh(posts.build(), new THREE.MeshStandardMaterial({ color: 0x8a8f96, metalness: 0.5, roughness: 0.5 })));
   }
-  const kerbs = new THREE.Mesh(curbs.build(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }));
+  const kerbs = new THREE.Mesh(curbs.build(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, normalMap: concreteRelief }));
   kerbs.receiveShadow = true;
   group.add(kerbs);
 
@@ -251,7 +263,7 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
     deck.box(s.x, 0, s.z, 3.2, h, 1.8, s.heading);
     deck.box(s.x, h - 1.2, s.z, (wall + BARRIER_THICKNESS + SIDEWALK_WIDTH) * 2, 1.2, 1.6, s.heading);
   }
-  group.add(new THREE.Mesh(deck.build(), new THREE.MeshStandardMaterial({ color: city ? 0x5f6168 : 0x4a4740, roughness: 0.9 })));
+  group.add(new THREE.Mesh(deck.build(), new THREE.MeshStandardMaterial({ color: city ? 0x5f6168 : 0x4a4740, roughness: 0.9, normalMap: concreteRelief })));
 
   // ---------- Start / finish line and grid boxes ----------
   const paint = new GeometryBuilder();

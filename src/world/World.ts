@@ -17,15 +17,15 @@ export interface World {
   readonly group: THREE.Group;
   readonly trackVisual: TrackVisual;
   setTimeOfDay(tod: TimeOfDay): void;
-  /** Graphics detail 0..1 (amount of vegetation). */
-  setDetail(detail: number): void;
+  /** Graphics detail 0..1 (amount of vegetation) and grass density (0 off .. 2 dense). */
+  setDetail(detail: number, grass: 0 | 1 | 2): void;
   /** Lay rubber on the racing line once it has been computed (it arrives from a worker). */
   addRacingLine(line: RacingLine): void;
   update(time: number, dt: number, camera: THREE.Camera): void;
   dispose(): void;
 }
 
-export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, detail = 1): World {
+export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, detail = 1, grass: 0 | 1 | 2 = 1): World {
   const group = new THREE.Group();
   group.name = `world-${def.id}`;
   const gridSlots = Array.from({ length: 12 }, (_, i) => gridSlot(track, i));
@@ -73,7 +73,7 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
   }
 
   const trackVisual = buildTrackVisual(track, rng, { theme: def.theme, gridSlots, lamps: [], crossings: [] });
-  const nature = new NatureWorld(def.theme, track, rng, detail);
+  const nature = new NatureWorld(def.theme, track, rng, detail, grass);
   group.add(trackVisual.group, nature.group);
   return {
     def,
@@ -84,7 +84,7 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
       trackVisual.setTimeOfDay(tod);
       roadWetness.value = 0;
     },
-    setDetail: (d) => nature.setDetail(d),
+    setDetail: (d, g) => nature.setDetail(d, g),
     addRacingLine,
     update(time, dt, camera) {
       windTime.value = time;

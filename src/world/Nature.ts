@@ -5,6 +5,7 @@ import type { TrackPath } from '../track/TrackPath';
 import type { TrackTheme } from '../track/tracks';
 import { bamboo, broadleaf, bush, cedar, contactShadowMaterial, maple, pine, sakura, sugi, swayMaterial, type TreeShape } from './foliage';
 import { GeometryBuilder } from './GeometryBuilder';
+import { GrassField, type GroundField } from './Grass';
 import { groundMaterial } from './surfaces';
 import { glowTexture } from './textures';
 
@@ -214,6 +215,10 @@ export class NatureWorld {
   private readonly fujiSnow: THREE.MeshBasicMaterial;
   /** Instanced vegetation and its full instance count, thinned by the graphics detail level. */
   private readonly detailMeshes: { mesh: THREE.InstancedMesh; count: number }[] = [];
+  /** Trunks and crowns (they cast shadows on High). */
+  private readonly treeMeshes: THREE.InstancedMesh[] = [];
+  private ground!: GroundField;
+  private grass!: GrassField;
   private readonly shadowMat = contactShadowMaterial();
   private readonly shadowGeo = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
 
@@ -222,6 +227,7 @@ export class NatureWorld {
     private readonly track: TrackPath,
     rng: () => number,
     detail = 1,
+    grassLevel: 0 | 1 | 2 = 1,
   ) {
     this.group.name = `nature-${theme}`;
     this.cfg = theme === 'mountain' ? MOUNTAIN : COUNTRYSIDE;
@@ -256,13 +262,26 @@ export class NatureWorld {
       this.petals = new FallingPetals(rng);
       this.group.add(this.petals.points);
     }
-    this.setDetail(detail);
+    this.grass = new GrassField(
+      this.ground,
+      theme === 'mountain'
+        ? { base: 0x2c4a1c, tip: 0x86a043, flowers: [0xf2efe4], height: 0.5 }
+        : { base: 0x3b6a20, tip: 0xa3c84e, flowers: [0xf4a6c8, 0xf6f2e8, 0xf1d24a], height: 0.6 },
+    );
+    this.group.add(this.grass.mesh);
+    this.setDetail(detail, grassLevel);
   }
 
-  /** 0..1: fraction of the vegetation to draw (instances are shuffled, so thinning is even). */
-  setDetail(detail: number): void {
+  /**
+   * Graphics detail: `detail` 0..1 is the fraction of the vegetation drawn (instances are
+   * shuffled, so thinning is even); `grass` 0 none / 1 normal / 2 dense, which also makes the
+   * trees cast shadows.
+   */
+  setDetail(detail: number, grass: 0 | 1 | 2): void {
     for (const { mesh, count } of this.detailMeshes) mesh.count = Math.max(1, Math.floor(count * detail));
     if (this.petals) this.petals.points.visible = detail > 0.6;
+    this.grass.setDensity(grass);
+    for (const m of this.treeMeshes) m.castShadow = grass === 2;
   }
 
   /** Terrain height at a world position (road-conforming). */
@@ -292,6 +311,8 @@ export class NatureWorld {
     const col = new Float32Array(verts * verts * 3);
     const heights = new Float32Array(verts * verts);
     const dists = new Float32Array(verts * verts);
+    const field = new Float32Array(verts * verts * 4);
+    this.ground = { originX: cx - size / 2, originZ: cz - size / 2, res, verts, data: field, roadClear: this.track.wallOffset + 0.6 };
     for (let j = 0; j < verts; j++) {
       for (let i = 0; i < verts; i++) {
         const x = cx - size / 2 + i * res;
@@ -311,6 +332,11 @@ export class NatureWorld {
         const slope = Math.hypot(hx, hz) / (2 * res);
         this.cfg.color(heights[k], slope, pos[k * 3], pos[k * 3 + 2], dists[k], color);
         col.set([color.r, color.g, color.b], k * 3);
+        // Where grass grows: not on rock, beaches, under water or high snow.
+        const wet = smoothstep(this.cfg.waterLevel + 0.4, this.cfg.waterLevel + 1.4, heights[k]);
+        const rock = 1 - smoothstep(this.theme === 'mountain' ? 0.42 : 0.5, this.theme === 'mountain' ? 0.75 : 0.9, slope);
+        const snow = 1 - smoothstep(140, 175, heights[k]);
+        field.set([heights[k], dists[k], wet * rock * snow * (this.theme === 'mountain' ? 0.8 : 1), 0], k * 4);
       }
     }
     const index = new Uint32Array(n * n * 6);
@@ -405,6 +431,8 @@ export class NatureWorld {
     const n = placed.length;
     const trunks = shape.trunk ? new THREE.InstancedMesh(shape.trunk, swayMaterial({ color: shape.trunkColor }, shape.sway, 0), n) : null;
     const crowns = new THREE.InstancedMesh(shape.crown, swayMaterial({ color: 0xffffff }, shape.sway, 0.04), n);
+    this.treeMeshes.push(crowns);
+    if (trunks) this.treeMeshes.push(trunks);
     const shadows = new THREE.InstancedMesh(this.shadowGeo, this.shadowMat, n);
     shadows.userData.noAO = true;
     const m = new THREE.Matrix4();
@@ -752,6 +780,7 @@ export class NatureWorld {
 
   update(dt: number, camera: THREE.Camera): void {
     this.petals?.update(dt, camera);
+    this.grass.update(camera);
   }
 }
 

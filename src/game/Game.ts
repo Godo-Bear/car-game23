@@ -48,6 +48,7 @@ export class Game {
   private readonly effects = new TireEffects();
   private readonly sparks = new Sparks();
   private readonly perf = new PerformanceMonitor();
+  private readonly sunScreen = new THREE.Vector3();
   private feedback!: RaceFeedback;
   private lastTime = -1;
 
@@ -157,7 +158,7 @@ export class Game {
       this.pipeline.setQuality(s.quality);
       const q = this.pipeline.quality;
       this.lighting.setShadowQuality(q.shadows, q.shadowMapSize);
-      for (const w of this.worlds.values()) w.setDetail(q.detail);
+      for (const w of this.worlds.values()) w.setDetail(q.detail, q.grass);
       if (s.quality === 'low') this.trimWorlds();
       this.pipeline.setRenderScale(1);
       this.perf.reset();
@@ -223,7 +224,7 @@ export class Game {
       setLoading(`Loading ${def.name}…`);
       await nextFrame();
       await nextFrame();
-      world = buildWorld(def, track, createRng(2023), this.pipeline.quality.detail);
+      world = buildWorld(def, track, createRng(2023), this.pipeline.quality.detail, this.pipeline.quality.grass);
       this.worlds.set(id, world);
       void line.then((l) => world!.addRacingLine(l));
     }
@@ -240,6 +241,7 @@ export class Game {
     this.timeOfDay = tod;
     const theme = this.world!.def.theme;
     this.pipeline.setBloom(this.lighting.apply(theme, tod));
+    this.pipeline.setGrade(this.lighting.grade);
     this.world!.setTimeOfDay(tod);
     for (const m of this.carModels) m.setLighting(tod, theme !== 'city');
     this.headlight.intensity = tod === 'night' ? (theme === 'city' ? 5 : 13) : 0;
@@ -395,6 +397,7 @@ export class Game {
     this.cine.endIntro();
     this.world!.update(this.elapsed, 0, this.cam.camera);
     this.lighting.follow(this.playerModel.root.position);
+    this.lighting.update(this.elapsed, this.cam.camera);
     this.pipeline.setSpeedEffect(0, 0);
     await this.compile();
     this.pipeline.render(0);
@@ -496,6 +499,8 @@ export class Game {
     else this.audio.update(p.rpm, p.throttleApplied, Math.max(p.rearSlide, p.frontSlide * 0.6), p.speed, running);
     this.world!.update(this.elapsed, dt, this.cam.camera);
     this.lighting.follow(model.root.position);
+    this.lighting.update(this.elapsed, this.cam.camera);
+    this.updateSunGlare();
 
     if (this.state === 'countdown' || this.state === 'racing' || this.state === 'finished') {
       this.hud.update(this.sim, dt);
@@ -510,6 +515,20 @@ export class Game {
     }
     this.pipeline.render(dt);
     this.effects.onRendered();
+  }
+
+  /** Lens glare when looking toward the sun. */
+  private updateSunGlare(): void {
+    const cam = this.cam.camera;
+    let strength = 0;
+    if (this.lighting.sunVisible) {
+      const p = this.sunScreen.copy(cam.position).addScaledVector(this.lighting.skySunDirection, 1000).project(cam);
+      const edge = Math.max(Math.abs(p.x), Math.abs(p.y));
+      if (p.z < 1 && edge < 1.15) strength = Math.min(1, (1.15 - edge) / 0.25);
+      this.pipeline.setSun(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5, strength, this.lighting.sun.color);
+    } else {
+      this.pipeline.setSun(0.5, 0.5, 0, this.lighting.sun.color);
+    }
   }
 
   private handleActions(): void {

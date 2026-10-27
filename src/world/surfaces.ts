@@ -12,48 +12,105 @@ let detail: THREE.DataTexture | null = null;
  * 256x256 tileable noise. R: fine grain (grass blades / gravel), G: medium blotches (patches,
  * puddles), B: large-scale variation, A: ridged cracks (rock).
  */
+const hash = (x: number, y: number, seed: number) => {
+  const h = Math.sin(x * 127.1 + y * 311.7 + seed * 74.7) * 43758.5453;
+  return h - Math.floor(h);
+};
+
+/** Periodic value noise: the lattice wraps every `period` cells so textures tile. */
+function noise(x: number, y: number, period: number, seed: number): number {
+  const xi = Math.floor(x);
+  const yi = Math.floor(y);
+  const fx = x - xi;
+  const fy = y - yi;
+  const u = fx * fx * (3 - 2 * fx);
+  const v = fy * fy * (3 - 2 * fy);
+  const w = (i: number) => ((i % period) + period) % period;
+  const a = hash(w(xi), w(yi), seed);
+  const b = hash(w(xi + 1), w(yi), seed);
+  const c = hash(w(xi), w(yi + 1), seed);
+  const d = hash(w(xi + 1), w(yi + 1), seed);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+
+/** Tileable fBm over an N x N texture: `base` lattice cells across, doubling per octave. */
+function fbm(x: number, y: number, N: number, base: number, octaves: number, seed: number): number {
+  let sum = 0;
+  let amp = 0.5;
+  let norm = 0;
+  for (let o = 0; o < octaves; o++) {
+    const f = base << o;
+    sum += noise((x / N) * f, (y / N) * f, f, seed + o) * amp;
+    norm += amp;
+    amp *= 0.5;
+  }
+  return sum / norm;
+}
+
+/** Tangent-space normal map from a tileable height function (heights in texels). */
+function normalMap(N: number, height: (x: number, y: number) => number, strength: number): THREE.DataTexture {
+  const h = new Float32Array(N * N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) h[y * N + x] = height(x, y);
+  const at = (x: number, y: number) => h[((y + N) % N) * N + ((x + N) % N)];
+  const data = new Uint8Array(N * N * 4);
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const nx = (at(x - 1, y) - at(x + 1, y)) * strength;
+      const ny = (at(x, y - 1) - at(x, y + 1)) * strength;
+      const len = Math.hypot(nx, ny, 1);
+      const k = (y * N + x) * 4;
+      data[k] = ((nx / len) * 0.5 + 0.5) * 255;
+      data[k + 1] = ((ny / len) * 0.5 + 0.5) * 255;
+      data[k + 2] = ((1 / len) * 0.5 + 0.5) * 255;
+      data[k + 3] = 255;
+    }
+  }
+  const tex = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.anisotropy = 8;
+  tex.needsUpdate = true;
+  tex.userData.shared = true;
+  return tex;
+}
+
+let asphaltNormals: THREE.DataTexture | null = null;
+let concreteNormals: THREE.DataTexture | null = null;
+
+/** Asphalt relief: coarse aggregate stones, fine grain and hairline cracks (tiles every ~1.5 m). */
+export function asphaltNormalMap(): THREE.DataTexture {
+  asphaltNormals ??= normalMap(
+    256,
+    (x, y) => {
+      const stones = Math.max(0, fbm(x, y, 256, 48, 2, 11) - 0.45) * 3;
+      const grain = hash(x, y, 5) * 0.35;
+      const crack = (1 - Math.abs(fbm(x, y, 256, 4, 3, 21) * 2 - 1)) ** 24;
+      return stones + grain - crack * 1.2;
+    },
+    1.2,
+  );
+  return asphaltNormals;
+}
+
+/** Cast concrete: soft unevenness and small air pockets. */
+export function concreteNormalMap(): THREE.DataTexture {
+  concreteNormals ??= normalMap(128, (x, y) => fbm(x, y, 128, 6, 4, 31) * 2 - (hash(x, y, 9) > 0.985 ? 1.5 : 0), 1.2);
+  return concreteNormals;
+}
+
 export function detailTexture(): THREE.DataTexture {
   if (detail) return detail;
   const N = 256;
   const data = new Uint8Array(N * N * 4);
-  const hash = (x: number, y: number, seed: number) => {
-    const h = Math.sin(x * 127.1 + y * 311.7 + seed * 74.7) * 43758.5453;
-    return h - Math.floor(h);
-  };
-  // Periodic value noise: the lattice wraps every `period` cells so the texture tiles.
-  const noise = (x: number, y: number, period: number, seed: number) => {
-    const xi = Math.floor(x);
-    const yi = Math.floor(y);
-    const fx = x - xi;
-    const fy = y - yi;
-    const u = fx * fx * (3 - 2 * fx);
-    const v = fy * fy * (3 - 2 * fy);
-    const w = (i: number) => ((i % period) + period) % period;
-    const a = hash(w(xi), w(yi), seed);
-    const b = hash(w(xi + 1), w(yi), seed);
-    const c = hash(w(xi), w(yi + 1), seed);
-    const d = hash(w(xi + 1), w(yi + 1), seed);
-    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
-  };
-  const fbm = (x: number, y: number, base: number, octaves: number, seed: number) => {
-    let sum = 0;
-    let amp = 0.5;
-    let norm = 0;
-    for (let o = 0; o < octaves; o++) {
-      const f = base << o;
-      sum += noise((x / N) * f, (y / N) * f, f, seed + o) * amp;
-      norm += amp;
-      amp *= 0.5;
-    }
-    return sum / norm;
-  };
   for (let y = 0; y < N; y++) {
     for (let x = 0; x < N; x++) {
       const k = (y * N + x) * 4;
-      const fine = fbm(x, y, 32, 3, 1) * 0.6 + hash(x, y, 9) * 0.4;
-      const mid = fbm(x, y, 6, 4, 2);
-      const macro = fbm(x, y, 2, 3, 3);
-      const ridge = 1 - Math.abs(fbm(x, y, 8, 4, 4) * 2 - 1);
+      const fine = fbm(x, y, N, 32, 3, 1) * 0.6 + hash(x, y, 9) * 0.4;
+      const mid = fbm(x, y, N, 6, 4, 2);
+      const macro = fbm(x, y, N, 2, 3, 3);
+      const ridge = 1 - Math.abs(fbm(x, y, N, 8, 4, 4) * 2 - 1);
       data[k] = fine * 255;
       data[k + 1] = mid * 255;
       data[k + 2] = macro * 255;
@@ -105,6 +162,20 @@ export function groundMaterial(params: THREE.MeshLambertMaterialParameters, kind
         vec3 stone = mix(vec3(0.43, 0.42, 0.39), diffuseColor.rgb, 0.25) * (0.62 + 0.5 * crack) * (0.85 + 0.3 * fine);
         float rock = (1.0 - smoothstep(0.7, 0.88, vSurfUp)) * uRock;
         diffuseColor.rgb = mix(soil, stone, rock);`,
+      )
+      .replace(
+        '#include <normal_fragment_maps>',
+        /* glsl */ `#include <normal_fragment_maps>
+        {
+          // Relief from the same detail texture: tufts in the grass, cracked faces on rock.
+          vec2 q = vSurfPos.xz;
+          float e = 0.25;
+          float h0 = texture2D(uDetail, q * 0.31).r + texture2D(uDetail, q * 0.12).a * 1.5 * rock;
+          float hx = texture2D(uDetail, (q + vec2(e, 0.0)) * 0.31).r + texture2D(uDetail, (q + vec2(e, 0.0)) * 0.12).a * 1.5 * rock;
+          float hz = texture2D(uDetail, (q + vec2(0.0, e)) * 0.31).r + texture2D(uDetail, (q + vec2(0.0, e)) * 0.12).a * 1.5 * rock;
+          vec3 tilt = vec3(h0 - hx, 0.0, h0 - hz) * 1.4;
+          normal = normalize(normal + (viewMatrix * vec4(tilt, 0.0)).xyz);
+        }`,
       );
   };
   mat.customProgramCacheKey = () => 'ground';
