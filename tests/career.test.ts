@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { RaceRecord } from '../shared/api';
 import { CAREER_EVENTS, eventUnlocked, nextEvent, settleRace } from '../shared/career';
-import { cleanWallet, newWallet, raceReward } from '../shared/economy';
+import { newWallet, raceReward } from '../shared/economy';
+import { cleanWallet } from '../shared/wallet';
 import { TRACKS } from '../src/track/tracks';
 
 const result = (i: number, position: number): RaceRecord => {

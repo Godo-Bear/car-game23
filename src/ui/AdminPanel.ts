@@ -1,7 +1,8 @@
 import { type AdminPlayer, isAdminCode } from '../../shared/admin';
 import { CAR_IDS, type CarId, type UpgradePart, type Upgrades, type Wallet } from '../../shared/api';
 import { CAREER_EVENT_IDS } from '../../shared/career';
-import { cleanWallet, formatYen, MAX_UPGRADE, STARTER_CAR, UPGRADE_PARTS, upgradesOf } from '../../shared/economy';
+import { formatYen, MAX_UPGRADE, STARTER_CAR, UPGRADE_PARTS, upgradesOf } from '../../shared/economy';
+import { cleanWallet } from '../../shared/wallet';
 import { type AccountService, ApiError } from '../account/AccountService';
 import { CARS } from '../vehicles/cars';
 
@@ -46,7 +47,7 @@ export class AdminPanel {
       for (const id of CAR_IDS) upgrades[id] = Object.fromEntries(UPGRADE_PARTS.map((part) => [part, MAX_UPGRADE])) as Upgrades;
       // Every car fully upgraded and every career event won (so they're all unlocked).
       const events = Object.fromEntries(CAREER_EVENT_IDS.map((id) => [id, 1]));
-      this.wallet = { credits: this.wallet.credits + 1_000_000, owned: [...CAR_IDS], upgrades, events };
+      this.wallet = { ...this.wallet, credits: this.wallet.credits + 1_000_000, owned: [...CAR_IDS], upgrades, events };
       this.render();
     });
     document.querySelectorAll<HTMLButtonElement>('[data-admin-add]').forEach((b) =>

@@ -1,5 +1,4 @@
 import { CAR_IDS, type CarId, type Difficulty, type Purchase, type RaceRecord, type UpgradePart, type Upgrades, type Wallet } from './api';
-import { CAREER_EVENT_IDS } from './career';
 
 /**
  * The career economy, shared by the game (guest profiles) and the Worker (accounts), so prices
@@ -43,7 +42,7 @@ const PAY_PER_LAP = 3500;
 export const NO_UPGRADES: Upgrades = { engine: 0, gearbox: 0, aero: 0, tyres: 0, suspension: 0, brakes: 0, diff: 0, nitro: 0 };
 
 export function newWallet(): Wallet {
-  return { credits: STARTING_CREDITS, owned: [STARTER_CAR], upgrades: {}, events: {} };
+  return { credits: STARTING_CREDITS, owned: [STARTER_CAR], upgrades: {}, events: {}, quests: [] };
 }
 
 /** Pay for a finished race: more for a better place, more laps, a harder field and more rivals. */
@@ -65,6 +64,8 @@ export function upgradesOf(wallet: Wallet, car: CarId): Upgrades {
 
 /** Apply a purchase, or say why it can't be made. Never changes `wallet`. */
 export function purchase(wallet: Wallet, p: Purchase): Wallet | string {
+  // Quest rewards need the player's stats too: see claimQuest (shared/quests.ts).
+  if (p.kind === 'quest') return 'Not a shop purchase.';
   if (!CAR_IDS.includes(p.car)) return 'Unknown car.';
   if (p.kind === 'car') {
     if (wallet.owned.includes(p.car)) return 'You already own this car.';
@@ -80,34 +81,6 @@ export function purchase(wallet: Wallet, p: Purchase): Wallet | string {
   const price = upgradeCost(p.car, p.part, level);
   if (wallet.credits < price) return 'Not enough money.';
   return { ...wallet, credits: wallet.credits - price, upgrades: { ...wallet.upgrades, [p.car]: { ...current, [p.part]: level } } };
-}
-
-/** Validate a wallet from storage; anything missing or odd falls back to a fresh start. */
-export function cleanWallet(raw: unknown): Wallet {
-  const fresh = newWallet();
-  if (!raw || typeof raw !== 'object') return fresh;
-  const r = raw as Record<string, unknown>;
-  const credits = Number.isInteger(r.credits) && (r.credits as number) >= 0 ? Math.min(r.credits as number, 1e9) : fresh.credits;
-  const owned = CAR_IDS.filter((id) => id === STARTER_CAR || (Array.isArray(r.owned) && r.owned.includes(id)));
-  const upgrades: Wallet['upgrades'] = {};
-  const rawUpgrades = r.upgrades && typeof r.upgrades === 'object' ? (r.upgrades as Record<string, unknown>) : {};
-  for (const id of owned) {
-    const u = rawUpgrades[id] as Record<string, unknown> | undefined;
-    if (!u || typeof u !== 'object') continue;
-    const level = (v: unknown) => (Number.isInteger(v) ? Math.max(0, Math.min(MAX_UPGRADE, v as number)) : 0);
-    // Saves from before the parts were split up had one "handling" upgrade: tyres, suspension and brakes.
-    const old = level(u.handling);
-    upgrades[id] = Object.fromEntries(
-      UPGRADE_PARTS.map((part) => [part, u[part] === undefined && ['tyres', 'suspension', 'brakes'].includes(part) ? old : level(u[part])]),
-    ) as Upgrades;
-  }
-  // Career results (only known events, positions 1..12).
-  const events: Wallet['events'] = {};
-  const rawEvents = r.events && typeof r.events === 'object' ? (r.events as Record<string, unknown>) : {};
-  for (const [id, pos] of Object.entries(rawEvents)) {
-    if (CAREER_EVENT_IDS.includes(id) && Number.isInteger(pos) && (pos as number) >= 1 && (pos as number) <= 12) events[id] = pos as number;
-  }
-  return { credits, owned, upgrades, events };
 }
 
 /** "¥12,300" */

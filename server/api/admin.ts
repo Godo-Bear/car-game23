@@ -1,5 +1,5 @@
 import { type AdminPlayer, type AdminRequest, isAdminCode, normaliseAdminCode } from '../../shared/admin';
-import { cleanWallet } from '../../shared/economy';
+import { cleanWallet } from '../../shared/wallet';
 import {
   type ApiHandler,
   checkWrite,

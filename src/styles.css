@@ -1445,7 +1445,7 @@ input {
   bottom: var(--nav-h);
   z-index: -1;
   overflow: hidden;
-  background: #9fb9cf;
+  background: #141826;
 }
 /* The picture keeps its 16:9 shape and covers the screen; pins sit at fractions of it. */
 .career-map {
@@ -1544,14 +1544,34 @@ input {
   top: -30px;
   left: 50%;
   border: 12px solid transparent;
-  border-top: 18px solid #b6f36a;
+  border-top: 22px solid #b6f36a;
   border-bottom: 0;
   transform: translateX(-50%);
   filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5));
   animation: pin-bob 1.2s ease-in-out infinite;
 }
+.pin.next {
+  z-index: 3;
+}
 .pin.next .pin-icon {
+  width: 54px;
+  height: 62px;
+  font-size: 24px;
+  background: linear-gradient(180deg, #d9ff8a, #5ccf2e);
+  color: #10300a;
   animation: pin-pulse 1.6s ease-out infinite;
+}
+.pin.next .pin-icon::after {
+  border-top-color: #5ccf2e;
+}
+.pin.next .pin-label {
+  font-size: 13px;
+  background: #5ccf2e;
+  color: #0c2408;
+}
+.pin.next .pin-label::before {
+  content: 'NEXT · ';
+  font-weight: 900;
 }
 .pin.selected .pin-icon {
   transform: scale(1.22);
@@ -1641,10 +1661,21 @@ input {
   margin-top: 8px;
   color: #ff8fc4;
 }
-.career-progress {
+.career-corner {
   position: fixed;
   right: clamp(16px, 3vw, 32px);
   bottom: calc(var(--nav-h) + 14px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.map-next {
+  padding: 10px 18px;
+  font-weight: 900;
+  font-style: italic;
+}
+.career-progress {
   padding: 8px 14px;
   border-radius: 999px;
   background: rgba(8, 8, 16, 0.75);
@@ -1666,4 +1697,119 @@ input {
   .ev-course {
     height: 80px;
   }
+}
+
+/* ---------- Home: quests ---------- */
+.home-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.home-card.mini {
+  min-height: 78px;
+  padding: 12px 14px;
+}
+.home-card.mini b {
+  font-size: 16px;
+}
+.home-card.mini .lv {
+  right: 12px;
+  bottom: 12px;
+  font-size: 16px;
+}
+.quests {
+  padding: 12px 14px;
+  border-radius: 6px;
+  border: 1px solid rgba(220, 160, 255, 0.35);
+  background: rgba(30, 10, 60, 0.82);
+  backdrop-filter: blur(8px);
+}
+.quests-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.quests-head b {
+  font-size: 18px;
+  font-weight: 900;
+  font-style: italic;
+  text-transform: uppercase;
+}
+.quests-head small {
+  color: #e6d6ff;
+  font-weight: 700;
+}
+#quest-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.quest {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.quest-text {
+  flex: 1;
+  min-width: 0;
+}
+.quest-text b {
+  display: block;
+  font-size: 14px;
+}
+.quest-text small {
+  display: block;
+  font-size: 11px;
+  color: #cbbce6;
+}
+.quest-bar {
+  display: block;
+  height: 5px;
+  margin-top: 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.quest-bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #19d3ff, #b46bff);
+}
+.quest.ready .quest-bar i {
+  background: linear-gradient(90deg, #ffd23d, #f29b12);
+}
+.quest-reward {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 11px;
+  color: #cbbce6;
+  white-space: nowrap;
+}
+.quest-reward b {
+  font-size: 13px;
+  color: var(--gold);
+}
+.quest .claim {
+  padding: 7px 10px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffd23d, #f29b12);
+  color: #2a1600;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+  animation: claim-glow 1.4s ease-in-out infinite;
+}
+@keyframes claim-glow {
+  50% {
+    box-shadow: 0 0 14px rgba(255, 210, 61, 0.8);
+  }
+}
+#quest-note:empty {
+  display: none;
 }

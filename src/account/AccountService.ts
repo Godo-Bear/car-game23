@@ -1,7 +1,9 @@
 import type { AdminRequest } from '../../shared/admin';
 import type { CareerStats, PlayerSettings, ProfileResponse, Purchase, RaceRecord, Wallet } from '../../shared/api';
 import { settleRace } from '../../shared/career';
-import { cleanWallet, newWallet, purchase } from '../../shared/economy';
+import { newWallet, purchase } from '../../shared/economy';
+import { claimQuest } from '../../shared/quests';
+import { cleanWallet } from '../../shared/wallet';
 
 /** 'no-database': the API Worker is deployed but its D1 binding is missing. */
 export type BackendStatus = 'unknown' | 'online' | 'offline' | 'no-database';
@@ -93,7 +95,7 @@ export class AccountService {
       const res = await this.call<{ wallet: Wallet }>('POST', '/api/shop', p);
       this.profile.wallet = res.wallet;
     } else {
-      const wallet = purchase(this.guest.wallet, p);
+      const wallet = p.kind === 'quest' ? claimQuest(this.guest.wallet, this.guest.stats, p.quest) : purchase(this.guest.wallet, p);
       if (typeof wallet === 'string') throw new ApiError(wallet, 400);
       this.guest.wallet = wallet;
       saveGuest(this.guest);

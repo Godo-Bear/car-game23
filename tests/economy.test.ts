@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { CAR_IDS } from '../shared/api';
 import {
   CAR_PRICES,
-  cleanWallet,
   MAX_UPGRADE,
   NO_UPGRADES,
   newWallet,
@@ -13,6 +12,7 @@ import {
   UPGRADE_PARTS,
   upgradeCost,
 } from '../shared/economy';
+import { cleanWallet } from '../shared/wallet';
 import { VehiclePhysics } from '../src/physics/VehiclePhysics';
 import { CARS, carStats, upgradedSpec } from '../src/vehicles/cars';
 
@@ -20,7 +20,7 @@ const race = { position: 1, fieldSize: 8, laps: 3, difficulty: 'normal' as const
 
 describe('economy', () => {
   it('starts you with the starter car and a little money', () => {
-    expect(newWallet()).toEqual({ credits: STARTING_CREDITS, owned: [STARTER_CAR], upgrades: {}, events: {} });
+    expect(newWallet()).toEqual({ credits: STARTING_CREDITS, owned: [STARTER_CAR], upgrades: {}, events: {}, quests: [] });
     expect(CAR_PRICES[STARTER_CAR]).toBe(0);
   });
 

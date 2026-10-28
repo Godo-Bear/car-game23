@@ -1,6 +1,6 @@
 /** Shared helpers for the account API handlers in server/api. */
 import type { CareerStats, ProfileResponse, RaceRecord, TrackId, Wallet } from '../shared/api';
-import { cleanWallet } from '../shared/economy';
+import { cleanWallet } from '../shared/wallet';
 
 export interface Env {
   /** Cloudflare D1 database for accounts (binding configured in wrangler.jsonc). */

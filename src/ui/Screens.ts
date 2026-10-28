@@ -1,6 +1,7 @@
 import type { CarId, PlayerSettings, TrackId } from '../../shared/api';
 import { bestResult, CAREER_EVENTS, careerEvent, eventUnlocked, nextEvent } from '../../shared/career';
 import { formatYen, raceReward, STARTER_CAR, upgradesOf } from '../../shared/economy';
+import { QUESTS, questDone, questsToShow } from '../../shared/quests';
 import { type AccountService, ApiError } from '../account/AccountService';
 import type { Input } from '../core/Input';
 import type { SettingsStore } from '../core/Settings';
@@ -128,9 +129,8 @@ export class Screens {
     if (panel === 'garage') this.garage.render();
     if (panel === 'career') {
       $('btn-race').focus({ preventScroll: true });
-      // Open on the selected (or next) event.
-      const e = careerEvent(this.selectedEvent) ?? nextEvent(this.account.wallet);
-      requestAnimationFrame(() => this.panMap(e.pin));
+      // Always open on the next event to race.
+      this.focusNext();
     }
     if (panel === 'home') $('home-quick').focus({ preventScroll: true });
     this.handlers.onHubPanel(panel);
@@ -176,7 +176,56 @@ export class Screens {
     $('home-car-lv').textContent = `LV ${levels}`;
     $('home-wins').textContent = `${a.stats.wins} win${a.stats.wins === 1 ? '' : 's'}`;
     $('home-car-kind').textContent = car.kind;
+    this.renderQuests();
     $('home-car-name').textContent = car.name;
+  }
+
+  /** Quests on the home screen: rewards to claim first, then the ones closest to done. */
+  private renderQuests(): void {
+    const a = this.account;
+    const wallet = a.wallet;
+    const shown = questsToShow(wallet, a.stats, 4);
+    $('quests-count').textContent = `${wallet.quests.length} / ${QUESTS.length} done`;
+    $('quest-list').replaceChildren(
+      ...(shown.length
+        ? shown.map((quest) => {
+            const done = questDone(quest, wallet, a.stats);
+            const have = Math.min(quest.goal, quest.progress(wallet, a.stats));
+            const li = document.createElement('li');
+            li.className = done ? 'quest ready' : 'quest';
+            li.innerHTML = `<div class="quest-text"><b>${escapeHtml(quest.name)}</b><small>${escapeHtml(quest.detail)}</small>
+              <span class="quest-bar"><i style="width:${(have / quest.goal) * 100}%"></i></span></div>`;
+            if (done) {
+              const claim = Object.assign(document.createElement('button'), {
+                type: 'button',
+                className: 'claim',
+                textContent: `CLAIM ${formatYen(quest.reward)}`,
+              });
+              claim.addEventListener('click', () => void this.claimQuest(quest.id, quest.reward));
+              li.append(claim);
+            } else {
+              li.append(
+                Object.assign(document.createElement('span'), {
+                  className: 'quest-reward',
+                  innerHTML: `${have}/${quest.goal}<b>${formatYen(quest.reward)}</b>`,
+                }),
+              );
+            }
+            return li;
+          })
+        : [Object.assign(document.createElement('li'), { className: 'quest muted', textContent: 'Every quest done — legend!' })]),
+    );
+  }
+
+  private async claimQuest(id: string, reward: number): Promise<void> {
+    const note = $('quest-note');
+    try {
+      await this.account.buy({ kind: 'quest', quest: id });
+      note.textContent = `+${formatYen(reward)} claimed!`;
+    } catch (e) {
+      note.textContent = e instanceof ApiError ? e.message : 'Could not claim that. Please try again.';
+    }
+    this.render();
   }
 
   /** Esc on the homescreen: back to Home. Returns false if there was nothing to go back from. */
@@ -311,10 +360,21 @@ export class Screens {
       const left = vw > 760 && card ? card.getBoundingClientRect().right : 0;
       this.mapPos = [left + (vw - left) / 2 - focus[0] * w, vh / 2 - focus[1] * h];
     }
-    const x = Math.min(0, Math.max(vw - w, this.mapPos[0] + dx));
-    const y = Math.min(0, Math.max(vh - h, this.mapPos[1] + dy));
+    // The picture may slide out from under the card and the top bar, so no pin stays hidden.
+    const card = document.querySelector<HTMLElement>('.event-card');
+    const maxX = vw > 760 && card ? card.getBoundingClientRect().right : 0;
+    const x = Math.min(maxX, Math.max(vw - w, this.mapPos[0] + dx));
+    const y = Math.min(90, Math.max(vh - h, this.mapPos[1] + dy));
     this.mapPos = [x, y];
     frame.style.transform = `translate(${x}px, ${y}px)`;
+  }
+
+  /** Pick the next event and bring its pin into view beside the event card. */
+  private focusNext(): void {
+    const e = nextEvent(this.account.wallet);
+    this.selectedEvent = e.id;
+    this.renderCareer();
+    requestAnimationFrame(() => this.panMap(e.pin));
   }
 
   /** Drag the map with the mouse or a finger (a short tap still picks a pin). */
@@ -501,6 +561,7 @@ export class Screens {
   // ---------- wiring ----------
   private wire(): void {
     $('btn-race').addEventListener('click', () => this.selectedEvent && this.startEvent(this.selectedEvent));
+    $('btn-map-next').addEventListener('click', () => this.focusNext());
     $('home-quick').addEventListener('click', () => this.startEvent(nextEvent(this.account.wallet).id));
     $('home-garage').addEventListener('click', () => this.showPanel('garage'));
     $('home-career').addEventListener('click', () => this.showPanel('profile'));
