@@ -627,11 +627,11 @@ input {
 }
 .hud-message {
   position: absolute;
-  top: 26%;
+  top: 22%;
   left: 0;
   right: 0;
   text-align: center;
-  font-size: clamp(36px, 8vw, 96px);
+  font-size: clamp(22px, 4vw, 48px);
   font-weight: 900;
   letter-spacing: 0.04em;
   opacity: 0;
@@ -651,12 +651,12 @@ input {
 }
 .hud-message.lights {
   color: #ff3b3b;
-  font-size: clamp(22px, 3.5vw, 40px);
+  font-size: clamp(18px, 2.6vw, 30px);
   letter-spacing: 0.3em;
   top: 14%;
 }
 .hud-message.small {
-  font-size: clamp(24px, 4vw, 44px);
+  font-size: clamp(16px, 2.4vw, 26px);
 }
 .minimap {
   position: absolute;
