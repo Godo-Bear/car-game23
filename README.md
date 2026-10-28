@@ -37,9 +37,10 @@ countryside, by day, at sunset or at night — running in the browser and hosted
   The AI race your car's class and the classes either side of it (a few the same as yours) in team
   colours, with their engines evened out a little toward your car's pace; your upgrades are yours
   alone, so tuning pays off.
-- **Admin panel:** *Career → Admin*, unlocked with the admin code. Look up any player (or list
+- **Admin panel:** *Profile → Admin*, unlocked with the admin code (it stays unlocked for the
+  account - or guest - that entered it on that device, until *Lock* is pressed). Look up any player (or list
   them all) and set their money, which cars they own and each car's upgrade levels. The server
-  checks the code on every request and locks a network address out for 15 minutes after 10 wrong
+  checks the code on every request (changes are saved to the player's account) and locks a network address out for 15 minutes after 10 wrong
   codes. Only a SHA-256 of the code is in this repository (`shared/admin.ts`); to use a private
   code instead, run `npx wrangler secret put ADMIN_CODE` (it replaces the built-in one). Without
   the backend, the panel edits this device's guest profile.
@@ -51,7 +52,9 @@ countryside, by day, at sunset or at night — running in the browser and hosted
   crashes that cost real speed. Drifts are assisted: there's no countersteering to do - once the
   car is sideways the game countersteers for you and you keep steering into the corner (more
   lock for more angle and a tighter line); centre the steering or lift off and it straightens
-  up and settles without fishtailing. The car carves toward
+  up and settles without fishtailing. A drift follows the road even flat out: the direction of
+  travel is swung round the bend ahead, speed is scrubbed off if the corner is too tight for it,
+  and a slide heading for the barrier is pushed back onto the road. The car carves toward
   where it is pointing instead of sliding wide into the barrier, and lifting off the throttle ends a drift
   cleanly (the rear grips up and the slide is reeled in). Steering calms down at speed, and with
   stability assist on a barrier assist nudges you away from walls you're about to hit.

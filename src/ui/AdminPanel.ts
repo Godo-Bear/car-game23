@@ -12,8 +12,13 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
  * Online it edits accounts through the server (which checks the code on every request);
  * without a server it edits this device's guest profile.
  */
+/** Remembered unlock: the admin code, tied to the account it was entered on (this device only). */
+const REMEMBER_KEY = 'tokyo-circuit.admin.v1';
+
 export class AdminPanel {
   private code = '';
+  /** Whose session the panel was unlocked in (an account's name, or "" for a guest). */
+  private codeUser = '';
   /** Who is being edited: an account's username, or null for this device's guest. */
   private target: string | null = null;
   private wallet: Wallet | null = null;
@@ -24,6 +29,10 @@ export class AdminPanel {
   ) {
     $('btn-admin').addEventListener('click', () => this.open());
     $('admin-close').addEventListener('click', () => this.close());
+    $('admin-lock').addEventListener('click', () => {
+      this.lock(true);
+      this.say('Locked. The admin code is no longer remembered on this device.');
+    });
     $('admin-unlock').addEventListener('submit', (e) => {
       e.preventDefault();
       void this.unlock();
@@ -64,11 +73,38 @@ export class AdminPanel {
     return this.account.backend === 'online';
   }
 
+  private get user(): string {
+    return this.account.signedIn ? this.account.displayName : '';
+  }
+
   open(): void {
     $('modal-admin').classList.remove('hidden');
     $('admin-msg').textContent = '';
-    if (!this.code) $('admin-code').focus();
+    // Unlocked in someone else's session (logged out or switched accounts): lock again.
+    if (this.code && this.codeUser !== this.user) this.lock(false);
     this.onOpenChange(true);
+    if (this.code) return;
+    // Stay unlocked for the account (or guest) that unlocked it on this device.
+    const saved = readRemembered();
+    if (saved && saved.user === this.user) void this.unlock(saved.code, true);
+    else $('admin-code').focus();
+  }
+
+  /** Forget the admin code (and this device's remembered unlock). */
+  private lock(forget: boolean): void {
+    this.code = '';
+    this.wallet = null;
+    if (forget) {
+      try {
+        localStorage.removeItem(REMEMBER_KEY);
+      } catch {
+        // Storage blocked: nothing was remembered.
+      }
+    }
+    $('admin-unlock').classList.remove('hidden');
+    $('admin-tools').classList.add('hidden');
+    $('admin-editor').classList.add('hidden');
+    $('admin-players').replaceChildren();
   }
 
   close(): void {
@@ -80,16 +116,23 @@ export class AdminPanel {
     $('admin-msg').textContent = text;
   }
 
-  private async unlock(): Promise<void> {
-    const code = $<HTMLInputElement>('admin-code').value;
+  private async unlock(code = $<HTMLInputElement>('admin-code').value, remembered = false): Promise<void> {
     try {
       if (this.online) await this.account.admin({ code, action: 'check' });
       else if (!(await isAdminCode(code))) throw new ApiError('Wrong admin code.', 403);
     } catch (e) {
+      // A remembered code that no longer works (e.g. it was changed) is forgotten.
+      if (remembered && e instanceof ApiError && e.status === 403) this.lock(true);
       this.say(e instanceof ApiError ? e.message : 'Could not check the code.');
       return;
     }
     this.code = code;
+    this.codeUser = this.user;
+    try {
+      localStorage.setItem(REMEMBER_KEY, JSON.stringify({ user: this.user, code }));
+    } catch {
+      // Storage blocked: it just won't be remembered.
+    }
     $<HTMLInputElement>('admin-code').value = '';
     $('admin-unlock').classList.add('hidden');
     $('admin-tools').classList.remove('hidden');
@@ -205,5 +248,14 @@ export class AdminPanel {
     } catch (e) {
       this.say(e instanceof ApiError ? e.message : 'Could not save.');
     }
+  }
+}
+
+function readRemembered(): { user: string; code: string } | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(REMEMBER_KEY) ?? 'null');
+    return v && typeof v.user === 'string' && typeof v.code === 'string' ? v : null;
+  } catch {
+    return null;
   }
 }

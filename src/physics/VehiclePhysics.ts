@@ -208,6 +208,11 @@ export class VehiclePhysics {
   private regrip = 1;
   /** Time left settling the car after a drift (see DRIFT_SETTLE_TIME). */
   private settleTime = 0;
+
+  /** Drifting, or just out of a drift and still settling. */
+  get sliding(): boolean {
+    return this.drifting || this.settleTime > 0;
+  }
   /** Straightening out of a drift: stays on until the drift ends (no flicking into a new one). */
   private straightening = false;
   /** Nitro tank 0..1 (starts full). */

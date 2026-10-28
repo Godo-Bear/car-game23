@@ -172,3 +172,42 @@ describe('AI respects the player', () => {
     });
   }
 });
+
+describe('Drift guide', () => {
+  /** Flat out at 180 km/h, handbrake flick before Tokyo's turn 1 and hold the drift. */
+  const driftIntoTurnOne = (steer: number) => {
+    const sim = new RaceSimulation(TOKYO_CIRCUIT, { opponents: 1, carSpec: CARS.gt.spec, playerAssist: 0.7 });
+    sim.startRace();
+    const tr = sim.track;
+    const p = sim.player.physics;
+    const s = tr.pointAt(200, 0);
+    p.place(s.x, s.z, s.heading, s.y);
+    const smp = tr.samples[tr.indexAtDistance(200)];
+    p.vx = smp.tx * 50;
+    p.vz = smp.tz * 50;
+    p.gear = 4;
+    tr.project(p.x, p.z, -1, sim.player.proj);
+    let impact = 0;
+    let flick = -1;
+    const input = neutralControls();
+    for (let t = 0; t < 5 && sim.player.proj.distance < 470; t += RaceSimulation.STEP) {
+      if (flick < 0 && sim.player.proj.distance >= 340) flick = t;
+      const since = flick < 0 ? -1 : t - flick;
+      input.throttle = 1;
+      input.handbrake = since >= 0 && since < 0.35;
+      input.steer = since >= 0 ? steer : 0;
+      sim.step(input);
+      impact = Math.max(impact, sim.player.impact);
+    }
+    return { impact, kmh: Math.hypot(p.vx, p.vz) * 3.6, distance: sim.player.proj.distance };
+  };
+
+  it('drifts cleanly through a tight corner at full speed instead of sliding into the wall', () => {
+    for (const steer of [1, 0.6]) {
+      const r = driftIntoTurnOne(steer);
+      expect(r.impact).toBeLessThan(3); // no wall hit
+      expect(r.kmh).toBeGreaterThan(90); // and the drift keeps its speed through the corner
+      expect(r.distance).toBeGreaterThan(450); // made it round
+    }
+  });
+});

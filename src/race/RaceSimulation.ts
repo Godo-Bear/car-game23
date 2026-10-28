@@ -1,7 +1,7 @@
 import type { Difficulty } from '../../shared/api';
 import { AIDriver, type AIProfile, type TrafficCar } from '../ai/AIDriver';
 import { RacingLine } from '../ai/RacingLine';
-import { clamp, createRng } from '../core/math';
+import { clamp, createRng, smoothstep, wrapAngle } from '../core/math';
 import { collideCars, collideWithWalls, type WallContact } from '../physics/Collisions';
 import { neutralControls, SPORTS_CAR, type VehicleControls, VehiclePhysics, type VehicleSpec } from '../physics/VehiclePhysics';
 import { createProjection, type TrackLayout, TrackPath, type TrackProjection } from '../track/TrackPath';
@@ -32,6 +32,16 @@ export interface AICar {
   /** Engine scale on top of the difficulty's. */
   power: number;
 }
+
+/**
+ * Drift guide: while the player is drifting, the direction of travel is swung toward the road a
+ * little way ahead, with up to this much extra cornering (m/s^2)...
+ */
+const DRIFT_GUIDE_ACCEL = 24;
+/** ...and if the bend is too tight for the speed, the slide scrubs off speed (m/s^2), like a real drift. */
+const DRIFT_GUIDE_SCRUB = 22;
+/** About to slide into a barrier: extra push back toward the road (m/s^2). */
+const DRIFT_GUIDE_WALL = 30;
 
 export const DEFAULT_SETTINGS: RaceSettings = {
   laps: 3,
@@ -237,6 +247,46 @@ export class RaceSimulation {
     return out;
   }
 
+  /**
+   * Drift guide: a drift follows the corner instead of sliding into the wall, even flat out. The
+   * travel direction (and the car with it, so the drift angle is kept) is swung toward a point on
+   * the road ahead, and speed is scrubbed when the bend is too tight to make at this speed.
+   */
+  private driftGuide(car: SimCar, dt: number): void {
+    const p = car.physics;
+    const speed = Math.hypot(p.vx, p.vz);
+    if (!(p.drifting || (p.sliding && Math.abs(p.driftAngle) > 0.08)) || speed < 12 || p.forwardSpeed < 5) return;
+    const pr = car.proj;
+    const look = clamp(speed * 0.75, 16, 55);
+    // Aim inside the barriers (pulled toward the middle of the road).
+    const limit = this.track.wallOffset - 2.5;
+    const target = this.track.pointAt(pr.distance + look, clamp(pr.lateral, -limit, limit) * 0.3);
+    const dir = Math.atan2(p.vx, p.vz);
+    let err = wrapAngle(Math.atan2(target.x - p.x, target.z - p.z) - dir);
+    const k = this.settings.playerAssist >= 0.3 ? 1 : 0.75;
+    let accel = DRIFT_GUIDE_ACCEL;
+    // Heading for a barrier within the next ~0.6 s: turn away from it harder.
+    const lateralSpeed = p.vx * pr.rx + p.vz * pr.rz;
+    const ahead = pr.lateral + lateralSpeed * 0.6;
+    // A car sliding sideways sticks out further: keep more room the bigger the drift angle.
+    const room = 1.6 + Math.abs(Math.sin(p.driftAngle)) * p.spec.halfLength;
+    const over = Math.abs(ahead) - (this.track.wallOffset - room);
+    if (over > 0 && lateralSpeed * ahead > 0) {
+      // Positive turn is to the left; the right-hand side is positive lateral.
+      const away = ahead > 0 ? 1 : -1;
+      if (Math.sign(err) !== away) err = away * Math.max(Math.abs(err), 0.2);
+      accel += DRIFT_GUIDE_WALL * clamp(over / 2, 0, 1);
+    }
+    const maxTurn = ((accel * k) / speed) * dt;
+    const turn = clamp(err, -maxTurn, maxTurn);
+    const scrub = DRIFT_GUIDE_SCRUB * k * Math.max(smoothstep(0.08, 0.4, Math.abs(err)), over > 0 ? 0.6 : 0);
+    const v = Math.max(Math.min(speed, 12), speed - scrub * dt);
+    const a = dir + turn;
+    p.vx = Math.sin(a) * v;
+    p.vz = Math.cos(a) * v;
+    p.heading += turn;
+  }
+
   /** Advance one fixed step. Returns lap/finish events produced during the step. */
   step(playerInput: VehicleControls): RaceEvent[] {
     const dt = RaceSimulation.STEP;
@@ -270,6 +320,7 @@ export class RaceSimulation {
       car.controls = controls;
       const slope = car.proj.slope * Math.cos(car.physics.heading - car.proj.heading);
       car.physics.step(controls, dt, slope);
+      if (car.isPlayer && !car.autopilot) this.driftGuide(car, dt);
     }
 
     for (let i = 0; i < this.cars.length; i++) {
