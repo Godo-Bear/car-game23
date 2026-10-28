@@ -42,7 +42,14 @@ const PAY_PER_LAP = 3500;
 export const NO_UPGRADES: Upgrades = { engine: 0, gearbox: 0, aero: 0, tyres: 0, suspension: 0, brakes: 0, diff: 0, nitro: 0 };
 
 export function newWallet(): Wallet {
-  return { credits: STARTING_CREDITS, owned: [STARTER_CAR], upgrades: {}, events: {}, quests: [] };
+  return {
+    credits: STARTING_CREDITS,
+    owned: [STARTER_CAR],
+    upgrades: {},
+    events: {},
+    quests: [],
+    daily: { day: '', races: 0, wins: 0, podiums: 0, laps: 0, night: 0, mountain: 0, hard: 0, tracks: [], claimed: [] },
+  };
 }
 
 /** Pay for a finished race: more for a better place, more laps, a harder field and more rivals. */
@@ -65,7 +72,7 @@ export function upgradesOf(wallet: Wallet, car: CarId): Upgrades {
 /** Apply a purchase, or say why it can't be made. Never changes `wallet`. */
 export function purchase(wallet: Wallet, p: Purchase): Wallet | string {
   // Quest rewards need the player's stats too: see claimQuest (shared/quests.ts).
-  if (p.kind === 'quest') return 'Not a shop purchase.';
+  if (p.kind === 'quest' || p.kind === 'daily') return 'Not a shop purchase.';
   if (!CAR_IDS.includes(p.car)) return 'Unknown car.';
   if (p.kind === 'car') {
     if (wallet.owned.includes(p.car)) return 'You already own this car.';

@@ -5,12 +5,16 @@ countryside, by day, at sunset or at night — running in the browser and hosted
 
 - **Core racing loop:** cinematic fly-in over the grid, F1-style start lights, lap counting, live
   positions, lap timing, 3–7 AI opponents, a slow-motion trackside finish shot and a results screen.
-- **Menu hub:** a bottom menu bar (*Home*, *Career*, *Garage*, *Shop*, *Profile*) with money,
-  profile and settings at the top. *Home* shows your car on a turntable under neon with quick
-  links (your next career event, Garage with its upgrade level, Profile & stats) and *Quests*:
-  14 goals across the game (first win, 10 races, tune 16 upgrades, lap times on every circuit,
-  buy 3 cars, every career event on the podium...) with progress bars and a cash reward to
-  claim when done (¥5,000 – ¥100,000; the server checks them against the account's stats).
+- **Menu hub:** a bottom menu bar (*Home*, *Career*, *Garage*, *Shop*, *Quests*, *Profile*) with
+  money, profile and settings at the top. *Home* shows your car on a turntable under neon with,
+  on the left: your next career event, Garage (upgrade level) and Profile cards, the featured
+  *mega quest* (tap it to open *Quests*) and today's *daily quests*.
+- **Quests:** *mega quests* are big goals that take a while (win 25 races, drive 300 laps, fully
+  upgrade a car, own every car, every career event on the podium...) paying ¥25,000 – ¥150,000;
+  *daily quests* are three small goals a day picked from a pool (finish 3 races, win one, a
+  night race, a mountain pass, two circuits, a Hard race...) that reset at midnight UTC. Finished
+  quests glow with a *Claim* button; the server checks every claim against the account's stats
+  and the day's races.
 - **Career map:** the whole game is a career. *Career* shows an aerial view of a Japanese city
   (downtown towers and Tokyo Tower, green outskirts, snowy mountains and Fuji behind) with 20
   events pinned on it - city races downtown, countryside races on the outskirts, mountain passes

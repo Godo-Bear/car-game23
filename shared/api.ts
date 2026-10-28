@@ -1,3 +1,4 @@
+import type { DailyProgress } from './quests';
 /** Request/response shapes shared by the game client (src/) and the Cloudflare Pages Functions (functions/). */
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
@@ -69,8 +70,10 @@ export interface Wallet {
   upgrades: Partial<Record<CarId, Upgrades>>;
   /** Career events raced: best finishing position per event id. */
   events: Record<string, number>;
-  /** Quests whose reward has been claimed (see shared/quests.ts). */
+  /** Mega quests whose reward has been claimed (see shared/quests.ts). */
   quests: string[];
+  /** Today's racing toward the daily quests. */
+  daily: DailyProgress;
 }
 
 export type UpgradePart = 'engine' | 'gearbox' | 'aero' | 'tyres' | 'suspension' | 'brakes' | 'diff' | 'nitro';
@@ -86,7 +89,11 @@ export interface ProfileResponse {
 }
 
 /** POST /api/shop: buy a car, or the next level of an upgrade for an owned car. */
-export type Purchase = { kind: 'car'; car: CarId } | { kind: 'upgrade'; car: CarId; part: UpgradePart } | { kind: 'quest'; quest: string };
+export type Purchase =
+  | { kind: 'car'; car: CarId }
+  | { kind: 'upgrade'; car: CarId; part: UpgradePart }
+  | { kind: 'quest'; quest: string }
+  | { kind: 'daily'; quest: string };
 
 export interface CredentialsRequest {
   username: string;

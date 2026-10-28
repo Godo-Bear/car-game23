@@ -1,5 +1,5 @@
 import { DIFFICULTIES, type RaceRecord, TRACK_IDS } from '../../shared/api';
-import { settleRace } from '../../shared/career';
+import { settleResult, todayKey } from '../../shared/quests';
 import { type ApiHandler, checkWrite, currentUser, fail, json, loadProfile, now, readJson, walletOf } from '../auth';
 
 const isInt = (v: unknown, lo: number, hi: number): v is number => Number.isInteger(v) && (v as number) >= lo && (v as number) <= hi;
@@ -36,8 +36,9 @@ export const races: ApiHandler = async (request, env) => {
   const t = now();
   const podium = r.position <= 3 ? 1 : 0;
   const win = r.position === 1 ? 1 : 0;
-  // Prize money, plus the career event (checked: unlocked and matching) and its bonus.
-  const settled = settleRace(walletOf(user), r);
+  // Prize money, the career event (checked: unlocked and matching) and its bonus, and the
+  // day's quest progress.
+  const settled = settleResult(walletOf(user), r, todayKey());
   if (typeof settled === 'string') return fail(400, settled);
   user.wallet = JSON.stringify(settled.wallet);
   await db.batch([

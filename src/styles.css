@@ -1740,7 +1740,7 @@ input {
   color: #e6d6ff;
   font-weight: 700;
 }
-#quest-list {
+ul.quest-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -1810,6 +1810,57 @@ input {
     box-shadow: 0 0 14px rgba(255, 210, 61, 0.8);
   }
 }
-#quest-note:empty {
+.quest-note:empty {
   display: none;
+}
+
+.quest.claimed {
+  opacity: 0.55;
+}
+.quest.claimed .quest-bar i {
+  background: #5ccf2e;
+}
+/* Home: the featured mega quest (opens the Quests tab). */
+.home-card.mega {
+  min-height: 92px;
+  padding: 14px 16px 12px;
+  background: linear-gradient(120deg, rgba(120, 30, 90, 0.92), rgba(200, 60, 140, 0.55));
+}
+.home-card.mega .quest-bar {
+  width: calc(100% - 96px);
+}
+.home-card.mega .lv {
+  font-size: 16px;
+  color: var(--gold);
+}
+.home-card.mega.ready {
+  border-color: #ffd23d;
+  animation: claim-glow 1.4s ease-in-out infinite;
+}
+.home-card.mega .tag {
+  background: #ff5fb0;
+  color: #fff;
+}
+/* The Quests tab: mega quests, then today's dailies underneath. */
+.quests-panel .panel {
+  width: min(640px, 100%);
+}
+.quests-panel .quests-head h2 {
+  margin: 0;
+  font-style: italic;
+  text-transform: uppercase;
+}
+.quests-panel .daily-head {
+  margin-top: 18px;
+}
+.quests-panel ul.quest-list {
+  gap: 10px;
+}
+.quests-panel .quest {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.mega-list .quest-text b {
+  font-size: 16px;
 }

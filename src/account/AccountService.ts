@@ -1,8 +1,7 @@
 import type { AdminRequest } from '../../shared/admin';
 import type { CareerStats, PlayerSettings, ProfileResponse, Purchase, RaceRecord, Wallet } from '../../shared/api';
-import { settleRace } from '../../shared/career';
 import { newWallet, purchase } from '../../shared/economy';
-import { claimQuest } from '../../shared/quests';
+import { claimDaily, claimQuest, settleResult, todayKey } from '../../shared/quests';
 import { cleanWallet } from '../../shared/wallet';
 
 /** 'no-database': the API Worker is deployed but its D1 binding is missing. */
@@ -95,7 +94,12 @@ export class AccountService {
       const res = await this.call<{ wallet: Wallet }>('POST', '/api/shop', p);
       this.profile.wallet = res.wallet;
     } else {
-      const wallet = p.kind === 'quest' ? claimQuest(this.guest.wallet, this.guest.stats, p.quest) : purchase(this.guest.wallet, p);
+      const wallet =
+        p.kind === 'quest'
+          ? claimQuest(this.guest.wallet, this.guest.stats, p.quest)
+          : p.kind === 'daily'
+            ? claimDaily(this.guest.wallet, p.quest, todayKey())
+            : purchase(this.guest.wallet, p);
       if (typeof wallet === 'string') throw new ApiError(wallet, 400);
       this.guest.wallet = wallet;
       saveGuest(this.guest);
@@ -198,7 +202,7 @@ export class AccountService {
     const trackBest = s.bestLaps[result.track];
     if (result.bestLap !== null && (trackBest === undefined || result.bestLap < trackBest)) s.bestLaps[result.track] = result.bestLap;
     s.totalLaps += result.laps;
-    const settled = settleRace(this.guest.wallet, result);
+    const settled = settleResult(this.guest.wallet, result, todayKey());
     if (typeof settled !== 'string') this.guest.wallet = settled.wallet;
     this.guest.recent = [{ ...result, createdAt: Math.floor(Date.now() / 1000) }, ...this.guest.recent].slice(0, 5);
     saveGuest(this.guest);

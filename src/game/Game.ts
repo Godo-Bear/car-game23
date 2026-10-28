@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { CarId, PlayerSettings, TimeOfDay, TrackId } from '../../shared/api';
-import { settleRace } from '../../shared/career';
 import { raceReward, upgradesOf } from '../../shared/economy';
+import { settleResult, todayKey } from '../../shared/quests';
 import { AccountService } from '../account/AccountService';
 import type { RacingLine } from '../ai/RacingLine';
 import { type CameraMode, ChaseCamera } from '../camera/ChaseCamera';
@@ -655,7 +655,7 @@ export class Game {
       ...(this.screens.raceEvent ? { event: this.screens.raceEvent } : {}),
     };
     // What this result pays (prize money, plus a career event's first-podium bonus).
-    const settled = settleRace(this.account.wallet, record);
+    const settled = settleResult(this.account.wallet, record, todayKey());
     const earned = typeof settled === 'string' ? raceReward(record) : settled.earned;
     const saving = this.account.recordRace(record);
     setTimeout(async () => {

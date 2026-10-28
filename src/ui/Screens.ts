@@ -1,7 +1,7 @@
-import type { CarId, PlayerSettings, TrackId } from '../../shared/api';
+import type { CarId, PlayerSettings, Purchase, TrackId } from '../../shared/api';
 import { bestResult, CAREER_EVENTS, careerEvent, eventUnlocked, nextEvent } from '../../shared/career';
 import { formatYen, raceReward, STARTER_CAR, upgradesOf } from '../../shared/economy';
-import { QUESTS, questDone, questsToShow } from '../../shared/quests';
+import { dailyFor, dailyQuests, MEGA_QUESTS, megaToShow, msUntilReset, todayKey } from '../../shared/quests';
 import { type AccountService, ApiError } from '../account/AccountService';
 import type { Input } from '../core/Input';
 import type { SettingsStore } from '../core/Settings';
@@ -28,7 +28,7 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   garage: {},
 };
 
-export type HubPanel = 'home' | 'career' | 'garage' | 'shop' | 'profile';
+export type HubPanel = 'home' | 'career' | 'garage' | 'shop' | 'quests' | 'profile';
 
 export interface ScreenHandlers {
   onRace(settings: PlayerSettings): void;
@@ -180,51 +180,69 @@ export class Screens {
     $('home-car-name').textContent = car.name;
   }
 
-  /** Quests on the home screen: rewards to claim first, then the ones closest to done. */
+  /** Quests: the featured mega quest and today's dailies on Home, and everything on the Quests tab. */
   private renderQuests(): void {
     const a = this.account;
     const wallet = a.wallet;
-    const shown = questsToShow(wallet, a.stats, 4);
-    $('quests-count').textContent = `${wallet.quests.length} / ${QUESTS.length} done`;
-    $('quest-list').replaceChildren(
-      ...(shown.length
-        ? shown.map((quest) => {
-            const done = questDone(quest, wallet, a.stats);
-            const have = Math.min(quest.goal, quest.progress(wallet, a.stats));
-            const li = document.createElement('li');
-            li.className = done ? 'quest ready' : 'quest';
-            li.innerHTML = `<div class="quest-text"><b>${escapeHtml(quest.name)}</b><small>${escapeHtml(quest.detail)}</small>
-              <span class="quest-bar"><i style="width:${(have / quest.goal) * 100}%"></i></span></div>`;
-            if (done) {
-              const claim = Object.assign(document.createElement('button'), {
-                type: 'button',
-                className: 'claim',
-                textContent: `CLAIM ${formatYen(quest.reward)}`,
-              });
-              claim.addEventListener('click', () => void this.claimQuest(quest.id, quest.reward));
-              li.append(claim);
-            } else {
-              li.append(
-                Object.assign(document.createElement('span'), {
-                  className: 'quest-reward',
-                  innerHTML: `${have}/${quest.goal}<b>${formatYen(quest.reward)}</b>`,
-                }),
-              );
-            }
-            return li;
-          })
-        : [Object.assign(document.createElement('li'), { className: 'quest muted', textContent: 'Every quest done — legend!' })]),
-    );
+    const day = todayKey();
+    const daily = dailyFor(wallet, day);
+    const left = msUntilReset();
+    const reset = `Resets in ${Math.floor(left / 3600000)}h ${Math.floor((left % 3600000) / 60000)}m`;
+    document.querySelectorAll('.daily-reset').forEach((el) => {
+      el.textContent = reset;
+    });
+    const dailies = dailyQuests(day).map((quest) => ({
+      name: quest.name,
+      detail: quest.detail,
+      reward: quest.reward,
+      goal: quest.goal,
+      have: Math.min(quest.goal, quest.progress(daily)),
+      claimed: daily.claimed.includes(quest.id),
+      claim: () => this.claimQuest({ kind: 'daily', quest: quest.id }, quest.reward),
+    }));
+    for (const id of ['daily-list', 'daily-list-full']) $(id).replaceChildren(...dailies.map((row) => questRow(row)));
+
+    const megas = megaToShow(wallet, a.stats);
+    const megaRows = megas.map((quest) => ({
+      name: quest.name,
+      detail: quest.detail,
+      reward: quest.reward,
+      goal: quest.goal,
+      have: Math.min(quest.goal, quest.progress(wallet, a.stats)),
+      claimed: false,
+      claim: () => this.claimQuest({ kind: 'quest', quest: quest.id }, quest.reward),
+    }));
+    const claimedMegas = MEGA_QUESTS.filter((quest) => wallet.quests.includes(quest.id)).map((quest) => ({
+      name: quest.name,
+      detail: quest.detail,
+      reward: quest.reward,
+      goal: quest.goal,
+      have: quest.goal,
+      claimed: true,
+      claim: () => undefined,
+    }));
+    $('mega-list').replaceChildren(...[...megaRows, ...claimedMegas].map((row) => questRow(row)));
+    $('mega-count').textContent = `${wallet.quests.length} / ${MEGA_QUESTS.length} done`;
+    // Home: the mega quest closest to done (or one to claim).
+    const top = megaRows[0];
+    $('home-mega-name').textContent = top ? top.name : 'All mega quests done!';
+    $('home-mega-detail').textContent = top ? `${top.detail} · ${top.have}/${top.goal}` : 'Legend.';
+    $('home-mega-bar').style.width = `${top ? (top.have / top.goal) * 100 : 100}%`;
+    $('home-mega-reward').textContent = top ? (top.have >= top.goal ? 'CLAIM ›' : formatYen(top.reward)) : '';
+    $('home-mega').classList.toggle('ready', !!top && top.have >= top.goal);
   }
 
-  private async claimQuest(id: string, reward: number): Promise<void> {
-    const note = $('quest-note');
+  private async claimQuest(p: Purchase, reward: number): Promise<void> {
+    let text: string;
     try {
-      await this.account.buy({ kind: 'quest', quest: id });
-      note.textContent = `+${formatYen(reward)} claimed!`;
+      await this.account.buy(p);
+      text = `+${formatYen(reward)} claimed!`;
     } catch (e) {
-      note.textContent = e instanceof ApiError ? e.message : 'Could not claim that. Please try again.';
+      text = e instanceof ApiError ? e.message : 'Could not claim that. Please try again.';
     }
+    document.querySelectorAll('.quest-note').forEach((el) => {
+      el.textContent = text;
+    });
     this.render();
   }
 
@@ -565,6 +583,7 @@ export class Screens {
     $('home-quick').addEventListener('click', () => this.startEvent(nextEvent(this.account.wallet).id));
     $('home-garage').addEventListener('click', () => this.showPanel('garage'));
     $('home-career').addEventListener('click', () => this.showPanel('profile'));
+    $('home-mega').addEventListener('click', () => this.showPanel('quests'));
     $('btn-garage-race').addEventListener('click', () => this.quickStart());
     $('btn-event-garage').addEventListener('click', () => this.showPanel('garage'));
     document
@@ -695,3 +714,35 @@ function courseMap(id: TrackId): string {
 
 const PADLOCK =
   '<svg class="lock" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V7a5 5 0 0 1 10 0v3h1a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V11a1 1 0 0 1 1-1h1Zm2 0h6V7a3 3 0 0 0-6 0v3Zm3 4a1.5 1.5 0 0 0-.8 2.8V19h1.6v-2.2A1.5 1.5 0 0 0 12 14Z" fill="currentColor"/></svg>';
+
+interface QuestRowData {
+  name: string;
+  detail: string;
+  reward: number;
+  goal: number;
+  have: number;
+  claimed: boolean;
+  claim(): unknown;
+}
+
+/** One quest: name, what to do, a progress bar, and its reward (or a Claim button when done). */
+function questRow(q: QuestRowData): HTMLLIElement {
+  const done = q.have >= q.goal;
+  const li = document.createElement('li');
+  li.className = q.claimed ? 'quest claimed' : done ? 'quest ready' : 'quest';
+  li.innerHTML = `<div class="quest-text"><b>${escapeHtml(q.name)}</b><small>${escapeHtml(q.detail)}</small>
+    <span class="quest-bar"><i style="width:${(q.have / q.goal) * 100}%"></i></span></div>`;
+  if (q.claimed) {
+    li.append(Object.assign(document.createElement('span'), { className: 'quest-reward', innerHTML: `<b>✓ ${formatYen(q.reward)}</b>` }));
+  } else if (done) {
+    const claim = Object.assign(document.createElement('button'), { type: 'button', className: 'claim', textContent: `CLAIM ${formatYen(q.reward)}` });
+    claim.addEventListener('click', (e) => {
+      e.stopPropagation();
+      void q.claim();
+    });
+    li.append(claim);
+  } else {
+    li.append(Object.assign(document.createElement('span'), { className: 'quest-reward', innerHTML: `${q.have}/${q.goal}<b>${formatYen(q.reward)}</b>` }));
+  }
+  return li;
+}
