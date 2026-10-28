@@ -78,19 +78,39 @@ describe('VehiclePhysics', () => {
     expect(car.speedKmh).toBeGreaterThan(70); // and it keeps its speed instead of scrubbing it off
   });
 
-  it('sets the drift angle with the steering: into the corner for more, centred for less', () => {
+  it('sets the drift angle with the steering: full lock for more, a little for less, centred to straighten', () => {
     const angleWith = (steer: number) => {
       const car = cruising(24);
       car.gear = 2;
       simulate(car, 3, (t) => input({ throttle: t > 0.5 ? 1 : 0.3, steer: t < 0.5 ? -0.8 : steer, handbrake: t > 0.1 && t < 0.5 }));
       return { slip: Math.abs(car.driftAngle), drifting: car.drifting };
     };
-    const into = angleWith(-1);
+    const full = angleWith(-1);
+    const gentle = angleWith(-0.45);
     const centred = angleWith(0);
-    expect(into.drifting && centred.drifting).toBe(true);
-    expect(into.slip).toBeGreaterThan(0.35);
-    expect(centred.slip).toBeGreaterThan(0.12);
-    expect(centred.slip).toBeLessThan(into.slip - 0.1);
+    expect(full.drifting && gentle.drifting).toBe(true);
+    expect(full.slip).toBeGreaterThan(0.4);
+    expect(gentle.slip).toBeGreaterThan(0.15);
+    expect(gentle.slip).toBeLessThan(full.slip - 0.1);
+    expect(centred.drifting).toBe(false);
+    expect(centred.slip).toBeLessThan(0.05);
+  });
+
+  it('settles quickly after a drift instead of wobbling', () => {
+    const car = cruising(30);
+    car.gear = 3;
+    let flipped = 0;
+    let settled: number | null = null;
+    simulate(car, 5, (t) => {
+      if (t > 2) {
+        flipped = Math.max(flipped, -car.driftAngle);
+        if (settled === null && !car.drifting && Math.abs(car.driftAngle) < 0.03 && Math.abs(car.yawRate) < 0.05) settled = t - 2;
+      }
+      return input({ throttle: t > 0.5 ? 1 : 0.3, steer: t < 2 ? -0.9 : 0, handbrake: t > 0.1 && t < 0.5 });
+    });
+    expect(settled).not.toBeNull();
+    expect(settled!).toBeLessThan(0.8);
+    expect(flipped).toBeLessThan(0.1); // barely swings the other way
   });
 
   it('straightens up without flicking the other way when you steer out of a drift', () => {

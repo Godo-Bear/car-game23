@@ -129,18 +129,18 @@ const DRIFT_REAR_GRIP = 0.82;
 /** Fraction of the body-slip angle fed back into the steering as automatic countersteer. */
 const DRIFT_COUNTERSTEER = 0.7;
 /** Body slip (rad) beyond which the drift limiter stops the car rotating further (~34 deg)... */
-const DRIFT_MAX_ANGLE = 0.6;
+const DRIFT_MAX_ANGLE = 0.7;
 /** ...tightening to ~24 deg at high speed, where a big angle would just scrub you into a wall. */
-const DRIFT_MAX_ANGLE_FAST = 0.42;
+const DRIFT_MAX_ANGLE_FAST = 0.5;
 /**
  * Drift carve (1/s): while sliding, the direction of travel is steadily pulled toward where the
  * car is pointing, so a drift follows the corner instead of sliding wide. Stronger at speed.
  */
-const DRIFT_CARVE = 1.1;
+const DRIFT_CARVE = 2;
 const DRIFT_CARVE_FAST = 3.2;
 /** Most extra cornering (m/s^2) the carve may add, so it helps without feeling on rails. */
-const DRIFT_CARVE_ACCEL = 2.5;
-const DRIFT_CARVE_ACCEL_FAST = 5.5;
+const DRIFT_CARVE_ACCEL = 4.5;
+const DRIFT_CARVE_ACCEL_FAST = 7.5;
 /**
  * Recovery: lifting off the throttle (handbrake released) ends a drift. The rear tyres find
  * their grip again over ~1/DRIFT_REGRIP s while the slide is straightened out at this rate (1/s).
@@ -149,14 +149,18 @@ const DRIFT_REGRIP = 3.5;
 const DRIFT_RECOVER = 2.2;
 /**
  * Drift assist: once a drift is going (handbrake released), the countersteer is done for you
- * and the steering sets the drift angle instead - into the corner for more angle (up to
- * DRIFT_ANGLE_MAX), centred for a medium drift, away from it to straighten up. The car's
- * rotation is steered toward that angle at DRIFT_HOLD (1/s), converging at DRIFT_HOLD_GAIN.
+ * and the steering sets the drift angle instead - a little into the corner for a gentle slide,
+ * full lock for the most angle (DRIFT_ANGLE_MAX). Centring the steering (or lifting off) ends
+ * the drift and straightens the car up. The car's rotation is steered toward the wanted angle at
+ * DRIFT_HOLD (1/s), converging at DRIFT_HOLD_GAIN.
  */
-const DRIFT_ANGLE_MIN = 0.05;
-const DRIFT_ANGLE_MID = 0.26;
-const DRIFT_ANGLE_MAX = 0.5;
-const DRIFT_ANGLE_MAX_FAST = 0.4;
+const DRIFT_ANGLE_MIN = 0.24;
+const DRIFT_ANGLE_MAX = 0.6;
+const DRIFT_ANGLE_MAX_FAST = 0.46;
+/** Steering into the slide below this (centred or away) means "straighten up". */
+const DRIFT_HOLD_STEER = 0.2;
+/** After a drift ends, yaw and sideways slip are settled for this long (s), so it doesn't wobble. */
+const DRIFT_SETTLE_TIME = 0.9;
 const DRIFT_HOLD = 16;
 const DRIFT_HOLD_GAIN = 4;
 /** Nitro tank refill (tanks per second): slowly on its own, quickly while drifting. */
@@ -202,6 +206,10 @@ export class VehiclePhysics {
   private travelDir: number | null = null;
   /** 0..1 how far the rear has regained its grip after a drift (1 = fully). */
   private regrip = 1;
+  /** Time left settling the car after a drift (see DRIFT_SETTLE_TIME). */
+  private settleTime = 0;
+  /** Straightening out of a drift: stays on until the drift ends (no flicking into a new one). */
+  private straightening = false;
   /** Nitro tank 0..1 (starts full). */
   nitro = 1;
   /** Nitro firing this step (for flames, sound and camera). */
@@ -244,6 +252,8 @@ export class VehiclePhysics {
     this.drifting = false;
     this.driftAngle = 0;
     this.regrip = 1;
+    this.settleTime = 0;
+    this.straightening = false;
     this.nitroActive = false;
   }
 
@@ -305,14 +315,21 @@ export class VehiclePhysics {
     if (input.handbrake && u > 8) this.drifting = true;
     // Lifting off with the handbrake released means "straighten up": the rear regrips and the
     // slide is reeled in, so a drift ends where you want it to instead of in a spin.
-    const recovering = this.drifting && !input.handbrake && throttle < 0.3;
+    // Steering into the slide holds the drift; centred or away from it straightens up.
+    const intoSlide = clamp(-input.steer * (Math.sign(bodySlip) || 1), -1, 1);
+    if (input.handbrake || !this.drifting) this.straightening = false;
+    const recovering = this.drifting && !input.handbrake && (this.straightening || throttle < 0.3 || intoSlide < DRIFT_HOLD_STEER);
+    if (recovering) this.straightening = true;
     if (input.handbrake) this.regrip = 0;
     else if (!this.drifting) this.regrip = 1;
     else if (recovering) this.regrip = Math.min(1, this.regrip + DRIFT_REGRIP * dt);
     if (this.drifting) {
       const settled = Math.abs(bodySlip) < (recovering ? 0.16 : 0.1) && !input.handbrake;
       this.driftSettle = settled ? this.driftSettle + dt : 0;
-      if (this.driftSettle > (recovering ? 0.15 : 0.35) || u < 4) this.drifting = false;
+      if (this.driftSettle > (recovering ? 0.15 : 0.35) || u < 4) {
+        this.drifting = false;
+        this.settleTime = DRIFT_SETTLE_TIME;
+      }
     }
 
     // ---- Steering ----
@@ -490,9 +507,8 @@ export class VehiclePhysics {
       } else if (!input.handbrake) {
         // Drift assist: hold the angle the steering asks for (no countersteering needed).
         const side = Math.sign(bodySlip) || 1;
-        const into = clamp(-input.steer * side, -1, 1);
         const most = lerp(DRIFT_ANGLE_MAX, DRIFT_ANGLE_MAX_FAST, fast);
-        const want = side * (into >= 0 ? lerp(DRIFT_ANGLE_MID, most, into) : lerp(DRIFT_ANGLE_MID, DRIFT_ANGLE_MIN, -into));
+        const want = side * lerp(DRIFT_ANGLE_MIN, most, (intoSlide - DRIFT_HOLD_STEER) / (1 - DRIFT_HOLD_STEER));
         const slipNow = Math.atan2(wNew, uNew);
         // The travel direction turns at `turn`; rotating the body at turn - gain * error makes
         // the slip angle settle on the wanted one.
@@ -503,6 +519,13 @@ export class VehiclePhysics {
       this.travelDir = this.heading - Math.atan2(wNew, uNew);
     } else {
       this.travelDir = null;
+      if (this.settleTime > 0 && !input.handbrake && uNew > 3) {
+        // Just out of a drift: calm the rotation and the leftover slide so it doesn't fishtail.
+        const k = Math.min(1, 6 * dt * (this.settleTime / DRIFT_SETTLE_TIME));
+        r = lerp(r, (-uNew * Math.tan(delta)) / L, k);
+        wNew -= wNew * k * 0.7;
+      }
+      this.settleTime = Math.max(0, this.settleTime - dt);
     }
 
     // Low-speed kinematic blend.

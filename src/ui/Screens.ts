@@ -273,8 +273,10 @@ export class Screens {
         img.addEventListener('load', () => (img.style.visibility = ''));
         const label = document.createElement('span');
         label.className = 'label';
+        b.insertAdjacentHTML('beforeend', courseMap(t.id));
         label.innerHTML = `<b>${t.short}</b><small>${t.label} · ${trackLengthKm(t.id).toFixed(2)} km</small>`;
-        b.append(img, label);
+        b.prepend(img);
+        b.append(label);
         b.addEventListener('click', () => this.update({ track: t.id }, false));
         return b;
       }),
@@ -427,12 +429,58 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
 
-const lengths = new Map<TrackId, number>();
-function trackLengthKm(id: TrackId): number {
-  let km = lengths.get(id);
-  if (km === undefined) {
-    km = new TrackPath(TRACKS[id].layout).length / 1000;
-    lengths.set(id, km);
+const paths = new Map<TrackId, TrackPath>();
+function trackPath(id: TrackId): TrackPath {
+  let path = paths.get(id);
+  if (!path) {
+    path = new TrackPath(TRACKS[id].layout);
+    paths.set(id, path);
   }
-  return km;
+  return path;
+}
+
+function trackLengthKm(id: TrackId): number {
+  return trackPath(id).length / 1000;
+}
+
+/**
+ * The course you'll race, as an SVG map like the in-race minimap (north up): the road, a
+ * start/finish line and an arrow showing which way round it goes.
+ */
+function courseMap(id: TrackId): string {
+  const track = trackPath(id);
+  const W = 100;
+  const H = 62;
+  const pad = 7;
+  const b = track.bounds;
+  const scale = Math.min((W - pad * 2) / (b.maxX - b.minX), (H - pad * 2) / (b.maxZ - b.minZ));
+  const ox = W / 2 - ((b.minX + b.maxX) / 2) * scale;
+  const oz = H / 2 - ((b.minZ + b.maxZ) / 2) * scale;
+  const at = (i: number) => {
+    const s = track.samples[i % track.count];
+    return [ox + s.x * scale, oz + s.z * scale];
+  };
+  const step = Math.max(1, Math.floor(track.count / 220));
+  const pts: string[] = [];
+  for (let i = 0; i < track.count; i += step)
+    pts.push(
+      at(i)
+        .map((v) => v.toFixed(1))
+        .join(','),
+    );
+  const d = `M${pts.join('L')}Z`;
+  const s0 = track.samples[0];
+  const [sx, sy] = at(0);
+  const startAngle = (Math.atan2(s0.tz, s0.tx) * 180) / Math.PI;
+  // Direction arrow a little way after the start.
+  const a = Math.floor(track.count * 0.06);
+  const [ax, ay] = at(a);
+  const sa = track.samples[a];
+  const arrowAngle = (Math.atan2(sa.tz, sa.tx) * 180) / Math.PI;
+  return `<svg class="course" viewBox="0 0 ${W} ${H}" aria-hidden="true">
+    <path d="${d}" fill="none" stroke="rgba(0,0,0,0.65)" stroke-width="5" stroke-linejoin="round"/>
+    <path d="${d}" fill="none" stroke="#eef0fa" stroke-width="2.4" stroke-linejoin="round"/>
+    <rect x="-0.8" y="-3.4" width="1.6" height="6.8" fill="#ff2d6f" transform="translate(${sx.toFixed(1)} ${sy.toFixed(1)}) rotate(${startAngle.toFixed(0)})"/>
+    <path d="M2.6 0 L-1.6 -2.2 L-0.6 0 L-1.6 2.2 Z" fill="#19d3ff" transform="translate(${ax.toFixed(1)} ${ay.toFixed(1)}) rotate(${arrowAngle.toFixed(0)})"/>
+  </svg>`;
 }

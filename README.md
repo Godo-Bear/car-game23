@@ -5,7 +5,7 @@ countryside, by day, at sunset or at night — running in the browser and hosted
 
 - **Core racing loop:** cinematic fly-in over the grid, F1-style start lights, lap counting, live
   positions, lap timing, 3–7 AI opponents, a slow-motion trackside finish shot and a results screen.
-- **Menu hub (Dirt 5 style):** *Race* (circuit cards with preview pictures, time of day, laps,
+- **Menu hub (Dirt 5 style):** *Race* (circuit cards with a map of each course, time of day, laps,
   opponents, difficulty), *Garage*, *Shop*, *Career* and *Settings* tabs over a live homescreen:
   the field racing over the Hakone pass on a sunny day, filmed with TV-style camera shots.
 - **Career:** you start with ¥3,000 and the Mame 1.3 starter car. Every finished race pays prize
@@ -40,8 +40,9 @@ countryside, by day, at sunset or at night — running in the browser and hosted
 - **Vehicle physics:** semi-simulation bicycle model — tyre slip, weight transfer, 6-speed automatic
   gearbox, handbrake drifting with skid marks and tyre smoke, stability control, slipstream, and
   crashes that cost real speed. Drifts are assisted: there's no countersteering to do - once the
-  car is sideways the game countersteers for you and the steering sets the drift angle (into the
-  corner for more, centred for less, away to straighten up, never a spin). The car carves toward
+  car is sideways the game countersteers for you and you keep steering into the corner (more
+  lock for more angle and a tighter line); centre the steering or lift off and it straightens
+  up and settles without fishtailing. The car carves toward
   where it is pointing instead of sliding wide into the barrier, and lifting off the throttle ends a drift
   cleanly (the rear grips up and the slide is reeled in). Steering calms down at speed, and with
   stability assist on a barrier assist nudges you away from walls you're about to hit.

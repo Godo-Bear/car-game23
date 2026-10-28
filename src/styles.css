@@ -916,6 +916,20 @@ input {
 .track-card:hover img {
   transform: scale(1.05);
 }
+/* The course map over a dimmed picture of the circuit. */
+.track-card img {
+  filter: brightness(0.42) saturate(0.8);
+}
+.track-card .course {
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  top: 3%;
+  width: 92%;
+  height: 64%;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+}
 .track-card .label {
   position: absolute;
   left: 0;
