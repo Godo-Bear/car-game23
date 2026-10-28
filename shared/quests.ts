@@ -1,5 +1,5 @@
 import type { CareerStats, RaceRecord, Wallet } from './api';
-import { CAREER_EVENTS, careerEvent, settleRace } from './career';
+import { CAREER_EVENTS, careerEvent, MAX_STARS, raceDriftPoints, type Settled, settleRace, totalStars } from './career';
 import { CAR_PRICES, MAX_UPGRADE, UPGRADE_PARTS } from './economy';
 
 /**
@@ -45,8 +45,11 @@ export const MEGA_QUESTS: Quest[] = [
   q('podiums-50', 'Podium machine', 'Finish on the podium 50 times', 60000, 50, (_, s) => s.podiums),
   q('laps-300', 'Road warrior', 'Drive 300 laps', 70000, 300, (_, s) => s.totalLaps),
   q('races-100', 'Marathon', 'Finish 100 races', 80000, 100, (_, s) => s.races),
+  q('stars-30', 'Star collector', 'Earn 30 career stars', 60000, 30, totalStars),
+  q('drift-100k', 'Drift king', 'Score 100,000 drift points', 60000, 100_000, (w) => w.dpTotal),
   q('career-20', 'Legend', 'Get every career event on the podium', 100000, CAREER_EVENTS.length, careerPodiums),
   q('cars-all', 'Full garage', 'Own every car', 150000, Object.keys(CAR_PRICES).length - 1, carsBought),
+  q('stars-all', 'Perfectionist', 'Earn every career star', 200000, CAREER_EVENTS.length * MAX_STARS, totalStars),
 ];
 
 export const QUEST_IDS = MEGA_QUESTS.map((x) => x.id);
@@ -83,6 +86,8 @@ export interface DailyProgress {
   night: number;
   mountain: number;
   hard: number;
+  /** Drift points scored today. */
+  drift: number;
   /** Circuits raced today. */
   tracks: string[];
   /** Daily quests claimed today. */
@@ -118,6 +123,7 @@ export const DAILY_POOL: DailyQuest[] = [
   dq('d-mountain', 'Touge run', 'Race on a mountain pass', 3000, 1, (d) => d.mountain),
   dq('d-tracks-2', 'Road trip', 'Race on 2 different circuits', 3500, 2, (d) => d.tracks.length),
   dq('d-hard', 'No mercy', 'Finish a race on Hard', 4000, 1, (d) => d.hard),
+  dq('d-drift', 'Sideways', 'Score 3,000 drift points', 3500, 3000, (d) => d.drift),
 ];
 
 export const DAILY_COUNT = 3;
@@ -134,7 +140,7 @@ export function msUntilReset(ms = Date.now()): number {
 }
 
 export function freshDaily(day: string): DailyProgress {
-  return { day, races: 0, wins: 0, podiums: 0, laps: 0, night: 0, mountain: 0, hard: 0, tracks: [], claimed: [] };
+  return { day, races: 0, wins: 0, podiums: 0, laps: 0, night: 0, mountain: 0, hard: 0, drift: 0, tracks: [], claimed: [] };
 }
 
 /** The wallet's progress for `day` (a new day starts from zero). */
@@ -170,6 +176,7 @@ export function recordDaily(wallet: Wallet, r: RaceRecord, day: string): Wallet 
       night: d.night + (night ? 1 : 0),
       mountain: d.mountain + (MOUNTAIN_TRACKS.includes(r.track) ? 1 : 0),
       hard: d.hard + (r.difficulty === 'hard' ? 1 : 0),
+      drift: d.drift + raceDriftPoints(r),
       tracks: d.tracks.includes(r.track) ? d.tracks : [...d.tracks, r.track],
     },
   };
@@ -186,7 +193,7 @@ export function claimDaily(wallet: Wallet, id: string, day: string): Wallet | st
 }
 
 /** A finished race: prize money and career event (see settleRace), plus the day's quests. */
-export function settleResult(wallet: Wallet, r: RaceRecord, day: string): ReturnType<typeof settleRace> {
+export function settleResult(wallet: Wallet, r: RaceRecord, day: string): Settled | string {
   const settled = settleRace(wallet, r);
   if (typeof settled === 'string') return settled;
   return { ...settled, wallet: recordDaily(settled.wallet, r, day) };

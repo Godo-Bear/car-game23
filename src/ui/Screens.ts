@@ -1,6 +1,7 @@
-import type { CarId, PlayerSettings, Purchase, TrackId } from '../../shared/api';
-import { bestResult, CAREER_EVENTS, careerEvent, eventUnlocked, nextEvent } from '../../shared/career';
+import type { CarId, CarSetup, PlayerSettings, Purchase, TrackId } from '../../shared/api';
+import { bestResult, CAREER_EVENTS, careerEvent, eventUnlocked, MAX_STARS, nextEvent, STAR_BONUS, starTimes, totalStars } from '../../shared/career';
 import { formatYen, raceReward, STARTER_CAR, upgradesOf } from '../../shared/economy';
+import { formatDp } from '../../shared/items';
 import { dailyFor, dailyQuests, MEGA_QUESTS, megaToShow, msUntilReset, todayKey } from '../../shared/quests';
 import { type AccountService, ApiError } from '../account/AccountService';
 import type { Input } from '../core/Input';
@@ -8,7 +9,7 @@ import type { SettingsStore } from '../core/Settings';
 import { formatTime, type RacerState } from '../race/RaceManager';
 import { TrackPath } from '../track/TrackPath';
 import { TRACKS } from '../track/tracks';
-import { CARS } from '../vehicles/cars';
+import { CARS, carSetup } from '../vehicles/cars';
 import { AdminPanel } from './AdminPanel';
 import { GarageScreen } from './GarageScreen';
 import { SettingsPanel, type SettingsTab } from './SettingsPanel';
@@ -37,6 +38,8 @@ export interface ScreenHandlers {
   onHubPanel(panel: HubPanel): void;
   /** The shop is showing a car (on the turntable). */
   onPreviewCar(id: CarId): void;
+  /** The shop is trying a cosmetic on your car. */
+  onTryOn(setup: CarSetup): void;
   onResume(): void;
   onRestart(): void;
   onQuit(): void;
@@ -48,6 +51,14 @@ export interface ResultsData {
   standings: RacerState[];
   playerId: number;
   colors: string[];
+}
+
+/** What a finished race paid. */
+export interface RaceReward {
+  earned: number;
+  /** Career event: stars this run, how many are new, and the event's star times. */
+  event?: { stars: number; newStars: number; times: number[]; bonus: number };
+  dp: number;
 }
 
 type AuthMode = 'login' | 'register';
@@ -87,11 +98,13 @@ export class Screens {
       account,
       (id) => this.handlers.onPreviewCar(id),
       (id) => this.update({ car: id }, true),
+      () => carSetup(this.settings.car, this.settings.garage),
+      (setup) => this.handlers.onTryOn(setup),
     );
     this.buildPins();
     this.wireMapDrag();
     this.wire();
-    this.admin = new AdminPanel(account, () => this.handlers.onModalChange(this.isModalOpen));
+    this.admin = new AdminPanel(account);
     // Money, cars and upgrades change with purchases, race results and the admin tools.
     account.onChange(() => {
       // An admin may have taken away the car you were going to race.
@@ -99,12 +112,14 @@ export class Screens {
       this.renderProfile();
       this.garage.render();
       this.shop.render();
+      // Signed in or out on the profile page: the Admin tab follows the account.
+      if (this.homeVisible && this.panelName === 'profile') this.admin.onProfileOpen();
     });
   }
 
   // ---------- visibility ----------
   get isModalOpen(): boolean {
-    return !$('modal-auth').classList.contains('hidden') || this.panel.isOpen || this.admin?.isOpen;
+    return !$('modal-auth').classList.contains('hidden') || this.panel.isOpen;
   }
 
   get homeVisible(): boolean {
@@ -133,6 +148,7 @@ export class Screens {
       this.focusNext();
     }
     if (panel === 'home') $('home-quick').focus({ preventScroll: true });
+    if (panel === 'profile') this.admin.onProfileOpen();
     this.handlers.onHubPanel(panel);
     // After the turntable is set up, so the shop's first car replaces yours on it.
     if (panel === 'shop') this.shop.open();
@@ -168,7 +184,7 @@ export class Screens {
     const car = CARS[s.car];
     const next = nextEvent(a.wallet);
     $('home-quick-name').textContent = next.name;
-    $('home-quick-info').textContent = `${TRACKS[next.track].name} · ${next.laps} laps · ${next.difficulty}`;
+    $('home-quick-info').textContent = `${TRACKS[next.track].name} · ${next.laps} laps · ${starText(a.wallet.stars[next.id] ?? 0)}`;
     $('home-quick').style.backgroundImage =
       `linear-gradient(100deg, rgba(20, 8, 40, 0.92) 30%, rgba(20, 8, 40, 0.35)), url(previews/${next.track}-${next.timeOfDay}.jpg)`;
     $('home-car').textContent = car.name;
@@ -226,7 +242,7 @@ export class Screens {
     // Home: the mega quest closest to done (or one to claim).
     const top = megaRows[0];
     $('home-mega-name').textContent = top ? top.name : 'All mega quests done!';
-    $('home-mega-detail').textContent = top ? `${top.detail} · ${top.have}/${top.goal}` : 'Legend.';
+    $('home-mega-detail').textContent = top ? `${top.detail} · ${short(top.have)}/${short(top.goal)}` : 'Legend.';
     $('home-mega-bar').style.width = `${top ? (top.have / top.goal) * 100 : 100}%`;
     $('home-mega-reward').textContent = top ? (top.have >= top.goal ? 'CLAIM ›' : formatYen(top.reward)) : '';
     $('home-mega').classList.toggle('ready', !!top && top.have >= top.goal);
@@ -268,11 +284,23 @@ export class Screens {
   }
 
   // ---------- results ----------
-  showResults(data: ResultsData, savedText: string, earned: number): void {
+  showResults(data: ResultsData, savedText: string, reward: RaceReward): void {
     const me = data.standings.find((r) => r.id === data.playerId)!;
     const title = $('results-title');
     title.textContent = me.position === 1 ? 'P1 — Victory!' : me.position <= 3 ? `P${me.position} — Podium!` : `P${me.position} — Finished`;
-    $('results-earned').textContent = `+${formatYen(earned)} prize money`;
+    $('results-earned').textContent = `+${formatYen(reward.earned)}${reward.event?.bonus ? ' (incl. podium bonus)' : ''}`;
+    const extra: string[] = [];
+    if (reward.event) {
+      const { stars, newStars, times } = reward.event;
+      const next = times[stars];
+      extra.push(
+        `<span class="res-stars">${starText(stars)}</span>${newStars ? ` <b>+${newStars} new · ${formatYen(newStars * STAR_BONUS)}</b>` : ''}${
+          next !== undefined ? ` <small class="muted">next ★ under ${formatTime(next)}</small>` : ''
+        }`,
+      );
+    }
+    if (reward.dp > 0) extra.push(`<span class="res-dp">+${formatDp(reward.dp)}</span>`);
+    $('results-extra').innerHTML = extra.map((x) => `<div>${x}</div>`).join('');
     this.renderResultsTable(data);
     $('results-saved').textContent = savedText;
     $('screen-results').classList.remove('hidden');
@@ -324,12 +352,15 @@ export class Screens {
     }
     $('career-status').textContent = status;
     $('money').textContent = formatYen(a.wallet.credits);
+    $('dp-balance').textContent = a.wallet.dp.toLocaleString('en-US');
     this.renderHome();
     const s = a.stats;
     $('stat-races').textContent = String(s.races);
     $('stat-wins').textContent = String(s.wins);
     $('stat-podiums').textContent = String(s.podiums);
     $('stat-laps').textContent = String(s.totalLaps);
+    $('stat-stars').textContent = String(totalStars(a.wallet));
+    $('stat-dp').textContent = a.wallet.dpTotal.toLocaleString('en-US');
     $('best-laps').replaceChildren(
       ...Object.values(TRACKS).map((t) => {
         const li = document.createElement('li');
@@ -440,7 +471,7 @@ export class Screens {
         b.dataset.event = e.id;
         b.style.left = `${e.pin[0] * 100}%`;
         b.style.top = `${e.pin[1] * 100}%`;
-        b.innerHTML = `<span class="pin-icon"><span class="pin-num">${k + 1}</span>${PADLOCK}</span><span class="pin-label">${escapeHtml(e.name)}</span>`;
+        b.innerHTML = `<span class="pin-icon"><span class="pin-num">${k + 1}</span>${PADLOCK}</span><span class="pin-stars"></span><span class="pin-label">${escapeHtml(e.name)}</span>`;
         b.addEventListener('click', () => {
           this.selectedEvent = e.id;
           this.renderCareer();
@@ -464,6 +495,8 @@ export class Screens {
       b.dataset.medal = best === undefined || best > 3 ? '' : String(best);
       b.classList.toggle('next', id === next.id && open);
       b.classList.toggle('selected', id === this.selectedEvent);
+      const stars = wallet.stars[id] ?? 0;
+      b.querySelector('.pin-stars')!.textContent = open && best !== undefined ? starText(stars) : '';
     });
     const e = careerEvent(this.selectedEvent) ?? next;
     const k = CAREER_EVENTS.indexOf(e);
@@ -476,9 +509,20 @@ export class Screens {
     $('ev-course').innerHTML = courseMap(e.track);
     const time = { day: '☀ Day', sunset: '🌇 Sunset', night: '🌙 Night' }[e.timeOfDay];
     $('ev-chips').replaceChildren(
-      ...[time, `${e.laps} laps`, `${e.rivals} rivals`, e.difficulty].map((t) => Object.assign(document.createElement('span'), { textContent: t })),
+      ...[time, `${e.laps} laps`, `${e.rivals} rivals`].map((t) => Object.assign(document.createElement('span'), { textContent: t })),
     );
-    const win = raceReward({ position: 1, fieldSize: e.rivals + 1, laps: e.laps, difficulty: e.difficulty });
+    // Star time limits: finish inside them (any difficulty) for up to three stars.
+    const have = wallet.stars[e.id] ?? 0;
+    $('ev-stars').replaceChildren(
+      ...starTimes(e).map((t, i) => {
+        const span = document.createElement('span');
+        span.className = i < have ? 'on' : '';
+        span.innerHTML = `<b>${'★'.repeat(i + 1)}</b>${formatTime(t).replace(/\.\d+$/, '')}`;
+        span.title = `Finish in under ${formatTime(t)}`;
+        return span;
+      }),
+    );
+    const win = raceReward({ position: 1, fieldSize: e.rivals + 1, laps: e.laps, difficulty: this.settings.difficulty });
     const claimed = best !== undefined && best <= 3;
     $('ev-reward').innerHTML = `Win <b>${formatYen(win)}</b> · ${claimed ? 'podium bonus claimed ✓' : `first podium bonus <b>${formatYen(e.bonus)}</b>`}`;
     $('ev-best').textContent = best === undefined ? 'Not raced yet' : `Best finish: P${best}`;
@@ -488,7 +532,7 @@ export class Screens {
     race.textContent = open ? 'START EVENT ▶' : '🔒 LOCKED';
     $('ev-locked').textContent = open ? '' : `Finish “${CAREER_EVENTS[k - 1].name}” on the podium to unlock.`;
     const done = CAREER_EVENTS.filter((ev) => (bestResult(wallet, ev.id) ?? 99) <= 3).length;
-    $('career-progress').textContent = `${done} / ${CAREER_EVENTS.length} events on the podium`;
+    $('career-progress').textContent = `${done} / ${CAREER_EVENTS.length} podiums · ★ ${totalStars(wallet)} / ${CAREER_EVENTS.length * MAX_STARS}`;
     this.renderSegs();
   }
 
@@ -505,13 +549,13 @@ export class Screens {
     });
   }
 
-  /** Race a career event (if it's unlocked): its circuit, time, laps, rivals and difficulty. */
+  /** Race a career event (if it's unlocked): its circuit, time, laps and rivals, on your difficulty. */
   startEvent(id: string): void {
     const e = careerEvent(id);
     if (!e || !eventUnlocked(this.account.wallet, id)) return;
     this.raceEvent = id;
     this.selectedEvent = id;
-    this.update({ track: e.track, timeOfDay: e.timeOfDay, laps: e.laps, opponents: e.rivals, difficulty: e.difficulty }, false);
+    this.update({ track: e.track, timeOfDay: e.timeOfDay, laps: e.laps, opponents: e.rivals }, false);
     this.handlers.onRace(this.settings);
   }
 
@@ -642,7 +686,6 @@ export class Screens {
         if (e.code !== 'Escape') return;
         if (!$('modal-auth').classList.contains('hidden')) this.closeAuth();
         else if (this.panel.isOpen) this.panel.close();
-        else if (this.admin.isOpen) this.admin.close();
         else return;
         e.stopImmediatePropagation();
         this.input.clearActions();
@@ -650,6 +693,16 @@ export class Screens {
       true,
     );
   }
+}
+
+/** Progress counts: "41k" for big numbers. */
+function short(n: number): string {
+  return n >= 10_000 ? `${Math.floor(n / 1000)}k` : String(n);
+}
+
+/** "★★☆" */
+function starText(n: number): string {
+  return '★'.repeat(n) + '☆'.repeat(MAX_STARS - n);
 }
 
 function escapeHtml(s: string): string {
@@ -742,7 +795,9 @@ function questRow(q: QuestRowData): HTMLLIElement {
     });
     li.append(claim);
   } else {
-    li.append(Object.assign(document.createElement('span'), { className: 'quest-reward', innerHTML: `${q.have}/${q.goal}<b>${formatYen(q.reward)}</b>` }));
+    li.append(
+      Object.assign(document.createElement('span'), { className: 'quest-reward', innerHTML: `${short(q.have)}/${short(q.goal)}<b>${formatYen(q.reward)}</b>` }),
+    );
   }
   return li;
 }

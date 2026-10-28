@@ -1,6 +1,7 @@
 import { CAR_IDS, TRACK_IDS, type Upgrades, type Wallet } from './api';
-import { CAREER_EVENT_IDS } from './career';
+import { CAREER_EVENT_IDS, MAX_STARS } from './career';
 import { MAX_UPGRADE, newWallet, STARTER_CAR, UPGRADE_PARTS } from './economy';
+import { ITEM_IDS } from './items';
 import { DAILY_POOL, freshDaily, QUEST_IDS } from './quests';
 
 /*
@@ -33,6 +34,15 @@ export function cleanWallet(raw: unknown): Wallet {
   for (const [id, pos] of Object.entries(rawEvents)) {
     if (CAREER_EVENT_IDS.includes(id) && Number.isInteger(pos) && (pos as number) >= 1 && (pos as number) <= 12) events[id] = pos as number;
   }
+  const stars: Wallet['stars'] = {};
+  const rawStars = r.stars && typeof r.stars === 'object' ? (r.stars as Record<string, unknown>) : {};
+  for (const [id, n] of Object.entries(rawStars)) {
+    if (CAREER_EVENT_IDS.includes(id) && Number.isInteger(n) && (n as number) >= 1 && (n as number) <= MAX_STARS) stars[id] = n as number;
+  }
+  const amount = (v: unknown) => (Number.isInteger(v) && (v as number) >= 0 ? Math.min(v as number, 1e9) : 0);
+  const dp = amount(r.dp);
+  const dpTotal = Math.max(dp, amount(r.dpTotal));
+  const items = Array.isArray(r.items) ? ITEM_IDS.filter((id) => (r.items as unknown[]).includes(id)) : [];
   const quests = Array.isArray(r.quests) ? QUEST_IDS.filter((id) => (r.quests as unknown[]).includes(id)) : [];
   // Today's daily quest progress (counts are whole numbers, lists of known ids).
   const d = r.daily && typeof r.daily === 'object' ? (r.daily as Record<string, unknown>) : {};
@@ -47,11 +57,12 @@ export function cleanWallet(raw: unknown): Wallet {
     night: count(d.night),
     mountain: count(d.mountain),
     hard: count(d.hard),
+    drift: Number.isInteger(d.drift) && (d.drift as number) >= 0 ? Math.min(d.drift as number, 1e7) : 0,
     tracks: ids(d.tracks, TRACK_IDS),
     claimed: ids(
       d.claimed,
       DAILY_POOL.map((x) => x.id),
     ),
   };
-  return { credits, owned, upgrades, events, quests, daily };
+  return { credits, owned, upgrades, events, quests, daily, stars, dp, dpTotal, items };
 }

@@ -1,4 +1,4 @@
-import { type AdminPlayer, type AdminRequest, isAdminCode, normaliseAdminCode } from '../../shared/admin';
+import { type AdminPlayer, type AdminRequest, cleanAdminStats, isAdminCode, normaliseAdminCode } from '../../shared/admin';
 import { cleanWallet } from '../../shared/wallet';
 import {
   type ApiHandler,
@@ -7,6 +7,8 @@ import {
   fail,
   isLockedOut,
   json,
+  loadProfile,
+  now,
   readJson,
   recordFailedLogin,
   timingSafeEqual,
@@ -16,8 +18,9 @@ import {
 } from '../auth';
 
 /**
- * POST /api/admin  { code, action: 'check' | 'list' | 'get' | 'set', username?, wallet? }
- * Look up any player and set their money, cars and upgrades. Every request carries the admin
+ * POST /api/admin  { code, action: 'check' | 'list' | 'get' | 'set' | 'stats', username?, wallet?, stats? }
+ * Look up any player and set their wallet (money, DP, cars, upgrades, items, career, quests) or
+ * their career stats. Every request carries the admin
  * code; wrong codes are counted per network address and lock it out like failed sign-ins.
  */
 export const admin: ApiHandler = async (request, env) => {
@@ -51,7 +54,9 @@ export const admin: ApiHandler = async (request, env) => {
     }
     case 'get': {
       const user = await find(body.username);
-      return user ? json(player(user)) : fail(404, 'No player with that name.');
+      if (!user) return fail(404, 'No player with that name.');
+      const { stats } = await loadProfile(db, user);
+      return json({ ...player(user), stats: { races: stats.races, wins: stats.wins, podiums: stats.podiums, totalLaps: stats.totalLaps } });
     }
     case 'set': {
       const user = await find(body.username);
@@ -59,6 +64,21 @@ export const admin: ApiHandler = async (request, env) => {
       const wallet = cleanWallet(body.wallet);
       await db.prepare('UPDATE users SET wallet = ? WHERE id = ?').bind(JSON.stringify(wallet), user.id).run();
       return json({ username: user.username, wallet });
+    }
+    case 'stats': {
+      const user = await find(body.username);
+      if (!user) return fail(404, 'No player with that name.');
+      const stats = cleanAdminStats(body.stats);
+      if (!stats) return fail(400, 'Stats must be whole numbers, with wins ≤ podiums ≤ races.');
+      await db
+        .prepare(
+          `INSERT INTO stats (user_id, races, wins, podiums, best_lap, total_laps, updated_at) VALUES (?, ?, ?, ?, NULL, ?, ?)
+           ON CONFLICT(user_id) DO UPDATE SET races = excluded.races, wins = excluded.wins, podiums = excluded.podiums,
+             total_laps = excluded.total_laps, updated_at = excluded.updated_at`,
+        )
+        .bind(user.id, stats.races, stats.wins, stats.podiums, stats.totalLaps, now())
+        .run();
+      return json({ username: user.username, stats });
     }
     default:
       return fail(400, 'Unknown action.');

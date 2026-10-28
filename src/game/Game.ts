@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { CarId, PlayerSettings, TimeOfDay, TrackId } from '../../shared/api';
+import type { CarId, CarSetup, PlayerSettings, TimeOfDay, TrackId } from '../../shared/api';
+import { careerEvent, starTimes } from '../../shared/career';
 import { raceReward, upgradesOf } from '../../shared/economy';
 import { settleResult, todayKey } from '../../shared/quests';
 import { AccountService } from '../account/AccountService';
@@ -17,7 +18,7 @@ import type { TrackPath } from '../track/TrackPath';
 import { TRACKS } from '../track/tracks';
 import { Hud } from '../ui/Hud';
 import { Minimap } from '../ui/Minimap';
-import { type HubPanel, Screens } from '../ui/Screens';
+import { type HubPanel, type RaceReward, Screens } from '../ui/Screens';
 import { CarModel } from '../vehicles/CarModel';
 import { AI_LIVERIES, aiField, CARS, carSetup, randomPlate, upgradedSpec } from '../vehicles/cars';
 import { loadCarAsset, loadCarAssets, onCarAssetLoaded } from '../vehicles/importedCars';
@@ -117,6 +118,7 @@ export class Game {
         onSettingsChanged: (settings, car) => this.onSettingsChanged(settings, car),
         onHubPanel: (panel) => this.onHubPanel(panel),
         onPreviewCar: (id) => this.onPreviewCar(id),
+        onTryOn: (setup) => this.onTryOn(setup),
         onResume: () => this.setPaused(false),
         onRestart: () => void this.startRace(this.screens.settings),
         onQuit: () => void this.goHome(),
@@ -221,6 +223,15 @@ export class Game {
     // Park the field on the grid for the turntable (and put your car back after a shop preview).
     if (was === 'shop' || (this.showroom && !wasShowroom)) this.createSimulation(this.homeRaceSettings(), true);
     if (!this.showroom && wasShowroom) this.startAttract();
+  }
+
+  /** Shop: your car on the turntable with a cosmetic tried on. */
+  private onTryOn(setup: CarSetup): void {
+    const id = this.screens.settings.car;
+    if (this.state !== 'home' || this.hubPanel !== 'shop') return;
+    this.carModels[0].build(CARS[id], setup);
+    // Light the nitro so a flame colour can be seen.
+    this.carModels[0].showFlames = !!setup.flame;
   }
 
   /** Shop: show a car on the turntable in its factory paint. */
@@ -333,7 +344,7 @@ export class Game {
     const playerModel = this.playerModel;
     playerModel.root.add(this.headlight, this.headlight.target);
     this.headlight.position.set(0, 0.75, playerModel.frontZ + 0.25);
-    this.effectCars = this.sim.cars.map((c, i) => ({ car: c, root: this.carModels[i].root }));
+    this.effectCars = this.sim.cars.map((c, i) => ({ car: c, root: this.carModels[i].root, look: this.carModels[i] }));
     this.effects.clear();
     this.feedback.reset();
     this.syncCarModels(1, 0);
@@ -652,15 +663,24 @@ export class Game {
       difficulty: settings.difficulty,
       totalTime: me.finishTime,
       bestLap: me.bestLapTime,
+      driftPoints: this.feedback.driftPoints,
       ...(this.screens.raceEvent ? { event: this.screens.raceEvent } : {}),
     };
-    // What this result pays (prize money, plus a career event's first-podium bonus).
+    // What this result pays (prize money, a career event's first-podium and star bonuses, drift points).
     const settled = settleResult(this.account.wallet, record, todayKey());
-    const earned = typeof settled === 'string' ? raceReward(record) : settled.earned;
+    const ev = careerEvent(record.event);
+    const reward: RaceReward =
+      typeof settled === 'string'
+        ? { earned: raceReward(record), dp: 0 }
+        : {
+            earned: settled.earned,
+            dp: settled.dp,
+            ...(ev ? { event: { stars: settled.stars, newStars: settled.newStars, times: starTimes(ev), bonus: settled.bonus } } : {}),
+          };
     const saving = this.account.recordRace(record);
     setTimeout(async () => {
       if (this.state !== 'finished') return;
-      this.screens.showResults(this.resultsData(), 'Saving result…', earned);
+      this.screens.showResults(this.resultsData(), 'Saving result…', reward);
       const where = await saving;
       if (this.state !== 'finished') return;
       this.screens.setResultsSaved(

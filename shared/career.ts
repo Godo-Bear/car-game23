@@ -3,8 +3,10 @@ import { raceReward } from './economy';
 
 /**
  * The career: a fixed run of events across every circuit, pinned on the city map. Each one sets
- * the circuit, time, laps, rivals and difficulty; a podium unlocks the next, and the first podium
- * on an event pays a bonus on top of the prize money. Shared by the game and the Worker.
+ * the circuit, time, laps and rivals; you pick the difficulty (harder pays more). A podium on any
+ * difficulty unlocks the next event, and the first podium pays a bonus on top of the prize money.
+ * Finishing inside an event's time limits earns up to three stars, each paying a star bonus once.
+ * Shared by the game and the Worker.
  */
 export interface CareerEvent {
   id: string;
@@ -14,6 +16,7 @@ export interface CareerEvent {
   laps: number;
   /** AI rivals (the field is rivals + you). */
   rivals: number;
+  /** Suggested difficulty (any can be chosen). */
   difficulty: Difficulty;
   /** Paid once, for the first podium. */
   bonus: number;
@@ -81,19 +84,89 @@ export function nextEvent(wallet: Wallet): CareerEvent {
   return CAREER_EVENTS.find((e) => eventUnlocked(wallet, e.id) && !((wallet.events[e.id] ?? 99) <= 3)) ?? CAREER_EVENTS[CAREER_EVENTS.length - 1];
 }
 
-/** Does a race result match the event it claims to be? */
-export function matchesEvent(e: CareerEvent, r: Pick<RaceRecord, 'track' | 'laps' | 'difficulty' | 'fieldSize'>): boolean {
-  return r.track === e.track && r.laps === e.laps && r.difficulty === e.difficulty && r.fieldSize === e.rivals + 1;
+/** Does a race result match the event it claims to be? (Any difficulty counts.) */
+export function matchesEvent(e: CareerEvent, r: Pick<RaceRecord, 'track' | 'laps' | 'fieldSize'>): boolean {
+  return r.track === e.track && r.laps === e.laps && r.fieldSize === e.rivals + 1;
+}
+
+// ---------------------------------------------------------------- stars
+
+/**
+ * Par lap per circuit in seconds: the AI's typical lap in a stock car on Normal (measured from
+ * simulated races). Star time limits are a race's worth of par laps, stretched a little.
+ */
+export const PAR_LAP: Record<TrackId, number> = {
+  tokyo: 81,
+  osaka: 98,
+  yokohama: 94,
+  hakone: 93,
+  irohazaka: 101,
+  haruna: 79,
+  niseko: 77,
+  sakura: 77,
+  arashiyama: 83,
+  izu: 77,
+};
+/** Slack on par for one, two and three stars. */
+const STAR_SLACK = [1.4, 1.18, 1.04];
+/** Money for each star the first time it's earned. */
+export const STAR_BONUS = 1500;
+export const MAX_STARS = 3;
+
+/** Finishing times (seconds) for one, two and three stars on an event. */
+export function starTimes(e: CareerEvent): number[] {
+  return STAR_SLACK.map((k) => Math.round(PAR_LAP[e.track] * e.laps * k));
+}
+
+/** Stars for a finishing time (0 for no time, or one too fast to be real). */
+export function starsFor(e: CareerEvent, totalTime: number | null | undefined): number {
+  if (typeof totalTime !== 'number' || totalTime < PAR_LAP[e.track] * e.laps * 0.6) return 0;
+  return starTimes(e).filter((t) => totalTime <= t).length;
+}
+
+/** All stars earned on the career. */
+export function totalStars(wallet: Wallet): number {
+  return Object.values(wallet.stars).reduce((a, b) => a + b, 0);
+}
+
+// ---------------------------------------------------------------- drift points
+
+/** Most drift points a race can score per second of racing (sanity cap on reported scores). */
+export const DRIFT_CAP_PER_SECOND = 900;
+
+/** The drift points a result is worth, capped by how long the race took. */
+export function raceDriftPoints(r: Pick<RaceRecord, 'driftPoints' | 'totalTime' | 'laps'>): number {
+  const dp = r.driftPoints;
+  if (typeof dp !== 'number' || !Number.isFinite(dp) || dp <= 0) return 0;
+  const seconds = typeof r.totalTime === 'number' ? r.totalTime : r.laps * 60;
+  return Math.floor(Math.min(dp, seconds * DRIFT_CAP_PER_SECOND));
+}
+
+export interface Settled {
+  wallet: Wallet;
+  /** Money paid in total. */
+  earned: number;
+  /** First-podium bonus (part of earned). */
+  bonus: number;
+  /** Stars this run earned, and how many of them are new (each paid STAR_BONUS, part of earned). */
+  stars: number;
+  newStars: number;
+  /** Drift points banked. */
+  dp: number;
 }
 
 /**
  * Pay for a finished race and record it on the career: prize money, plus the event's bonus for a
- * first podium. Returns an error message for an event that is locked or doesn't match.
+ * first podium and a bonus per new star, and the race's drift points. Returns an error message
+ * for an event that is locked or doesn't match.
  */
-export function settleRace(wallet: Wallet, r: RaceRecord): { wallet: Wallet; earned: number; bonus: number } | string {
+export function settleRace(wallet: Wallet, r: RaceRecord): Settled | string {
   let earned = raceReward(r);
   let bonus = 0;
+  let stars = 0;
+  let newStars = 0;
   let events = wallet.events;
+  let starMap = wallet.stars;
   if (r.event !== undefined) {
     const e = careerEvent(r.event);
     if (!e) return 'Unknown event.';
@@ -101,8 +174,20 @@ export function settleRace(wallet: Wallet, r: RaceRecord): { wallet: Wallet; ear
     if (!matchesEvent(e, r)) return 'That result does not match the event.';
     const before = wallet.events[e.id];
     if (r.position <= 3 && !(before !== undefined && before <= 3)) bonus = e.bonus;
-    earned += bonus;
     events = { ...events, [e.id]: Math.min(before ?? 99, r.position) };
+    stars = starsFor(e, r.totalTime);
+    const had = wallet.stars[e.id] ?? 0;
+    newStars = Math.max(0, stars - had);
+    if (newStars) starMap = { ...starMap, [e.id]: stars };
+    earned += bonus + newStars * STAR_BONUS;
   }
-  return { wallet: { ...wallet, credits: wallet.credits + earned, events }, earned, bonus };
+  const dp = raceDriftPoints(r);
+  return {
+    wallet: { ...wallet, credits: wallet.credits + earned, events, stars: starMap, dp: wallet.dp + dp, dpTotal: wallet.dpTotal + dp },
+    earned,
+    bonus,
+    stars,
+    newStars,
+    dp,
+  };
 }

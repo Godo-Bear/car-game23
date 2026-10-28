@@ -1,4 +1,5 @@
 import { CAR_IDS, type CarId, type Difficulty, type Purchase, type RaceRecord, type UpgradePart, type Upgrades, type Wallet } from './api';
+import { shopItem } from './items';
 
 /**
  * The career economy, shared by the game (guest profiles) and the Worker (accounts), so prices
@@ -48,7 +49,11 @@ export function newWallet(): Wallet {
     upgrades: {},
     events: {},
     quests: [],
-    daily: { day: '', races: 0, wins: 0, podiums: 0, laps: 0, night: 0, mountain: 0, hard: 0, tracks: [], claimed: [] },
+    daily: { day: '', races: 0, wins: 0, podiums: 0, laps: 0, night: 0, mountain: 0, hard: 0, drift: 0, tracks: [], claimed: [] },
+    stars: {},
+    dp: 0,
+    dpTotal: 0,
+    items: [],
   };
 }
 
@@ -73,6 +78,17 @@ export function upgradesOf(wallet: Wallet, car: CarId): Upgrades {
 export function purchase(wallet: Wallet, p: Purchase): Wallet | string {
   // Quest rewards need the player's stats too: see claimQuest (shared/quests.ts).
   if (p.kind === 'quest' || p.kind === 'daily') return 'Not a shop purchase.';
+  if (p.kind === 'item') {
+    const item = shopItem(p.item);
+    if (!item) return 'Unknown item.';
+    if (wallet.items.includes(item.id)) return 'You already own this.';
+    if (item.currency === 'dp') {
+      if (wallet.dp < item.price) return 'Not enough drift points.';
+      return { ...wallet, dp: wallet.dp - item.price, items: [...wallet.items, item.id] };
+    }
+    if (wallet.credits < item.price) return 'Not enough money.';
+    return { ...wallet, credits: wallet.credits - item.price, items: [...wallet.items, item.id] };
+  }
   if (!CAR_IDS.includes(p.car)) return 'Unknown car.';
   if (p.kind === 'car') {
     if (wallet.owned.includes(p.car)) return 'You already own this car.';

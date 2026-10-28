@@ -25,4 +25,12 @@ describe('car setup validation', () => {
     // A Japanese plate saved by the previous version: the default takes its place.
     expect(cleanCarSetup({ ...base, plate: { region: '品川', kana: 'さ', number: 1 } })?.plate).toBe(DEFAULT_PLATE);
   });
+
+  it('keeps fitted shop items only when they are known and of the right kind', () => {
+    const setup = cleanCarSetup({ ...base, glow: 'glow-blue', flame: 'smoke-red', smoke: 'smoke-pink' });
+    expect(setup?.glow).toBe('glow-blue');
+    expect(setup?.flame).toBeUndefined();
+    expect(setup?.smoke).toBe('smoke-pink');
+    expect(cleanCarSetup({ ...base, finish: 'chrome' })?.finish).toBe('chrome');
+  });
 });

@@ -13,6 +13,8 @@ import type { Sparks } from '../vehicles/Sparks';
  */
 export class RaceFeedback {
   private driftScore = 0;
+  /** Drift points banked this race (each drift counts once it ends cleanly). */
+  private banked = 0;
   private driftQuiet = 0;
   private wrongWayTime = 0;
   private kerbPhase = 0;
@@ -31,10 +33,16 @@ export class RaceFeedback {
 
   reset(): void {
     this.driftScore = 0;
+    this.banked = 0;
     this.driftQuiet = 0;
     this.wrongWayTime = 0;
     this.sparks.clear();
     this.audio.surface(0, 0);
+  }
+
+  /** Drift points scored this race, including a drift still going (call at the finish). */
+  get driftPoints(): number {
+    return Math.round(this.banked + (this.driftScore >= 100 ? this.driftScore : 0));
   }
 
   /** Silence continuous sounds (menus, pause). */
@@ -105,7 +113,10 @@ export class RaceFeedback {
     } else if (this.driftScore > 0) {
       this.driftQuiet += dt;
       if (this.driftQuiet > 0.6) {
-        if (this.driftScore >= 100) this.hud.showMessage(`+${Math.round(this.driftScore).toLocaleString('en-US')} DRIFT`, 1.6, 'gold');
+        if (this.driftScore >= 100) {
+          this.banked += this.driftScore;
+          this.hud.showMessage(`+${Math.round(this.driftScore).toLocaleString('en-US')} DP`, 1.6, 'gold');
+        }
         this.driftScore = 0;
       }
     }

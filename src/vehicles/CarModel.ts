@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { CarSetup, TimeOfDay } from '../../shared/api';
+import { shopItem } from '../../shared/items';
 import { damp, lerp, wrapAngle } from '../core/math';
 import type { SimCar } from '../race/RaceSimulation';
 import type { BodyDef, CarDef } from './cars';
@@ -41,6 +42,7 @@ const cache = new Map<string, BodyGeometry>();
 let parts: Record<'headlight' | 'exhaust' | 'taillight' | 'box' | 'number' | 'plate' | 'shadow' | 'beam', THREE.BufferGeometry> | null = null;
 let shadowTexture: THREE.Texture | null = null;
 let beamTexture: THREE.Texture | null = null;
+let glowTexture: THREE.Texture | null = null;
 let flame: { geometry: THREE.BufferGeometry; material: THREE.Material } | null = null;
 
 /** A blue nitro flame pointing backwards from the exhaust (bright enough to bloom). */
@@ -691,6 +693,9 @@ const FINISHES: Record<CarSetup['finish'], THREE.MeshPhysicalMaterialParameters>
   metallic: { metalness: 0.6, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.08 },
   matte: { metalness: 0.08, roughness: 0.72, clearcoat: 0 },
   pearl: { metalness: 0.35, roughness: 0.26, clearcoat: 1, clearcoatRoughness: 0.05, iridescence: 0.7, iridescenceIOR: 1.6 },
+  satin: { metalness: 0.45, roughness: 0.5, clearcoat: 0.4, clearcoatRoughness: 0.45 },
+  candy: { metalness: 0.75, roughness: 0.18, clearcoat: 1, clearcoatRoughness: 0.02, sheen: 0.6, sheenRoughness: 0.3 },
+  chrome: { metalness: 1, roughness: 0.06, clearcoat: 1, clearcoatRoughness: 0.02 },
 };
 
 interface Wheel {
@@ -713,6 +718,12 @@ export class CarModel {
   private readonly shadow: THREE.Mesh;
   /** Nitro flames, one per exhaust. */
   private readonly flames: THREE.Mesh[] = [];
+  /** Neon light on the road under the car (a shop item). */
+  private readonly underglow: THREE.Mesh;
+  /** Tyre smoke colour fitted from the shop (null: plain white smoke). */
+  smokeColor: THREE.Color | null = null;
+  /** Keep the nitro flames lit (the shop showing off a flame colour). */
+  showFlames = false;
   private owned: (THREE.Material | THREE.Texture)[] = [];
   /** What the car was last built as (rebuilt when its model file arrives). */
   private def: CarDef | null = null;
@@ -738,7 +749,15 @@ export class CarModel {
     this.beam.position.y = 0.05;
     this.beam.renderOrder = 2;
     this.beam.userData.noAO = true;
-    this.root.add(this.shadow, this.beam);
+    glowTexture ??= radialTexture('rgba(255,255,255,1)', 'rgba(255,255,255,0)');
+    this.underglow = new THREE.Mesh(
+      p.shadow,
+      new THREE.MeshBasicMaterial({ map: glowTexture, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }),
+    );
+    this.underglow.position.y = 0.04;
+    this.underglow.renderOrder = 2;
+    this.underglow.userData.noAO = true;
+    this.root.add(this.shadow, this.beam, this.underglow);
     const f = getFlame();
     for (let i = 0; i < 2; i++) {
       const mesh = new THREE.Mesh(f.geometry, f.material);
@@ -765,12 +784,14 @@ export class CarModel {
     this.wheels = [];
     this.def = def;
     this.setup = setup;
+    this.showFlames = false;
 
     const own = <T extends THREE.Material | THREE.Texture>(x: T): T => {
       this.owned.push(x);
       return x;
     };
     this.brakeMat = own(new THREE.MeshBasicMaterial({ color: new THREE.Color(1.4, 0.04, 0.05) }));
+    this.fitItems(setup, own);
     this.reverseMat = own(new THREE.MeshBasicMaterial({ color: 0x333333 }));
     const asset = carAsset(def.id);
     if (asset) {
@@ -815,7 +836,23 @@ export class CarModel {
     // The rear wheels never steer and spin together, so they are one axle.
     wheel(0, b.rearAxle, false, geo.rear);
     this.shadow.scale.set(b.width + 0.75, 1, geo.frontZ - geo.rearZ + 1);
+    this.underglow.scale.set(b.width + 2.4, 1, geo.frontZ - geo.rearZ + 2.2);
+    this.underglow.position.z = (geo.frontZ + geo.rearZ) / 2;
     this.placeFlames(0.42, b.wheelRadius + 0.08, geo.rearZ);
+  }
+
+  /** Shop items: underglow, nitro flame colour and tyre smoke colour. */
+  private fitItems(setup: CarSetup, own: <T extends THREE.Material | THREE.Texture>(x: T) => T): void {
+    const glow = shopItem(setup.glow);
+    this.underglow.visible = !!glow;
+    if (glow) (this.underglow.material as THREE.MeshBasicMaterial).color.set(glow.color).multiplyScalar(1.6);
+    const flameItem = shopItem(setup.flame);
+    const shared = getFlame().material;
+    const material = flameItem ? own((shared as THREE.MeshBasicMaterial).clone()) : shared;
+    if (flameItem) (material as THREE.MeshBasicMaterial).color.set(flameItem.color).multiplyScalar(2.4);
+    for (const f of this.flames) f.material = material;
+    const smoke = shopItem(setup.smoke);
+    this.smokeColor = smoke ? new THREE.Color(smoke.color) : null;
   }
 
   /** Rebuild if this car's model file has just arrived. */
@@ -873,6 +910,8 @@ export class CarModel {
     }
     this.frontZ = asset.front;
     this.shadow.scale.set(asset.width + 0.75, 1, asset.front - asset.rear + 1);
+    this.underglow.scale.set(asset.width + 2.4, 1, asset.front - asset.rear + 2.2);
+    this.underglow.position.z = (asset.front + asset.rear) / 2;
     this.placeFlames(asset.width * 0.2, def.body.wheelRadius + 0.05, asset.rear);
   }
 
@@ -903,8 +942,8 @@ export class CarModel {
 
     // Nitro flames flicker in length while they burn.
     for (const f of this.flames) {
-      f.visible = p.nitroActive;
-      if (p.nitroActive) f.scale.set(1, 1, 0.65 + Math.random() * 0.7);
+      f.visible = p.nitroActive || this.showFlames;
+      if (f.visible) f.scale.set(1, 1, 0.65 + Math.random() * 0.7);
     }
 
     const braking = p.braking && p.forwardSpeed > 0.5;

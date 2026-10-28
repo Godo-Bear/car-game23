@@ -11,6 +11,7 @@ import {
   type Upgrades,
 } from '../../shared/api';
 import { formatYen, MAX_UPGRADE, NO_UPGRADES, UPGRADE_PARTS, upgradeCost, upgradesOf } from '../../shared/economy';
+import { FREE_FINISHES, finishItem, ITEM_KINDS, type ItemKind, SHOP_ITEMS } from '../../shared/items';
 import { type AccountService, ApiError } from '../account/AccountService';
 import { CARS, type CarStats, carSetup, carStats, PAINT_SWATCHES, RIM_SWATCHES, randomPlate } from '../vehicles/cars';
 import { CAR_MODELS } from '../vehicles/importedCars';
@@ -129,12 +130,56 @@ export class GarageScreen {
       pick.parentElement!.classList.toggle('active', !matched);
     }
     this.markSeg('seg-finish', setup.finish);
+    // Premium finishes are bought in the shop.
+    const items = this.account.wallet.items;
+    $('seg-finish')
+      .querySelectorAll<HTMLButtonElement>('button')
+      .forEach((b) => {
+        const finish = b.dataset.value as PaintFinish;
+        const item = finishItem(finish);
+        const locked = !FREE_FINISHES.includes(finish) && !!item && !items.includes(item.id);
+        b.disabled = locked;
+        b.classList.toggle('locked', locked);
+        b.title = locked && item ? `Buy ${item.name} in the shop (${formatYen(item.price)})` : '';
+      });
+    this.renderExtras(setup);
     this.markSeg('seg-pattern', setup.pattern);
     const num = $<HTMLInputElement>('car-number');
     if (document.activeElement !== num) num.value = String(setup.number);
     const plate = $<HTMLInputElement>('plate-text');
     if (document.activeElement !== plate) plate.value = setup.plate;
     this.renderUpgrades(upgrades);
+  }
+
+  /** Extras: underglow, flame and smoke colours you've bought (or none). */
+  private renderExtras(setup: CarSetup): void {
+    const owned = this.account.wallet.items;
+    $('extras').replaceChildren(
+      ...ITEM_KINDS.filter((k) => k.kind !== 'finish').map(({ kind, name }) => {
+        const key = kind as Exclude<ItemKind, 'finish'>;
+        const row = document.createElement('div');
+        row.className = 'extra-row';
+        row.append(Object.assign(document.createElement('h3'), { textContent: name }));
+        const wrap = document.createElement('div');
+        wrap.className = 'swatches';
+        const choice = (id: string | undefined, label: string, color: string | null, have: boolean) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = `swatch item-swatch${color ? '' : ' none'}${have ? '' : ' locked'}`;
+          if (color) b.style.background = color;
+          b.title = have ? label : `${label} — in the shop`;
+          b.setAttribute('aria-label', b.title);
+          b.disabled = !have;
+          b.classList.toggle('active', setup[key] === id);
+          b.addEventListener('click', () => this.customise({ [key]: id }));
+          return b;
+        };
+        wrap.append(choice(undefined, 'None', null, true));
+        for (const item of SHOP_ITEMS.filter((x) => x.kind === kind)) wrap.append(choice(item.id, item.name, item.color, owned.includes(item.id)));
+        row.append(wrap);
+        return row;
+      }),
+    );
   }
 
   private renderUpgrades(upgrades: Upgrades): void {

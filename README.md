@@ -6,25 +6,31 @@ countryside, by day, at sunset or at night — running in the browser and hosted
 - **Core racing loop:** cinematic fly-in over the grid, F1-style start lights, lap counting, live
   positions, lap timing, 3–7 AI opponents, a slow-motion trackside finish shot and a results screen.
 - **Menu hub:** a bottom menu bar (*Home*, *Career*, *Garage*, *Shop*, *Quests*, *Profile*) with
-  money, profile and settings at the top. *Home* shows your car on a turntable under neon with,
+  the logo, money, drift points (DP), profile and settings at the top. *Home* shows your car on a turntable under neon with,
   on the left: your next career event, Garage (upgrade level) and Profile cards, the featured
   *mega quest* (tap it to open *Quests*) and today's *daily quests*.
 - **Quests:** *mega quests* are big goals that take a while (win 25 races, drive 300 laps, fully
-  upgrade a car, own every car, every career event on the podium...) paying ¥25,000 – ¥150,000;
+  upgrade a car, own every car, every career event on the podium, 30 stars, 100,000 drift
+  points, every star...) paying ¥25,000 – ¥200,000;
   *daily quests* are three small goals a day picked from a pool (finish 3 races, win one, a
-  night race, a mountain pass, two circuits, a Hard race...) that reset at midnight UTC. Finished
+  night race, a mountain pass, two circuits, a Hard race, 3,000 drift points...) that reset at midnight UTC. Finished
   quests glow with a *Claim* button; the server checks every claim against the account's stats
   and the day's races.
 - **Career map:** the whole game is a career. *Career* shows an aerial view of a Japanese city
   (downtown towers and Tokyo Tower, green outskirts, snowy mountains and Fuji behind) with 20
   events pinned on it - city races downtown, countryside races on the outskirts, mountain passes
-  up in the hills. Each event sets the circuit, time of day, laps, rivals and difficulty; locked
-  events show a padlock, the next one pulses under a green arrow, finished ones show your medal.
-  A podium unlocks the next event, and the first podium on each pays a bonus (¥5,000 – ¥40,000,
-  up to the Tokyo Grand Final). The map opens on your next event (a big green NEXT pin, and a
+  up in the hills. Each event sets the circuit, time of day, laps and rivals; you choose the
+  difficulty on the event card (Easy, Normal or Hard - harder pays more prize money, and a result
+  on any difficulty counts, Easy included). Locked events show a padlock, the next one pulses
+  under a green arrow, finished ones show your medal and stars. A podium unlocks the next event,
+  and the first podium on each pays a bonus (¥5,000 – ¥40,000, up to the Tokyo Grand Final).
+- **Stars:** every event has three time limits, shown on its card: finish the race inside them
+  for one, two or three stars (about 1.4x, 1.18x and 1.04x the AI's typical lap on that circuit,
+  times the laps; any difficulty and any position). Each new star pays ¥1,500 once, and the
+  results screen shows the stars you earned and the time for the next one. The map opens on your next event (a big green NEXT pin, and a
   *Next event* button finds it again); drag the map to look around; tap a pin for its course map,
-  prizes and your best result. The server checks every event result (unlocked, matching the
-  event) for accounts. The map picture (`public/career/map.jpg`) is rendered from the game.
+  prizes, star times and your best result. The server checks every event result (unlocked,
+  matching the event) for accounts. The map picture (`public/career/map.jpg`) is rendered from the game.
 - **Career:** you start with ¥3,000 and the Mame 1.3 starter car. Every finished race pays prize
   money (more for a better place, more laps, harder difficulty and more rivals; a 3-lap win on
   Normal is ¥10,500), plus career bonuses. Spend it in the *Shop* on other cars (¥30,000 – ¥220,000) or on upgrades
@@ -39,15 +45,25 @@ countryside, by day, at sunset or at night — running in the browser and hosted
   Kaze GT (all-rounder), Oni 86R (drift coupe), Yama R4 (rally special) and Raijin V12 (hypercar).
   Five use 3D models from `public/models/` (see *3D assets*); the rally car (and any car whose
   model fails to load) uses the built-in body with wheel arches, glasshouse, lights, grilles and
-  brake calipers. Customise paint colour and finish (gloss / metallic / pearl / matte), livery
+  brake calipers. Customise paint colour and finish (gloss / metallic / pearl / matte, plus satin,
+  candy and chrome from the shop), livery
   (racing stripes, side stripe, two-tone, race livery), accent colour, rim colour, race number and
-  your own number plate text (up to 8 characters); saved per car to your account.
+  your own number plate text (up to 8 characters), and *Extras* bought in the shop (underglow,
+  nitro flame colour, tyre smoke colour); saved per car to your account.
+- **Drift points and cosmetics:** drifting scores drift points (speed x slide angle; a crash
+  mid-drift loses that drift's points). They're banked into your DP balance at the finish (the
+  server caps them by the race time). Spend DP in *Shop → Cosmetics* on neon underglow (7
+  colours), nitro flame colours (6) and tyre smoke colours (7); the premium paint finishes cost
+  money. Tap an item to try it on your car on the turntable before buying.
   The AI race your car's class and the classes either side of it (a few the same as yours) in team
   colours, with their engines evened out a little toward your car's pace; your upgrades are yours
   alone, so tuning pays off.
-- **Admin panel:** *Profile → Admin*, unlocked with the admin code (it stays unlocked for the
-  account - or guest - that entered it on that device, until *Lock* is pressed). Look up any player (or list
-  them all) and set their money, which cars they own and each car's upgrade levels. The server
+- **Admin tab:** on the Profile page. Press *Admin* and enter the admin code to unlock it; it then
+  shows as a Profile tab for the account (or guest) that entered it on that device, until *Lock*
+  is pressed. Look up any player (or list them all) and set their money and drift points, which
+  cars they own and each car's upgrade levels, shop items (give or take all), career (win every
+  event, every star, or reset), quests (finish or reset today's dailies, reset mega quests) and
+  career stats (races, wins, podiums, laps). The server
   checks the code on every request (changes are saved to the player's account) and locks a network address out for 15 minutes after 10 wrong
   codes. Only a SHA-256 of the code is in this repository (`shared/admin.ts`); to use a private
   code instead, run `npx wrangler secret put ADMIN_CODE` (it replaces the built-in one). Without
@@ -192,7 +208,8 @@ runs at a fixed 120 Hz, and is covered by unit tests — including a headless 8-
 ├── server/                     # Cloudflare Worker: /api/* accounts, sessions, stats, settings, shop
 ├── shared/api.ts               # Types + validation shared by client and Worker
 ├── shared/economy.ts           # Prices, prize money, upgrades, purchase rules (client and Worker)
-├── shared/career.ts            # Career events, unlocks, bonuses (client and Worker)
+├── shared/career.ts            # Career events, unlocks, bonuses, stars, drift points (client and Worker)
+├── shared/items.ts             # Shop cosmetics: underglow, flames, smoke, paint finishes
 ├── shared/quests.ts            # Quests and their rewards (client and Worker)
 ├── shared/wallet.ts            # Validating stored wallets
 ├── migrations/                 # D1 schema (applied automatically by the Worker)

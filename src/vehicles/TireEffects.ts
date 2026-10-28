@@ -34,7 +34,11 @@ export interface EffectsCar {
   car: SimCar;
   /** The interpolated visual transform (so marks line up with the rendered wheels). */
   root: THREE.Object3D;
+  /** The car's look: a tyre smoke colour from the shop (null: plain white smoke). */
+  look?: { smokeColor: THREE.Color | null };
 }
+
+const PLAIN_SMOKE = new THREE.Color(0.78, 0.78, 0.82);
 
 export class TireEffects {
   readonly group = new THREE.Group();
@@ -56,6 +60,7 @@ export class TireEffects {
   private readonly pStrength = new Float32Array(MAX_PARTICLES);
   private readonly pSize = new Float32Array(MAX_PARTICLES);
   private readonly pAlpha = new Float32Array(MAX_PARTICLES);
+  private readonly pTint = new Float32Array(MAX_PARTICLES * 3);
   private readonly smokeGeo = new THREE.BufferGeometry();
   private readonly smokeMat: THREE.ShaderMaterial;
   private nextParticle = 0;
@@ -96,15 +101,19 @@ export class TireEffects {
     this.smokeGeo.setAttribute('position', new THREE.BufferAttribute(this.pPos, 3).setUsage(THREE.DynamicDrawUsage));
     this.smokeGeo.setAttribute('size', new THREE.BufferAttribute(this.pSize, 1).setUsage(THREE.DynamicDrawUsage));
     this.smokeGeo.setAttribute('alpha', new THREE.BufferAttribute(this.pAlpha, 1).setUsage(THREE.DynamicDrawUsage));
+    this.smokeGeo.setAttribute('tint', new THREE.BufferAttribute(this.pTint, 3).setUsage(THREE.DynamicDrawUsage));
     this.smokeMat = new THREE.ShaderMaterial({
       uniforms: { map: { value: glowTexture() }, scale: { value: 400 } },
       vertexShader: /* glsl */ `
         attribute float size;
         attribute float alpha;
+        attribute vec3 tint;
         uniform float scale;
         varying float vAlpha;
+        varying vec3 vTint;
         void main() {
           vAlpha = alpha;
+          vTint = tint;
           vec4 mv = modelViewMatrix * vec4(position, 1.0);
           gl_PointSize = size * scale / max(-mv.z, 0.1);
           gl_Position = projectionMatrix * mv;
@@ -112,10 +121,11 @@ export class TireEffects {
       fragmentShader: /* glsl */ `
         uniform sampler2D map;
         varying float vAlpha;
+        varying vec3 vTint;
         void main() {
           float a = texture2D(map, gl_PointCoord).a * vAlpha;
           if (a < 0.003) discard;
-          gl_FragColor = vec4(vec3(0.78, 0.78, 0.82), a);
+          gl_FragColor = vec4(vTint, a);
         }`,
       transparent: true,
       depthWrite: false,
@@ -153,7 +163,7 @@ export class TireEffects {
     const firstSegment = this.nextSegment;
     let written = 0;
 
-    for (const { car, root } of cars) {
+    for (const { car, root, look } of cars) {
       if (!root.visible) continue;
       const p = car.physics;
       const speed = p.speed;
@@ -213,6 +223,7 @@ export class TireEffects {
             p.vx * 0.25,
             p.vz * 0.25,
             smokeAmount,
+            look?.smokeColor ?? PLAIN_SMOKE,
           );
         }
         this.emitDebt.set(car, debt);
@@ -251,8 +262,9 @@ export class TireEffects {
     for (let v = 0; v < 4; v++) this.markColor.set([0.008, 0.008, 0.01, alpha], i * 16 + v * 4);
   }
 
-  private emit(x: number, y: number, z: number, vx: number, vz: number, strength: number): void {
+  private emit(x: number, y: number, z: number, vx: number, vz: number, strength: number, tint: THREE.Color): void {
     const i = this.nextParticle;
+    this.pTint.set([tint.r, tint.g, tint.b], i * 3);
     this.nextParticle = (this.nextParticle + 1) % MAX_PARTICLES;
     this.pPos.set([x + (Math.random() - 0.5) * 0.3, y, z + (Math.random() - 0.5) * 0.3], i * 3);
     this.pVel.set([vx + (Math.random() - 0.5) * 1, 0.4 + Math.random() * 0.5, vz + (Math.random() - 0.5) * 1], i * 3);
@@ -282,5 +294,6 @@ export class TireEffects {
     (this.smokeGeo.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
     (this.smokeGeo.getAttribute('size') as THREE.BufferAttribute).needsUpdate = true;
     (this.smokeGeo.getAttribute('alpha') as THREE.BufferAttribute).needsUpdate = true;
+    (this.smokeGeo.getAttribute('tint') as THREE.BufferAttribute).needsUpdate = true;
   }
 }

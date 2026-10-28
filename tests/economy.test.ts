@@ -107,4 +107,20 @@ describe('economy', () => {
     expect(Math.max(...tuned) - Math.min(...tuned)).toBeLessThan(0.6);
     stock.forEach((s, i) => expect(tuned[i]).toBeLessThan(s - 0.5));
   });
+
+  it('sells cosmetics once: DP items for drift points, finishes for money', () => {
+    const w = { ...newWallet(), dp: 7000, credits: 25000 };
+    expect(purchase(w, { kind: 'item', item: 'nope' })).toBe('Unknown item.');
+    const glow = purchase(w, { kind: 'item', item: 'glow-blue' });
+    if (typeof glow === 'string') throw new Error(glow);
+    expect(glow.dp).toBe(1000);
+    expect(glow.credits).toBe(25000);
+    expect(glow.items).toEqual(['glow-blue']);
+    expect(purchase(glow, { kind: 'item', item: 'glow-blue' })).toBe('You already own this.');
+    expect(purchase(glow, { kind: 'item', item: 'glow-gold' })).toBe('Not enough drift points.');
+    const satin = purchase(glow, { kind: 'item', item: 'finish-satin' });
+    if (typeof satin === 'string') throw new Error(satin);
+    expect(satin.credits).toBe(5000);
+    expect(purchase(satin, { kind: 'item', item: 'finish-chrome' })).toBe('Not enough money.');
+  });
 });

@@ -1,4 +1,4 @@
-import type { AdminRequest } from '../../shared/admin';
+import type { AdminRequest, AdminStats } from '../../shared/admin';
 import type { CareerStats, PlayerSettings, ProfileResponse, Purchase, RaceRecord, Wallet } from '../../shared/api';
 import { newWallet, purchase } from '../../shared/economy';
 import { claimDaily, claimQuest, settleResult, todayKey } from '../../shared/quests';
@@ -83,6 +83,16 @@ export class AccountService {
       this.profile.wallet = wallet;
     } else {
       this.guest.wallet = cleanWallet(wallet);
+      saveGuest(this.guest);
+    }
+    this.emit();
+  }
+
+  /** An admin changed career stats: the signed-in player's (already saved online) or the guest's. */
+  replaceStats(stats: AdminStats): void {
+    if (this.profile) this.profile.stats = { ...this.profile.stats, ...stats };
+    else {
+      this.guest.stats = { ...this.guest.stats, ...stats };
       saveGuest(this.guest);
     }
     this.emit();

@@ -1,3 +1,4 @@
+import { type ItemKind, shopItem } from './items';
 import type { DailyProgress } from './quests';
 /** Request/response shapes shared by the game client (src/) and the Cloudflare Pages Functions (functions/). */
 
@@ -6,7 +7,8 @@ export type TrackId = 'tokyo' | 'osaka' | 'yokohama' | 'hakone' | 'irohazaka' | 
 export type TimeOfDay = 'day' | 'sunset' | 'night';
 export type CameraModeSetting = 'chase' | 'far' | 'hood';
 export type CarId = 'starter' | 'hatch' | 'gt' | 'drift' | 'rally' | 'super';
-export type PaintFinish = 'gloss' | 'metallic' | 'matte' | 'pearl';
+/** The first four are free; satin, candy and chrome are bought in the shop (shared/items.ts). */
+export type PaintFinish = 'gloss' | 'metallic' | 'matte' | 'pearl' | 'satin' | 'candy' | 'chrome';
 export type LiveryPattern = 'none' | 'stripes' | 'side' | 'twotone' | 'race';
 
 /** The player's car and how it's painted (saved per car, so each car keeps its own look). */
@@ -19,6 +21,10 @@ export interface CarSetup {
   number: number;
   /** Personalised number plate text (see cleanPlate). */
   plate: string;
+  /** Shop items fitted (item ids from shared/items.ts; none when missing). */
+  glow?: string;
+  flame?: string;
+  smoke?: string;
 }
 
 export interface CareerStats {
@@ -45,6 +51,8 @@ export interface RaceRecord {
   createdAt?: number;
   /** Career event this race was (see shared/career.ts). */
   event?: string;
+  /** Drift points scored (paid into the wallet's DP; capped by the race time). */
+  driftPoints?: number;
 }
 
 export interface PlayerSettings {
@@ -74,6 +82,13 @@ export interface Wallet {
   quests: string[];
   /** Today's racing toward the daily quests. */
   daily: DailyProgress;
+  /** Best stars per career event (1..3, from its time limits). */
+  stars: Record<string, number>;
+  /** Drift points to spend, and all ever scored. */
+  dp: number;
+  dpTotal: number;
+  /** Shop cosmetics bought (shared/items.ts). */
+  items: string[];
 }
 
 export type UpgradePart = 'engine' | 'gearbox' | 'aero' | 'tyres' | 'suspension' | 'brakes' | 'diff' | 'nitro';
@@ -93,7 +108,8 @@ export type Purchase =
   | { kind: 'car'; car: CarId }
   | { kind: 'upgrade'; car: CarId; part: UpgradePart }
   | { kind: 'quest'; quest: string }
-  | { kind: 'daily'; quest: string };
+  | { kind: 'daily'; quest: string }
+  | { kind: 'item'; item: string };
 
 export interface CredentialsRequest {
   username: string;
@@ -113,7 +129,7 @@ export const TRACK_IDS: TrackId[] = ['tokyo', 'osaka', 'yokohama', 'hakone', 'ir
 export const TIMES_OF_DAY: TimeOfDay[] = ['day', 'sunset', 'night'];
 /** Cheapest to dearest (the shop's order). */
 export const CAR_IDS: CarId[] = ['starter', 'hatch', 'gt', 'drift', 'rally', 'super'];
-export const PAINT_FINISHES: PaintFinish[] = ['gloss', 'metallic', 'matte', 'pearl'];
+export const PAINT_FINISHES: PaintFinish[] = ['gloss', 'metallic', 'matte', 'pearl', 'satin', 'candy', 'chrome'];
 export const LIVERY_PATTERNS: LiveryPattern[] = ['none', 'stripes', 'side', 'twotone', 'race'];
 
 export const PLATE_LENGTH = 8;
@@ -150,5 +166,12 @@ export function cleanCarSetup(raw: unknown): CarSetup | null {
   const number = typeof r.number === 'number' && Number.isInteger(r.number) && r.number >= 1 && r.number <= 99 ? r.number : null;
   if (!paint || !accent || !rims || !finish || !pattern || number === null) return null;
   // Saved before plates existed: keep the paint job, give it the default plate.
-  return { paint, finish, pattern, accent, rims, number, plate: cleanPlate(r.plate) ?? DEFAULT_PLATE };
+  const setup: CarSetup = { paint, finish, pattern, accent, rims, number, plate: cleanPlate(r.plate) ?? DEFAULT_PLATE };
+  // Fitted items: only known ones of the right kind.
+  const fitted = (v: unknown, kind: ItemKind) => (typeof v === 'string' && shopItem(v)?.kind === kind ? v : undefined);
+  for (const kind of ['glow', 'flame', 'smoke'] as const) {
+    const id = fitted(r[kind], kind);
+    if (id) setup[kind] = id;
+  }
+  return setup;
 }
