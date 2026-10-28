@@ -1,4 +1,5 @@
 :root {
+  --nav-h: 76px;
   --bg: #0b0a14;
   --panel: rgba(14, 13, 26, 0.86);
   --panel-border: rgba(255, 255, 255, 0.1);
@@ -798,6 +799,8 @@ input {
   flex-direction: column;
   gap: 18px;
   padding: clamp(12px, 2.5vw, 32px);
+  /* Room for the bottom menu bar. */
+  padding-bottom: calc(var(--nav-h) + 16px);
   overflow-y: auto;
   /* Keep the 3D scene visible on the right; darken behind the panels on the left. */
   background: linear-gradient(90deg, rgba(8, 10, 18, 0.72) 0%, rgba(8, 10, 18, 0.35) 42%, rgba(8, 10, 18, 0) 70%);
@@ -818,31 +821,48 @@ input {
 .hub-brand span {
   color: var(--accent);
 }
-.hub-tabs {
+.hub-status {
+  margin-left: auto;
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 10px;
+}
+.money-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 6px;
+  border-radius: 999px;
   background: rgba(10, 12, 22, 0.7);
   border: 1px solid var(--panel-border);
-  border-radius: 14px;
-  padding: 4px;
-  backdrop-filter: blur(10px);
+  font-weight: 800;
+  color: var(--gold);
 }
-.hub-tabs button {
-  border: none;
-  background: transparent;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-style: italic;
-  font-size: 15px;
-  padding: 10px 18px;
-  color: var(--muted);
+.money-chip i {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ffd34d, #f0a020);
+  color: #3a2500;
+  font-style: normal;
+  font-size: 14px;
 }
-.hub-tabs button.active {
-  background: linear-gradient(135deg, var(--accent), #ff7a3d);
-  color: #fff;
+.top-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border-radius: 12px;
+  background: rgba(10, 12, 22, 0.7);
+}
+.top-icon svg {
+  width: 22px;
+  height: 22px;
 }
 .profile-chip {
-  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1251,11 +1271,7 @@ input {
     grid-auto-columns: calc((100% - 12px) / 3.2);
     gap: 6px;
   }
-  .hub-tabs button {
-    padding: 8px 10px;
-    font-size: 13px;
-  }
-  .profile-chip small {
+  .profile-chip b {
     display: none;
   }
 }
@@ -1303,4 +1319,191 @@ input {
 }
 .plate-pick + p {
   margin: 6px 0 10px;
+}
+
+/* ---------- Home tab: quick links on the left, your car under neon in the showroom ---------- */
+.hub[data-panel='home'] {
+  background:
+    radial-gradient(ellipse 60% 70% at 70% 55%, rgba(170, 60, 255, 0) 30%, rgba(120, 30, 200, 0.28) 75%),
+    linear-gradient(90deg, rgba(40, 6, 70, 0.78) 0%, rgba(90, 20, 150, 0.32) 38%, rgba(200, 40, 200, 0.12) 70%, rgba(60, 10, 110, 0.4) 100%);
+}
+.home-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+.home-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(340px, 100%);
+}
+.home-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-end;
+  min-height: 112px;
+  padding: 16px 18px;
+  text-align: left;
+  border: 1px solid rgba(220, 160, 255, 0.35);
+  border-radius: 6px;
+  /* Cut corner, like a racing UI. */
+  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%);
+  background: linear-gradient(120deg, rgba(60, 20, 110, 0.9), rgba(120, 40, 180, 0.55));
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  transition:
+    transform 0.15s,
+    border-color 0.15s;
+}
+.home-card:hover,
+.home-card:focus-visible {
+  transform: translateX(6px);
+  border-color: rgba(255, 220, 255, 0.85);
+}
+.home-card b {
+  font-size: 20px;
+  font-weight: 900;
+  font-style: italic;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.home-card small {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #e6d6ff;
+}
+.home-card .tag {
+  position: absolute;
+  top: 0;
+  right: 22px;
+  padding: 3px 12px;
+  background: #ffd23d;
+  color: #1b1030;
+  font-weight: 900;
+  font-style: italic;
+  font-size: 12px;
+  transform: skewX(-12deg);
+}
+.home-card .go {
+  position: absolute;
+  right: 18px;
+  bottom: 16px;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), #ff7a3d);
+  font-size: 16px;
+}
+.home-card .lv {
+  position: absolute;
+  right: 18px;
+  bottom: 16px;
+  font-size: 22px;
+  font-weight: 900;
+  font-style: italic;
+}
+.home-card.quick {
+  min-height: 140px;
+}
+.home-title {
+  position: fixed;
+  right: clamp(16px, 4vw, 48px);
+  bottom: calc(var(--nav-h) + 22px);
+  text-align: right;
+  pointer-events: none;
+  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+}
+.home-title small {
+  display: block;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: #f0c8ff;
+}
+.home-title b {
+  font-size: clamp(30px, 5vw, 64px);
+  font-weight: 900;
+  font-style: italic;
+  text-transform: uppercase;
+  line-height: 1;
+}
+.hub[data-panel='home'] .hub-foot {
+  display: none;
+}
+
+/* ---------- Bottom menu bar ---------- */
+.hub-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 21;
+  display: flex;
+  height: var(--nav-h);
+  background: #08080d;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.hub-nav button {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #e9e9f2;
+  font-size: 14px;
+  font-weight: 900;
+  font-style: italic;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.hub-nav button svg {
+  width: 30px;
+  height: 30px;
+  color: #ffd23d;
+}
+.hub-nav button:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.hub-nav button.active {
+  background: #fff;
+  color: #101018;
+}
+.hub-nav button.active svg {
+  color: #8a2be2;
+}
+@media (max-width: 640px) {
+  :root {
+    --nav-h: 62px;
+  }
+  .hub-nav button {
+    font-size: 11px;
+    gap: 3px;
+  }
+  .hub-nav button svg {
+    width: 24px;
+    height: 24px;
+  }
+  .hub-brand {
+    display: none;
+  }
+  .home-card {
+    min-height: 88px;
+  }
+  .home-title b {
+    font-size: 28px;
+  }
 }

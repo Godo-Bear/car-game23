@@ -76,7 +76,7 @@ export class Game {
   private readonly colors: string[] = [];
 
   private state: State = 'home';
-  private hubPanel: HubPanel = 'race';
+  private hubPanel: HubPanel = 'home';
   private paused = false;
   private modalOpen = false;
   private busy = false;
@@ -207,9 +207,9 @@ export class Game {
     }
   }
 
-  /** Garage and shop show a car on the turntable instead of the homescreen race. */
+  /** Home, garage and shop show your car on the turntable; the other tabs show the homescreen race. */
   private get showroom(): boolean {
-    return this.hubPanel === 'garage' || this.hubPanel === 'shop';
+    return this.hubPanel === 'home' || this.hubPanel === 'garage' || this.hubPanel === 'shop';
   }
 
   private onHubPanel(panel: HubPanel): void {

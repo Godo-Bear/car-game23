@@ -54,20 +54,45 @@
     <section id="screen-home" class="hub hidden">
       <header class="hub-top">
         <div class="hub-brand">TOKYO <span>CIRCUIT</span> RACER</div>
-        <div class="hub-tabs" role="tablist" aria-label="Menu">
-          <button type="button" role="tab" data-panel="race">Race</button>
-          <button type="button" role="tab" data-panel="garage">Garage</button>
-          <button type="button" role="tab" data-panel="shop">Shop</button>
-          <button type="button" role="tab" data-panel="career">Career</button>
-          <button type="button" id="btn-settings">Settings</button>
+        <div class="hub-status">
+          <span class="money-chip" title="Your money — win races to earn more"><i>¥</i><b id="money">¥0</b></span>
+          <button type="button" id="profile-chip" class="profile-chip" title="Career &amp; account">
+            <span class="avatar" id="profile-avatar">G</span>
+            <b id="profile-name">Guest</b>
+          </button>
+          <button type="button" id="btn-settings" class="top-icon" aria-label="Settings" title="Settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm8.6 2.1-1.9-.3a7 7 0 0 0-.7-1.7l1.1-1.6-1.9-1.9-1.6 1.1a7 7 0 0 0-1.7-.7l-.3-1.9h-2.8l-.3 1.9a7 7 0 0 0-1.7.7L7.2 5.1 5.3 7l1.1 1.6a7 7 0 0 0-.7 1.7l-1.9.3v2.8l1.9.3c.2.6.4 1.2.7 1.7l-1.1 1.6 1.9 1.9 1.6-1.1c.5.3 1.1.5 1.7.7l.3 1.9h2.8l.3-1.9c.6-.2 1.2-.4 1.7-.7l1.6 1.1 1.9-1.9-1.1-1.6c.3-.5.5-1.1.7-1.7l1.9-.3v-2.8Z" fill="currentColor"/></svg>
+          </button>
         </div>
-        <button type="button" id="profile-chip" class="profile-chip" title="Career &amp; account — win races to earn money">
-          <span class="avatar" id="profile-avatar">G</span>
-          <span><b id="profile-name">Guest</b><small id="money" class="money">¥0</small></span>
-        </button>
       </header>
 
-      <div class="hub-panel" data-panel="race">
+      <!-- Home: quick links on the left, your car in the showroom -->
+      <div class="hub-panel home-panel" data-panel="home">
+        <div class="home-cards">
+          <button type="button" id="home-quick" class="home-card quick">
+            <span class="tag">RACE</span>
+            <b>Quick race</b>
+            <small id="home-quick-info">Hakone · 3 laps</small>
+            <span class="go" aria-hidden="true">▶</span>
+          </button>
+          <button type="button" id="home-garage" class="home-card garage">
+            <b>Garage</b>
+            <small id="home-car">Mame 1.3</small>
+            <span class="lv" id="home-car-lv">LV 0</span>
+          </button>
+          <button type="button" id="home-career" class="home-card career">
+            <b>Profile</b>
+            <small>&amp; career</small>
+            <span class="lv" id="home-wins">0 wins</span>
+          </button>
+        </div>
+        <div class="home-title" aria-hidden="true">
+          <small id="home-car-kind">Starter Car</small>
+          <b id="home-car-name">Mame 1.3</b>
+        </div>
+      </div>
+
+      <div class="hub-panel hidden" data-panel="race">
         <div class="panel event-panel">
           <h2>Event</h2>
           <div id="track-cards" class="track-cards"></div>
@@ -202,6 +227,24 @@
       </div>
 
       <footer class="hub-foot muted"><kbd>Enter</kbd> start race · <kbd>H</kbd> controls · <kbd>Esc</kbd> back</footer>
+
+      <nav class="hub-nav" role="tablist" aria-label="Menu">
+        <button type="button" role="tab" data-panel="home">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1v-8.5Z" fill="currentColor"/></svg>Home
+        </button>
+        <button type="button" role="tab" data-panel="race">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h2v18H5zM8 4h12l-2.5 4L20 12H8z" fill="currentColor"/></svg>Race
+        </button>
+        <button type="button" role="tab" data-panel="garage">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 10.5 7.4 6A2 2 0 0 1 9.2 5h5.6a2 2 0 0 1 1.8 1l1.9 4.5H19a2 2 0 0 1 2 2V17h-1.5a2.5 2.5 0 0 1-5 0h-5a2.5 2.5 0 0 1-5 0H3v-4.5a2 2 0 0 1 2-2h.5Zm2.2 0h8.6l-1.4-3.4a.5.5 0 0 0-.5-.3H9.6a.5.5 0 0 0-.5.3z" fill="currentColor"/></svg>Garage
+        </button>
+        <button type="button" role="tab" data-panel="shop">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7h12l1 14H5L6 7Zm3 0a3 3 0 0 1 6 0h-1.6a1.4 1.4 0 0 0-2.8 0z" fill="currentColor"/></svg>Shop
+        </button>
+        <button type="button" role="tab" data-panel="career">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v2h3v3a4 4 0 0 1-4 4 5 5 0 0 1-3 2.6V17h3v4H8v-4h3v-2.4A5 5 0 0 1 8 12a4 4 0 0 1-4-4V5h3V3Zm0 4H6v1a2 2 0 0 0 1 1.7zm10 0v2.7A2 2 0 0 0 18 8V7z" fill="currentColor"/></svg>Career
+        </button>
+      </nav>
     </section>
 
     <div id="fps" class="fps hidden" aria-hidden="true"></div>

@@ -5,9 +5,11 @@ countryside, by day, at sunset or at night — running in the browser and hosted
 
 - **Core racing loop:** cinematic fly-in over the grid, F1-style start lights, lap counting, live
   positions, lap timing, 3–7 AI opponents, a slow-motion trackside finish shot and a results screen.
-- **Menu hub (Dirt 5 style):** *Race* (circuit cards with a map of each course, time of day, laps,
-  opponents, difficulty), *Garage*, *Shop*, *Career* and *Settings* tabs over a live homescreen:
-  the field racing over the Hakone pass on a sunny day, filmed with TV-style camera shots.
+- **Menu hub:** a bottom menu bar (*Home*, *Race*, *Garage*, *Shop*, *Career*) with money,
+  profile and settings at the top. *Home* shows your car on a turntable under neon with quick
+  links (Quick race on your last event, Garage with its upgrade level, Profile & career); *Race*
+  has circuit cards with a map of each course, time of day, laps, opponents and difficulty, over
+  the field racing on the Hakone pass.
 - **Career:** you start with ¥3,000 and the Mame 1.3 starter car. Every finished race pays prize
   money (more for a better place, more laps, harder difficulty and more rivals; a 3-lap win on
   Normal is ¥10,500). Spend it in the *Shop* on other cars (¥30,000 – ¥220,000) or on upgrades

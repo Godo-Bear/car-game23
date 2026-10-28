@@ -1,5 +1,5 @@
 import type { CarId, PlayerSettings, TrackId } from '../../shared/api';
-import { formatYen, STARTER_CAR } from '../../shared/economy';
+import { formatYen, STARTER_CAR, upgradesOf } from '../../shared/economy';
 import { type AccountService, ApiError } from '../account/AccountService';
 import type { Input } from '../core/Input';
 import type { SettingsStore } from '../core/Settings';
@@ -26,7 +26,7 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   garage: {},
 };
 
-export type HubPanel = 'race' | 'garage' | 'shop' | 'career';
+export type HubPanel = 'home' | 'race' | 'garage' | 'shop' | 'career';
 
 export interface ScreenHandlers {
   onRace(settings: PlayerSettings): void;
@@ -53,7 +53,7 @@ type AuthMode = 'login' | 'register';
 /** Owns every menu/overlay outside the in-race HUD. */
 export class Screens {
   settings: PlayerSettings = { ...DEFAULT_PLAYER_SETTINGS };
-  panelName: HubPanel = 'race';
+  panelName: HubPanel = 'home';
   private authMode: AuthMode = 'login';
   private settingsReturnTo: 'none' | 'pause' = 'none';
   private readonly panel: SettingsPanel;
@@ -113,13 +113,15 @@ export class Screens {
 
   showPanel(panel: HubPanel): void {
     this.panelName = panel;
-    document.querySelectorAll<HTMLElement>('.hub-tabs [data-panel]').forEach((b) => {
+    $('screen-home').dataset.panel = panel;
+    document.querySelectorAll<HTMLElement>('.hub-nav [data-panel]').forEach((b) => {
       b.classList.toggle('active', b.dataset.panel === panel);
       b.setAttribute('aria-selected', String(b.dataset.panel === panel));
     });
     document.querySelectorAll<HTMLElement>('.hub-panel').forEach((p) => p.classList.toggle('hidden', p.dataset.panel !== panel));
     if (panel === 'garage') this.garage.render();
     if (panel === 'race') $('btn-race').focus({ preventScroll: true });
+    if (panel === 'home') $('home-quick').focus({ preventScroll: true });
     this.handlers.onHubPanel(panel);
     // After the turntable is set up, so the shop's first car replaces yours on it.
     if (panel === 'shop') this.shop.open();
@@ -148,10 +150,27 @@ export class Screens {
     else this.openSettings('controls');
   }
 
-  /** Esc on the homescreen: back to the Race tab. Returns false if there was nothing to go back from. */
+  /** Home cards: the next race, your car and your career at a glance. */
+  private renderHome(): void {
+    const s = this.settings;
+    const a = this.account;
+    const track = TRACKS[s.track];
+    const car = CARS[s.car];
+    $('home-quick-info').textContent = `${track.name} · ${s.laps} lap${s.laps > 1 ? 's' : ''} · ${s.difficulty}`;
+    $('home-quick').style.backgroundImage =
+      `linear-gradient(100deg, rgba(20, 8, 40, 0.92) 30%, rgba(20, 8, 40, 0.35)), url(previews/${s.track}-${s.timeOfDay}.jpg)`;
+    $('home-car').textContent = car.name;
+    const levels = Object.values(upgradesOf(a.wallet, s.car)).reduce((sum, v) => sum + v, 0);
+    $('home-car-lv').textContent = `LV ${levels}`;
+    $('home-wins').textContent = `${a.stats.wins} win${a.stats.wins === 1 ? '' : 's'}`;
+    $('home-car-kind').textContent = car.kind;
+    $('home-car-name').textContent = car.name;
+  }
+
+  /** Esc on the homescreen: back to Home. Returns false if there was nothing to go back from. */
   back(): boolean {
-    if (!this.homeVisible || this.panelName === 'race') return false;
-    this.showPanel('race');
+    if (!this.homeVisible || this.panelName === 'home') return false;
+    this.showPanel('home');
     return true;
   }
 
@@ -226,6 +245,7 @@ export class Screens {
     }
     $('career-status').textContent = status;
     $('money').textContent = formatYen(a.wallet.credits);
+    this.renderHome();
     const s = a.stats;
     $('stat-races').textContent = String(s.races);
     $('stat-wins').textContent = String(s.wins);
@@ -366,10 +386,13 @@ export class Screens {
   // ---------- wiring ----------
   private wire(): void {
     $('btn-race').addEventListener('click', () => this.handlers.onRace(this.settings));
+    $('home-quick').addEventListener('click', () => this.handlers.onRace(this.settings));
+    $('home-garage').addEventListener('click', () => this.showPanel('garage'));
+    $('home-career').addEventListener('click', () => this.showPanel('career'));
     $('btn-garage-race').addEventListener('click', () => this.handlers.onRace(this.settings));
     $('btn-event-garage').addEventListener('click', () => this.showPanel('garage'));
     document
-      .querySelectorAll<HTMLElement>('.hub-tabs [data-panel]')
+      .querySelectorAll<HTMLElement>('.hub-nav [data-panel]')
       .forEach((b) => b.addEventListener('click', () => this.showPanel(b.dataset.panel as HubPanel)));
     $('profile-chip').addEventListener('click', () => this.showPanel('career'));
     $('btn-settings').addEventListener('click', () => this.openSettings('graphics'));
