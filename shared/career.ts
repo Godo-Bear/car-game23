@@ -51,7 +51,7 @@ export const CAREER_EVENTS: CareerEvent[] = [
   ev('izu-showdown', 'Sunset Showdown', 'izu', 'sunset', 3, 7, 'hard', 19000, [0.816, 0.556]),
   ev('niseko-midnight', 'Niseko Midnight', 'niseko', 'night', 3, 7, 'hard', 20000, [0.611, 0.276]),
   ev('irohazaka-legends', 'Irohazaka Legends', 'irohazaka', 'sunset', 5, 7, 'hard', 22000, [0.912, 0.428]),
-  ev('yokohama-masters', 'Bay Masters', 'yokohama', 'sunset', 5, 7, 'hard', 24000, [0.693, 0.707]),
+  ev('yokohama-masters', 'Bay Masters', 'yokohama', 'sunset', 5, 7, 'hard', 24000, [0.694, 0.706]),
   ev('haruna-king', 'Downhill King', 'haruna', 'night', 5, 7, 'hard', 26000, [0.453, 0.424]),
   ev('tokyo-final', 'Tokyo Grand Final', 'tokyo', 'night', 5, 7, 'hard', 40000, [0.585, 0.547]),
 ];
