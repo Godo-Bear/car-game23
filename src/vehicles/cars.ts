@@ -1,5 +1,6 @@
-import { CAR_IDS, type CarId, type CarSetup, type Upgrades } from '../../shared/api';
-import { clamp, createRng } from '../core/math';
+import { CAR_IDS, type CarId, type CarSetup, type UpgradePart, type Upgrades } from '../../shared/api';
+import { MAX_UPGRADE } from '../../shared/economy';
+import { clamp, createRng, lerp } from '../core/math';
 import { SPORTS_CAR, type VehicleSpec } from '../physics/VehiclePhysics';
 
 /** The garage: every drivable car, its handling and its body shape. */
@@ -38,8 +39,11 @@ export interface CarDef {
   /** Class shown in the garage. */
   kind: string;
   blurb: string;
-  /** 1..10 bars in the garage. */
-  stats: { speed: number; acceleration: number; handling: number; drift: number };
+  /**
+   * 1..10 bars in the garage, before upgrades. The cars start close together (each with a
+   * little personality) and every one of them reaches 10 everywhere when fully upgraded.
+   */
+  stats: { speed: number; acceleration: number; handling: number; braking: number; drift: number };
   spec: VehicleSpec;
   /** AI cornering speed relative to the GT (cars with less grip must be driven slower). */
   aiGrip: number;
@@ -54,8 +58,8 @@ export const CARS: Record<CarId, CarDef> = {
     id: 'starter',
     name: 'Mame 1.3',
     kind: 'Starter Car',
-    blurb: 'Slow, soft and honest. Every legend starts somewhere: win races, earn yen and trade up.',
-    stats: { speed: 3, acceleration: 3, handling: 6, drift: 4 },
+    blurb: 'Soft and honest. Every legend starts somewhere: win races, earn yen and tune it into a giant-killer.',
+    stats: { speed: 4, acceleration: 4, handling: 5, braking: 4, drift: 4 },
     spec: {
       ...SPORTS_CAR,
       mass: 1150,
@@ -67,13 +71,13 @@ export const CARS: Record<CarId, CarDef> = {
       halfWidth: 0.86,
       halfLength: 2.0,
       wheelRadius: 0.31,
-      tireGrip: 1.45,
+      tireGrip: 1.52,
       corneringStiffnessFront: 84000,
       corneringStiffnessRear: 100000,
       handbrakeGrip: 0.6,
       maxBrakeForce: 12500,
       dragCoefficient: 0.44,
-      torqueCurve: torque(0.56),
+      torqueCurve: torque(0.75),
       finalDrive: 4.1,
       maxSteer: 0.6,
       nitroForce: 3600,
@@ -121,7 +125,7 @@ export const CARS: Record<CarId, CarDef> = {
     name: 'Kaze GT',
     kind: 'Grand Tourer',
     blurb: 'The all-rounder: stable under braking, quick on the straights and happy to slide.',
-    stats: { speed: 7, acceleration: 7, handling: 7, drift: 7 },
+    stats: { speed: 5, acceleration: 5, handling: 5, braking: 5, drift: 5 },
     spec: SPORTS_CAR,
     aiGrip: 1,
     body: {
@@ -168,7 +172,7 @@ export const CARS: Record<CarId, CarDef> = {
     name: 'Shiro Spyder',
     kind: 'Roadster',
     blurb: 'Light and eager, roof down. Gives away top speed but darts into corners and never bites.',
-    stats: { speed: 5, acceleration: 6, handling: 9, drift: 5 },
+    stats: { speed: 4, acceleration: 5, handling: 6, braking: 5, drift: 4 },
     spec: {
       ...SPORTS_CAR,
       mass: 1120,
@@ -179,13 +183,13 @@ export const CARS: Record<CarId, CarDef> = {
       halfWidth: 0.88,
       halfLength: 1.95,
       wheelRadius: 0.31,
-      tireGrip: 1.6,
+      tireGrip: 1.56,
       corneringStiffnessFront: 88000,
       corneringStiffnessRear: 104000,
       handbrakeGrip: 0.6,
       maxBrakeForce: 14000,
       dragCoefficient: 0.4,
-      torqueCurve: torque(0.74),
+      torqueCurve: torque(0.76),
       finalDrive: 4.15,
       maxSteer: 0.62,
     },
@@ -232,7 +236,7 @@ export const CARS: Record<CarId, CarDef> = {
     name: 'Yama R4',
     kind: 'Rally Special',
     blurb: 'Long-travel suspension and a rally-bred chassis. Explosive off the line, loves to be thrown sideways.',
-    stats: { speed: 6, acceleration: 9, handling: 8, drift: 8 },
+    stats: { speed: 4, acceleration: 6, handling: 5, braking: 5, drift: 6 },
     spec: {
       ...SPORTS_CAR,
       mass: 1230,
@@ -244,12 +248,12 @@ export const CARS: Record<CarId, CarDef> = {
       halfWidth: 0.92,
       halfLength: 2.0,
       wheelRadius: 0.35,
-      tireGrip: 1.58,
+      tireGrip: 1.55,
       corneringStiffnessFront: 92000,
       corneringStiffnessRear: 100000,
       handbrakeGrip: 0.45,
       dragCoefficient: 0.5,
-      torqueCurve: torque(0.95),
+      torqueCurve: torque(0.86),
       finalDrive: 4.4,
       shiftTime: 0.1,
       maxSteer: 0.64,
@@ -303,7 +307,7 @@ export const CARS: Record<CarId, CarDef> = {
     name: 'Oni 86R',
     kind: 'Drift Coupe',
     blurb: 'A rear-drive brawler with a loose tail. Hard to keep straight, glorious when it is not.',
-    stats: { speed: 7, acceleration: 8, handling: 5, drift: 10 },
+    stats: { speed: 5, acceleration: 5, handling: 4, braking: 4, drift: 7 },
     spec: {
       ...SPORTS_CAR,
       mass: 1280,
@@ -313,7 +317,7 @@ export const CARS: Record<CarId, CarDef> = {
       corneringStiffnessFront: 98000,
       corneringStiffnessRear: 96000,
       handbrakeGrip: 0.4,
-      torqueCurve: torque(1.08),
+      torqueCurve: torque(0.92),
       finalDrive: 3.95,
       dragCoefficient: 0.44,
       maxSteer: 0.66,
@@ -363,8 +367,8 @@ export const CARS: Record<CarId, CarDef> = {
     id: 'super',
     name: 'Raijin V12',
     kind: 'Hypercar',
-    blurb: 'Mid-engined and brutally fast, with downforce to match. Brake early - it arrives at corners in a hurry.',
-    stats: { speed: 10, acceleration: 9, handling: 7, drift: 4 },
+    blurb: 'Mid-engined, with the highest top speed off the showroom floor. Brake early - it arrives at corners in a hurry.',
+    stats: { speed: 6, acceleration: 5, handling: 5, braking: 6, drift: 3 },
     spec: {
       ...SPORTS_CAR,
       mass: 1420,
@@ -376,13 +380,13 @@ export const CARS: Record<CarId, CarDef> = {
       halfWidth: 1.0,
       halfLength: 2.3,
       wheelRadius: 0.35,
-      tireGrip: 1.66,
+      tireGrip: 1.56,
       corneringStiffnessFront: 108000,
       corneringStiffnessRear: 130000,
       handbrakeGrip: 0.6,
       maxBrakeForce: 18000,
       dragCoefficient: 0.38,
-      torqueCurve: torque(1.32),
+      torqueCurve: torque(1.02),
       finalDrive: 3.55,
     },
     aiGrip: 1.05,
@@ -499,35 +503,64 @@ export function aiField(player: CarId, count: number, seed: number): FieldCar[] 
   });
 }
 
-/** What each upgrade level does: engine power, grip/brakes, and nitro push/tank size. */
-const UPGRADE_EFFECT = { power: 0.08, grip: 0.035, stiffness: 0.05, brakes: 0.06, nitroForce: 0.15, nitroTank: 0.25 };
+/**
+ * Fully upgraded, every car reaches the same top performance (scaled to its weight); each part
+ * moves its share of the car's setup from where it started toward that target.
+ */
+const MAXED = {
+  /** Peak torque per kg. */
+  torquePerKg: 0.5,
+  finalDrive: 3.7,
+  shiftTime: 0.07,
+  drivetrainEfficiency: 0.92,
+  dragCoefficient: 0.33,
+  tireGrip: 1.9,
+  /** Cornering stiffness per kg, front and rear. */
+  stiffnessPerKg: [92, 102] as const,
+  /** Brake force per kg. */
+  brakesPerKg: 15.5,
+  handbrakeGrip: 0.4,
+  nitroPerKg: 6.5,
+  nitroCapacity: 6,
+};
 
 /** A car's handling with its upgrades fitted. */
 export function upgradedSpec(spec: VehicleSpec, u: Upgrades): VehicleSpec {
-  const e = UPGRADE_EFFECT;
+  const f = (part: UpgradePart) => clamp(u[part] / MAX_UPGRADE, 0, 1);
+  const to = (from: number, target: number, part: UpgradePart) => lerp(from, target, f(part));
+  const peak = Math.max(...spec.torqueCurve.map(([, nm]) => nm));
+  const power = to(1, (MAXED.torquePerKg * spec.mass) / peak, 'engine');
   return {
     ...spec,
-    torqueCurve: spec.torqueCurve.map(([rpm, nm]) => [rpm, nm * (1 + e.power * u.engine)] as const),
-    tireGrip: spec.tireGrip * (1 + e.grip * u.handling),
-    corneringStiffnessFront: spec.corneringStiffnessFront * (1 + e.stiffness * u.handling),
-    corneringStiffnessRear: spec.corneringStiffnessRear * (1 + e.stiffness * u.handling),
-    maxBrakeForce: spec.maxBrakeForce * (1 + e.brakes * u.handling),
-    nitroForce: spec.nitroForce * (1 + e.nitroForce * u.nitro),
-    nitroCapacity: spec.nitroCapacity * (1 + e.nitroTank * u.nitro),
+    torqueCurve: spec.torqueCurve.map(([rpm, nm]) => [rpm, nm * power] as const),
+    finalDrive: to(spec.finalDrive, MAXED.finalDrive, 'gearbox'),
+    shiftTime: to(spec.shiftTime, MAXED.shiftTime, 'gearbox'),
+    drivetrainEfficiency: to(spec.drivetrainEfficiency, MAXED.drivetrainEfficiency, 'gearbox'),
+    dragCoefficient: to(spec.dragCoefficient, MAXED.dragCoefficient, 'aero'),
+    tireGrip: to(spec.tireGrip, MAXED.tireGrip, 'tyres'),
+    corneringStiffnessFront: to(spec.corneringStiffnessFront, MAXED.stiffnessPerKg[0] * spec.mass, 'suspension'),
+    corneringStiffnessRear: to(spec.corneringStiffnessRear, MAXED.stiffnessPerKg[1] * spec.mass, 'suspension'),
+    maxBrakeForce: to(spec.maxBrakeForce, MAXED.brakesPerKg * spec.mass, 'brakes'),
+    handbrakeGrip: to(spec.handbrakeGrip, MAXED.handbrakeGrip, 'diff'),
+    nitroForce: to(spec.nitroForce, MAXED.nitroPerKg * spec.mass, 'nitro'),
+    nitroCapacity: to(spec.nitroCapacity, MAXED.nitroCapacity, 'nitro'),
   };
 }
 
 export type CarStats = CarDef['stats'] & { nitro: number };
 
-/** The garage's stat bars (1..10) with upgrades counted in. */
+/** The garage's stat bars (1..10) with upgrades counted in: all 10s when fully upgraded. */
 export function carStats(def: CarDef, u: Upgrades): CarStats {
-  const bar = (v: number) => Math.min(10, Math.round(v * 2) / 2);
+  const f = (...parts: UpgradePart[]) => parts.reduce((sum, p) => sum + clamp(u[p] / MAX_UPGRADE, 0, 1), 0) / parts.length;
+  const bar = (base: number, done: number) => Math.round((base + (10 - base) * done) * 2) / 2;
+  const b = def.stats;
   return {
-    speed: bar(def.stats.speed + 0.5 * u.engine),
-    acceleration: bar(def.stats.acceleration + 0.7 * u.engine),
-    handling: bar(def.stats.handling + 0.7 * u.handling),
-    drift: def.stats.drift,
-    nitro: bar(4 + 2 * u.nitro),
+    speed: bar(b.speed, f('engine', 'aero')),
+    acceleration: bar(b.acceleration, f('engine', 'gearbox')),
+    handling: bar(b.handling, f('tyres', 'suspension')),
+    braking: bar(b.braking, f('brakes')),
+    drift: bar(b.drift, f('diff')),
+    nitro: bar(4, f('nitro')),
   };
 }
 

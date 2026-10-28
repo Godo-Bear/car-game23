@@ -8,7 +8,7 @@ describe.each(Object.values(TRACKS))('$name circuit geometry', (def) => {
 
   it('is a closed circuit of sensible length with the start line where it was asked for', () => {
     expect(track.length).toBeGreaterThan(2200);
-    expect(track.length).toBeLessThan(3200);
+    expect(track.length).toBeLessThan(4200);
     const s = track.samples[0];
     expect(Math.hypot(s.x - def.layout.start.x, s.z - def.layout.start.z)).toBeLessThan(3);
     expect(s.dist).toBe(0);
@@ -44,7 +44,7 @@ describe('TrackPath', () => {
 
   it('places index 0 on the Tokyo start line, heading east down the main straight', () => {
     const s = track.samples[0];
-    expect(Math.abs(s.x - -100)).toBeLessThan(1);
+    expect(Math.abs(s.x - -125)).toBeLessThan(1);
     expect(Math.abs(s.z)).toBeLessThan(1);
     expect(s.tx).toBeCloseTo(1, 3);
     expect(s.dist).toBe(0);

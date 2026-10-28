@@ -21,13 +21,19 @@ const STATS: [keyof CarStats, string][] = [
   ['speed', 'Top speed'],
   ['acceleration', 'Acceleration'],
   ['handling', 'Handling'],
+  ['braking', 'Braking'],
   ['drift', 'Drift'],
   ['nitro', 'Nitro'],
 ];
 
 const UPGRADE_INFO: Record<UpgradePart, [string, string]> = {
   engine: ['Engine', 'More power: quicker everywhere, faster at the top'],
-  handling: ['Handling', 'Grippier tyres, sharper steering, stronger brakes'],
+  gearbox: ['Gearbox', 'Shorter gears and lightning shifts: better acceleration'],
+  aero: ['Aero', 'Less drag: a higher top speed'],
+  tyres: ['Tyres', 'Stickier rubber: more grip in every corner'],
+  suspension: ['Suspension', 'Stiffer and sharper: the car turns in quicker'],
+  brakes: ['Brakes', 'Bigger brakes: stop later for the corners'],
+  diff: ['Differential', 'Limited-slip diff: easier, longer drifts'],
   nitro: ['Nitro', 'A bigger tank and a harder push'],
 };
 

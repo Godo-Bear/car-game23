@@ -18,19 +18,19 @@ export const HAKONE_PASS: TrackLayout = {
   width: 12,
   wallMargin: 0.8,
   sampleSpacing: 2,
-  start: { x: 50, z: 0 },
+  start: { x: 62, z: 0 },
   vertices: [
-    { x: -350, z: 0, radius: 45, y: 0 }, // S0
-    { x: 250, z: 0, radius: 26, y: 2 }, // S1  first hairpin (left)
-    { x: 250, z: -60, radius: 25, y: 4 }, // L1
-    { x: -150, z: -60, radius: 24, y: 26 }, // L2  second hairpin (right)
-    { x: -150, z: -120, radius: 24, y: 28 }, // L3
-    { x: 200, z: -120, radius: 24, y: 50 }, // L4  third hairpin (left)
-    { x: 200, z: -180, radius: 24, y: 52 }, // L5
-    { x: -300, z: -200, radius: 70, y: 55 }, // R1  ridge
-    { x: -560, z: -150, radius: 60, y: 42 }, // R2  descent
-    { x: -700, z: 80, radius: 55, y: 20 }, // R3
-    { x: -480, z: 130, radius: 50, y: 7 }, // R4
+    { x: -437, z: 0, radius: 97, y: 0 }, // S0
+    { x: 313, z: 0, radius: 52, y: 2 }, // S1  first hairpin (left)
+    { x: 313, z: -102, radius: 50, y: 4 }, // L1
+    { x: -187, z: -102, radius: 50, y: 26 }, // L2  second hairpin (right)
+    { x: -187, z: -204, radius: 50, y: 28 }, // L3
+    { x: 250, z: -204, radius: 52, y: 50 }, // L4  third hairpin (left)
+    { x: 250, z: -306, radius: 52, y: 52 }, // L5
+    { x: -375, z: -340, radius: 151, y: 55 }, // R1  ridge
+    { x: -700, z: -255, radius: 130, y: 42 }, // R2  descent
+    { x: -875, z: 136, radius: 119, y: 20 }, // R3
+    { x: -600, z: 221, radius: 108, y: 7 }, // R4
   ],
 };
 
@@ -43,17 +43,17 @@ export const SAKURA_VALLEY: TrackLayout = {
   width: 13,
   wallMargin: 0.8,
   sampleSpacing: 2,
-  start: { x: -120, z: -19 },
+  start: { x: -150, z: -24 },
   vertices: [
-    { x: -380, z: 0, radius: 55, y: 0 }, // A
-    { x: 180, z: -40, radius: 70, y: 5 }, // B
-    { x: 430, z: 110, radius: 75, y: 12 }, // C
-    { x: 460, z: 390, radius: 45, y: 7 }, // D
-    { x: 240, z: 480, radius: 80, y: 2 }, // E
-    { x: 10, z: 380, radius: 95, y: 9 }, // F
-    { x: -210, z: 480, radius: 46, y: 4 }, // G
-    { x: -470, z: 400, radius: 55, y: 13 }, // H
-    { x: -560, z: 170, radius: 60, y: 7 }, // I
+    { x: -475, z: 0, radius: 88, y: 0 }, // A
+    { x: 225, z: -50, radius: 112, y: 5 }, // B
+    { x: 538, z: 138, radius: 120, y: 12 }, // C
+    { x: 575, z: 488, radius: 72, y: 7 }, // D
+    { x: 300, z: 600, radius: 128, y: 2 }, // E
+    { x: 13, z: 475, radius: 152, y: 9 }, // F
+    { x: -262, z: 600, radius: 74, y: 4 }, // G
+    { x: -587, z: 500, radius: 88, y: 13 }, // H
+    { x: -700, z: 213, radius: 96, y: 7 }, // I
   ],
 };
 
@@ -66,22 +66,22 @@ export const IROHAZAKA: TrackLayout = {
   width: 11.5,
   wallMargin: 0.8,
   sampleSpacing: 2,
-  start: { x: -60, z: 0 },
+  start: { x: -75, z: 0 },
   vertices: [
-    { x: -260, z: 0, radius: 45, y: 0 },
-    { x: 130, z: 0, radius: 24, y: 2 }, // hairpin 1 (left)
-    { x: 130, z: -50, radius: 24, y: 4 },
-    { x: -130, z: -50, radius: 22, y: 17 }, // hairpin 2 (right)
-    { x: -130, z: -95, radius: 22, y: 19 },
-    { x: 100, z: -95, radius: 22, y: 31 }, // hairpin 3 (left)
-    { x: 100, z: -140, radius: 22, y: 33 },
-    { x: -130, z: -140, radius: 22, y: 44 }, // hairpin 4 (right)
-    { x: -130, z: -185, radius: 22, y: 46 },
-    { x: 260, z: -235, radius: 70, y: 50 }, // ridge
-    { x: 440, z: -70, radius: 60, y: 40 },
-    { x: 360, z: 130, radius: 55, y: 24 },
-    { x: -120, z: 140, radius: 70, y: 9 },
-    { x: -380, z: 100, radius: 50, y: 3 },
+    { x: -325, z: 0, radius: 93, y: 0 },
+    { x: 163, z: 0, radius: 42, y: 2 }, // hairpin 1 (left)
+    { x: 163, z: -85, radius: 42, y: 4 },
+    { x: -162, z: -85, radius: 37, y: 17 }, // hairpin 2 (right)
+    { x: -162, z: -161, radius: 37, y: 19 },
+    { x: 125, z: -161, radius: 37, y: 31 }, // hairpin 3 (left)
+    { x: 125, z: -238, radius: 37, y: 33 },
+    { x: -162, z: -238, radius: 40, y: 44 }, // hairpin 4 (right)
+    { x: -162, z: -314, radius: 40, y: 46 },
+    { x: 325, z: -399, radius: 151, y: 50 }, // ridge
+    { x: 550, z: -119, radius: 130, y: 40 },
+    { x: 450, z: 221, radius: 119, y: 24 },
+    { x: -150, z: 238, radius: 151, y: 9 },
+    { x: -475, z: 170, radius: 104, y: 3 },
   ],
 };
 
@@ -94,18 +94,18 @@ export const HARUNA: TrackLayout = {
   width: 11,
   wallMargin: 0.8,
   sampleSpacing: 2,
-  start: { x: -50, z: 0 },
+  start: { x: -62, z: 0 },
   vertices: [
-    { x: -300, z: 0, radius: 45, y: 0 },
-    { x: 200, z: 0, radius: 40, y: 4 },
-    { x: 330, z: -150, radius: 30, y: 12 },
-    { x: 180, z: -230, radius: 20, y: 19 }, // hairpin (right)
-    { x: 400, z: -330, radius: 20, y: 27 }, // hairpin (left)
-    { x: 120, z: -420, radius: 35, y: 35 },
-    { x: -250, z: -380, radius: 60, y: 41 }, // ridge
-    { x: -420, z: -250, radius: 40, y: 35 },
-    { x: -300, z: -150, radius: 30, y: 24 }, // esses
-    { x: -480, z: -60, radius: 35, y: 11 },
+    { x: -375, z: 0, radius: 72, y: 0 },
+    { x: 250, z: 0, radius: 64, y: 4 },
+    { x: 413, z: -187, radius: 48, y: 12 },
+    { x: 225, z: -287, radius: 32, y: 19 }, // hairpin (right)
+    { x: 500, z: -412, radius: 32, y: 27 }, // hairpin (left)
+    { x: 150, z: -525, radius: 56, y: 35 },
+    { x: -312, z: -475, radius: 96, y: 41 }, // ridge
+    { x: -525, z: -312, radius: 64, y: 35 },
+    { x: -375, z: -187, radius: 48, y: 24 }, // esses
+    { x: -600, z: -75, radius: 56, y: 11 },
   ],
 };
 
@@ -118,16 +118,16 @@ export const NISEKO: TrackLayout = {
   width: 12.5,
   wallMargin: 0.8,
   sampleSpacing: 2,
-  start: { x: -100, z: 0 },
+  start: { x: -125, z: 0 },
   vertices: [
-    { x: -380, z: 0, radius: 50, y: 0 },
-    { x: 270, z: 0, radius: 60, y: 5 },
-    { x: 490, z: -195, radius: 45, y: 18 },
-    { x: 325, z: -410, radius: 26, y: 32 },
-    { x: -55, z: -355, radius: 70, y: 40 },
-    { x: -325, z: -455, radius: 30, y: 50 },
-    { x: -605, z: -270, radius: 55, y: 38 },
-    { x: -560, z: -65, radius: 40, y: 18 },
+    { x: -475, z: 0, radius: 80, y: 0 },
+    { x: 338, z: 0, radius: 96, y: 5 },
+    { x: 613, z: -244, radius: 72, y: 18 },
+    { x: 406, z: -512, radius: 42, y: 32 },
+    { x: -69, z: -444, radius: 112, y: 40 },
+    { x: -406, z: -569, radius: 48, y: 50 },
+    { x: -756, z: -337, radius: 88, y: 38 },
+    { x: -700, z: -81, radius: 64, y: 18 },
   ],
 };
 
@@ -140,17 +140,17 @@ export const ARASHIYAMA: TrackLayout = {
   width: 12,
   wallMargin: 0.8,
   sampleSpacing: 2,
-  start: { x: -100, z: 0 },
+  start: { x: -125, z: 0 },
   vertices: [
-    { x: -330, z: 0, radius: 40, y: 0 },
-    { x: 240, z: 0, radius: 35, y: 3 },
-    { x: 330, z: 200, radius: 50, y: 6 },
-    { x: 130, z: 330, radius: 30, y: 8 },
-    { x: 285, z: 495, radius: 40, y: 5 },
-    { x: -90, z: 570, radius: 70, y: 2 },
-    { x: -385, z: 440, radius: 35, y: 6 },
-    { x: -220, z: 240, radius: 30, y: 4 },
-    { x: -460, z: 130, radius: 40, y: 2 },
+    { x: -412, z: 0, radius: 64, y: 0 },
+    { x: 300, z: 0, radius: 56, y: 3 },
+    { x: 413, z: 250, radius: 80, y: 6 },
+    { x: 163, z: 413, radius: 48, y: 8 },
+    { x: 356, z: 619, radius: 64, y: 5 },
+    { x: -112, z: 713, radius: 112, y: 2 },
+    { x: -481, z: 550, radius: 56, y: 6 },
+    { x: -275, z: 300, radius: 48, y: 4 },
+    { x: -575, z: 163, radius: 64, y: 2 },
   ],
 };
 
@@ -163,15 +163,15 @@ export const IZU_COAST: TrackLayout = {
   width: 13,
   wallMargin: 0.8,
   sampleSpacing: 2,
-  start: { x: -150, z: 253 },
+  start: { x: -188, z: 316 },
   vertices: [
-    { x: -400, z: 250, radius: 60, y: 0.5 },
-    { x: 350, z: 260, radius: 50, y: 1.5 },
-    { x: 420, z: 20, radius: 35, y: 10 },
-    { x: 150, z: -60, radius: 45, y: 16 },
-    { x: 40, z: -250, radius: 30, y: 22 },
-    { x: -280, z: -200, radius: 50, y: 18 },
-    { x: -260, z: 20, radius: 35, y: 10 },
-    { x: -520, z: 60, radius: 45, y: 5 },
+    { x: -500, z: 313, radius: 96, y: 0.5 },
+    { x: 438, z: 325, radius: 80, y: 1.5 },
+    { x: 525, z: 25, radius: 56, y: 10 },
+    { x: 188, z: -75, radius: 72, y: 16 },
+    { x: 50, z: -312, radius: 48, y: 22 },
+    { x: -350, z: -250, radius: 80, y: 18 },
+    { x: -325, z: 25, radius: 56, y: 10 },
+    { x: -650, z: 75, radius: 72, y: 5 },
   ],
 };

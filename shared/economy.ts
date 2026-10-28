@@ -8,8 +8,21 @@ import { CAR_IDS, type CarId, type Difficulty, type Purchase, type RaceRecord, t
 export const STARTER_CAR: CarId = 'starter';
 /** Enough for a first upgrade. */
 export const STARTING_CREDITS = 3000;
-export const MAX_UPGRADE = 3;
-export const UPGRADE_PARTS: UpgradePart[] = ['engine', 'handling', 'nitro'];
+/** Levels per part. Every part at the top level maxes out every stat, on any car. */
+export const MAX_UPGRADE = 4;
+export const UPGRADE_PARTS: UpgradePart[] = ['engine', 'gearbox', 'aero', 'tyres', 'suspension', 'brakes', 'diff', 'nitro'];
+/** Price of each part's first level (later levels cost more). */
+const PART_PRICE: Record<UpgradePart, number> = {
+  engine: 3500,
+  gearbox: 2500,
+  aero: 2000,
+  tyres: 2500,
+  suspension: 2500,
+  brakes: 2000,
+  diff: 2000,
+  nitro: 2000,
+};
+const LEVEL_PRICE = [1, 1.7, 2.6, 3.8];
 
 /** Shop prices in yen; the starter car is free. */
 export const CAR_PRICES: Record<CarId, number> = {
@@ -26,7 +39,7 @@ const PLACE_SHARE = [1, 0.7, 0.5, 0.35, 0.25, 0.2, 0.16, 0.13, 0.11, 0.1, 0.1, 0
 const DIFFICULTY_PAY: Record<Difficulty, number> = { easy: 0.7, normal: 1, hard: 1.4 };
 const PAY_PER_LAP = 3500;
 
-export const NO_UPGRADES: Upgrades = { engine: 0, handling: 0, nitro: 0 };
+export const NO_UPGRADES: Upgrades = { engine: 0, gearbox: 0, aero: 0, tyres: 0, suspension: 0, brakes: 0, diff: 0, nitro: 0 };
 
 export function newWallet(): Wallet {
   return { credits: STARTING_CREDITS, owned: [STARTER_CAR], upgrades: {} };
@@ -39,10 +52,10 @@ export function raceReward(r: Pick<RaceRecord, 'position' | 'fieldSize' | 'laps'
   return Math.round((PAY_PER_LAP * r.laps * share * DIFFICULTY_PAY[r.difficulty] * rivals) / 100) * 100;
 }
 
-/** Price of upgrade `level` (1..MAX_UPGRADE) for a car: dearer cars cost more to tune. */
+/** Price of upgrade `level` (1..MAX_UPGRADE) for a car: dearer cars cost a little more to tune. */
 export function upgradeCost(car: CarId, part: UpgradePart, level: number): number {
-  const base = Math.max(2500, CAR_PRICES[car] * 0.08) * (part === 'nitro' ? 0.8 : 1);
-  return Math.round((base * [1, 1.8, 3][level - 1]) / 100) * 100;
+  const carFactor = 1 + CAR_PRICES[car] / 400_000;
+  return Math.round((PART_PRICE[part] * LEVEL_PRICE[level - 1] * carFactor) / 100) * 100;
 }
 
 export function upgradesOf(wallet: Wallet, car: CarId): Upgrades {
@@ -81,7 +94,11 @@ export function cleanWallet(raw: unknown): Wallet {
     const u = rawUpgrades[id] as Record<string, unknown> | undefined;
     if (!u || typeof u !== 'object') continue;
     const level = (v: unknown) => (Number.isInteger(v) ? Math.max(0, Math.min(MAX_UPGRADE, v as number)) : 0);
-    upgrades[id] = { engine: level(u.engine), handling: level(u.handling), nitro: level(u.nitro) };
+    // Saves from before the parts were split up had one "handling" upgrade: tyres, suspension and brakes.
+    const old = level(u.handling);
+    upgrades[id] = Object.fromEntries(
+      UPGRADE_PARTS.map((part) => [part, u[part] === undefined && ['tyres', 'suspension', 'brakes'].includes(part) ? old : level(u[part])]),
+    ) as Upgrades;
   }
   return { credits, owned, upgrades };
 }

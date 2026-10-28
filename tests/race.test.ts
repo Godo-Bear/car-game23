@@ -73,11 +73,11 @@ describe.each(Object.values(TRACKS))('RaceSimulation on $name (headless full rac
 
     expect(sim.race.racers.every((r) => r.finished)).toBe(true);
     expect(respawns).toBe(0);
-    // Average lap speed in a believable band for each circuit (roughly 100-150 km/h).
+    // Average lap speed in a believable band for each circuit (roughly 100-165 km/h).
     for (const r of sim.race.racers) {
       const kmh = (sim.track.length / r.bestLapTime!) * 3.6;
       expect(kmh).toBeGreaterThan(100);
-      expect(kmh).toBeLessThan(150);
+      expect(kmh).toBeLessThan(165);
     }
     const positions = sim.race.standings().map((r) => r.position);
     expect(positions).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);

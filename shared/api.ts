@@ -67,7 +67,7 @@ export interface Wallet {
   upgrades: Partial<Record<CarId, Upgrades>>;
 }
 
-export type UpgradePart = 'engine' | 'handling' | 'nitro';
+export type UpgradePart = 'engine' | 'gearbox' | 'aero' | 'tyres' | 'suspension' | 'brakes' | 'diff' | 'nitro';
 export type Upgrades = Record<UpgradePart, number>;
 
 export interface ProfileResponse {

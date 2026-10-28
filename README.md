@@ -10,11 +10,15 @@ countryside, by day, at sunset or at night — running in the browser and hosted
   the field racing over the Hakone pass on a sunny day, filmed with TV-style camera shots.
 - **Career:** you start with ¥3,000 and the Mame 1.3 starter car. Every finished race pays prize
   money (more for a better place, more laps, harder difficulty and more rivals; a 3-lap win on
-  Normal is ¥10,500). Spend it in the *Shop* on faster cars (¥30,000 – ¥220,000) or on upgrades
-  in the garage: Engine, Handling and Nitro, three levels each. With an account the server does
+  Normal is ¥10,500). Spend it in the *Shop* on other cars (¥30,000 – ¥220,000) or on upgrades
+  in the garage: Engine, Gearbox, Aero, Tyres, Suspension, Brakes, Differential and Nitro, four
+  levels each. Every car starts with similar stats (each with a little personality: the drift
+  coupe slides best, the hypercar is fastest), and a fully upgraded car has every stat maxed at
+  10, so any car you like can be tuned to the top. Old saves' "Handling" upgrade carries over to
+  tyres, suspension and brakes. With an account the server does
   the sums (prices, prize money, what you own), so money only comes from racing; guests are saved
   on the device. A guest's money doesn't move to a new account.
-- **Garage:** six cars with their own handling — Mame 1.3 (starter), Shiro Spyder (roadster),
+- **Garage:** six cars with their own feel — Mame 1.3 (starter), Shiro Spyder (roadster),
   Kaze GT (all-rounder), Oni 86R (drift coupe), Yama R4 (rally special) and Raijin V12 (hypercar).
   Five use 3D models from `public/models/` (see *3D assets*); the rally car (and any car whose
   model fails to load) uses the built-in body with wheel arches, glasshouse, lights, grilles and
@@ -41,29 +45,29 @@ countryside, by day, at sunset or at night — running in the browser and hosted
   where it is pointing instead of sliding wide into the barrier, and lifting off the throttle ends a drift
   cleanly (the rear grips up and the slide is reeled in). Steering calms down at speed, and with
   stability assist on a barrier assist nudges you away from walls you're about to hit.
-- **Ten circuits** (the track picker scrolls sideways):
-  - **Tokyo** — 2.43 km *Shinjuku–Bay Street Circuit*: neon towers, a Shibuya scramble chicane, an
+- **Ten circuits** with wide, flowing corners (the track picker scrolls sideways):
+  - **Tokyo** — 2.95 km *Shinjuku–Bay Street Circuit*: neon towers, a Shibuya scramble chicane, an
     elevated Shuto-style expressway, Tokyo Tower, Skytree and Rainbow Bridge.
-  - **Osaka** — 3.02 km *Namba–Dotonbori Street Circuit*: a neon main straight, a square block
+  - **Osaka** — 3.71 km *Namba–Dotonbori Street Circuit*: a neon main straight, a square block
     through Namba, the elevated Hanshin Expressway, Osaka Castle in its park, a big wheel and
     Umeda's supertall tower.
-  - **Yokohama** — 2.98 km *Minato Mirai Bay Circuit*: downtown blocks, then an elevated run along
+  - **Yokohama** — 3.67 km *Minato Mirai Bay Circuit*: downtown blocks, then an elevated run along
     the harbour past the Cosmo Clock big wheel, the Landmark Tower, the Marine Tower and the Bay
     Bridge.
-  - **Hakone** — 2.85 km mountain pass (touge): a ladder of hairpin switchbacks climbing through
+  - **Hakone** — 3.71 km mountain pass (touge): a ladder of hairpin switchbacks climbing through
     cedar forest, a ridge road and a long descent to the lake with its floating torii; guardrails
     and hairpin chevrons.
-  - **Irohazaka** — 2.84 km: Nikko's famous hairpin road, four tight switchbacks in a row through
+  - **Irohazaka** — 3.74 km: Nikko's famous hairpin road, four tight switchbacks in a row through
     blazing autumn maples and gold broadleaf trees, falling leaves, a pagoda by the lake.
-  - **Mt. Haruna** — 2.27 km touge: back-to-back hairpins up from the lake, a fast ridge and a run
+  - **Mt. Haruna** — 2.75 km touge: back-to-back hairpins up from the lake, a fast ridge and a run
     of esses on the way down; lakeside ryokan, torii and ropeway.
-  - **Niseko** — 2.59 km Hokkaido snow pass: wide, flowing road between frosted firs, a frozen
+  - **Niseko** — 3.22 km Hokkaido snow pass: wide, flowing road between frosted firs, a frozen
     lake, falling snow, red-and-white arrow poles marking the road edges, Mt. Yotei on the horizon.
-  - **Sakura Valley** — 2.59 km fast countryside circuit through rolling grassland, cherry-blossom
+  - **Sakura Valley** — 3.22 km fast countryside circuit through rolling grassland, cherry-blossom
     avenues with falling petals, a lake with a five-storey pagoda, and a torii gate over the start.
-  - **Arashiyama** — 2.48 km through Kyoto's western hills: a third of the lap walled in by the
+  - **Arashiyama** — 3.03 km through Kyoto's western hills: a third of the lap walled in by the
     bamboo grove, red maples, a temple pagoda by the pond and the Sagano line.
-  - **Izu Coast** — 2.42 km: a long beachfront straight along the sea, pine-lined shore and a
+  - **Izu Coast** — 2.98 km: a long beachfront straight along the sea, pine-lined shore and a
     lighthouse, then up into the hills, with Mt. Fuji across the bay.
 - **Time of day:** day, sunset or night on any circuit — sky, sun position, shadows, fog, street
   lamps, lit windows, neon and headlights all change.

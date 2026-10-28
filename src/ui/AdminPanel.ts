@@ -1,5 +1,5 @@
 import { type AdminPlayer, isAdminCode } from '../../shared/admin';
-import { CAR_IDS, type CarId, type UpgradePart, type Wallet } from '../../shared/api';
+import { CAR_IDS, type CarId, type UpgradePart, type Upgrades, type Wallet } from '../../shared/api';
 import { cleanWallet, formatYen, MAX_UPGRADE, STARTER_CAR, UPGRADE_PARTS, upgradesOf } from '../../shared/economy';
 import { type AccountService, ApiError } from '../account/AccountService';
 import { CARS } from '../vehicles/cars';
@@ -33,7 +33,7 @@ export class AdminPanel {
     $('admin-give-all').addEventListener('click', () => {
       if (!this.wallet) return;
       const upgrades: Wallet['upgrades'] = {};
-      for (const id of CAR_IDS) upgrades[id] = { engine: MAX_UPGRADE, handling: MAX_UPGRADE, nitro: MAX_UPGRADE };
+      for (const id of CAR_IDS) upgrades[id] = Object.fromEntries(UPGRADE_PARTS.map((part) => [part, MAX_UPGRADE])) as Upgrades;
       this.wallet = { credits: this.wallet.credits + 1_000_000, owned: [...CAR_IDS], upgrades };
       this.render();
     });
