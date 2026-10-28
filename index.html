@@ -70,8 +70,8 @@
       <div class="hub-panel home-panel" data-panel="home">
         <div class="home-cards">
           <button type="button" id="home-quick" class="home-card quick">
-            <span class="tag">RACE</span>
-            <b>Quick race</b>
+            <span class="tag">NEXT EVENT</span>
+            <b id="home-quick-name">Quick race</b>
             <small id="home-quick-info">Hakone · 3 laps</small>
             <span class="go" aria-hidden="true">▶</span>
           </button>
@@ -92,34 +92,28 @@
         </div>
       </div>
 
-      <div class="hub-panel hidden" data-panel="race">
-        <div class="panel event-panel">
-          <h2>Event</h2>
-          <div id="track-cards" class="track-cards"></div>
-          <p id="track-blurb" class="muted small-text track-blurb"></p>
-          <div class="setting">
-            <span>Time of day</span>
-            <div class="seg" data-setting="timeOfDay"><button type="button" data-value="day">☀ Day</button><button type="button" data-value="sunset">🌇 Sunset</button><button type="button" data-value="night">🌙 Night</button></div>
-          </div>
-          <div class="setting">
-            <span>Laps</span>
-            <div class="seg" data-setting="laps"><button type="button" data-value="1">1</button><button type="button" data-value="3">3</button><button type="button" data-value="5">5</button></div>
-          </div>
-          <div class="setting">
-            <span>Opponents</span>
-            <div class="seg" data-setting="opponents"><button type="button" data-value="3">3</button><button type="button" data-value="5">5</button><button type="button" data-value="7">7</button></div>
-          </div>
-          <div class="setting">
-            <span>Difficulty</span>
-            <div class="seg" data-setting="difficulty"><button type="button" data-value="easy">Easy</button><button type="button" data-value="normal">Normal</button><button type="button" data-value="hard">Hard</button></div>
-          </div>
+      <!-- Career: the city map with an event pinned on it for every race -->
+      <div class="hub-panel hidden career-panel" data-panel="career">
+        <div class="career-map" aria-hidden="false">
+          <div id="map-frame" class="map-frame"></div>
+        </div>
+        <div class="panel event-card">
+          <small id="ev-num" class="ev-num">EVENT 1 / 20</small>
+          <h2 id="ev-name">Event</h2>
+          <p id="ev-track" class="muted small-text"></p>
+          <div id="ev-course" class="ev-course"></div>
+          <div id="ev-chips" class="ev-chips"></div>
+          <p id="ev-reward" class="ev-reward"></p>
+          <p id="ev-best" class="muted small-text"></p>
           <div class="setting">
             <span>Stability assist</span>
             <div class="seg" data-setting="assists"><button type="button" data-value="true">On</button><button type="button" data-value="false">Off</button></div>
           </div>
           <div class="event-car"><span class="muted">Car</span> <b id="event-car-name">Kaze GT</b> <button type="button" id="btn-event-garage" class="link-btn">Change ›</button></div>
-          <button type="button" id="btn-race" class="primary race-btn">START RACE ▶</button>
+          <button type="button" id="btn-race" class="primary race-btn">START EVENT ▶</button>
+          <p id="ev-locked" class="muted small-text ev-locked"></p>
         </div>
+        <div id="career-progress" class="career-progress"></div>
       </div>
 
       <div class="hub-panel hidden" data-panel="garage">
@@ -198,7 +192,7 @@
         </div>
       </div>
 
-      <div class="hub-panel hidden" data-panel="career">
+      <div class="hub-panel hidden" data-panel="profile">
         <div class="panel profile-panel">
           <div class="profile-head">
             <div class="avatar big" id="career-avatar">G</div>
@@ -226,14 +220,14 @@
         </div>
       </div>
 
-      <footer class="hub-foot muted"><kbd>Enter</kbd> start race · <kbd>H</kbd> controls · <kbd>Esc</kbd> back</footer>
+      <footer class="hub-foot muted"><kbd>Enter</kbd> start event · <kbd>H</kbd> controls · <kbd>Esc</kbd> back</footer>
 
       <nav class="hub-nav" role="tablist" aria-label="Menu">
         <button type="button" role="tab" data-panel="home">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1v-8.5Z" fill="currentColor"/></svg>Home
         </button>
-        <button type="button" role="tab" data-panel="race">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h2v18H5zM8 4h12l-2.5 4L20 12H8z" fill="currentColor"/></svg>Race
+        <button type="button" role="tab" data-panel="career">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h2v18H5zM8 4h12l-2.5 4L20 12H8z" fill="currentColor"/></svg>Career
         </button>
         <button type="button" role="tab" data-panel="garage">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 10.5 7.4 6A2 2 0 0 1 9.2 5h5.6a2 2 0 0 1 1.8 1l1.9 4.5H19a2 2 0 0 1 2 2V17h-1.5a2.5 2.5 0 0 1-5 0h-5a2.5 2.5 0 0 1-5 0H3v-4.5a2 2 0 0 1 2-2h.5Zm2.2 0h8.6l-1.4-3.4a.5.5 0 0 0-.5-.3H9.6a.5.5 0 0 0-.5.3z" fill="currentColor"/></svg>Garage
@@ -241,8 +235,8 @@
         <button type="button" role="tab" data-panel="shop">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7h12l1 14H5L6 7Zm3 0a3 3 0 0 1 6 0h-1.6a1.4 1.4 0 0 0-2.8 0z" fill="currentColor"/></svg>Shop
         </button>
-        <button type="button" role="tab" data-panel="career">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v2h3v3a4 4 0 0 1-4 4 5 5 0 0 1-3 2.6V17h3v4H8v-4h3v-2.4A5 5 0 0 1 8 12a4 4 0 0 1-4-4V5h3V3Zm0 4H6v1a2 2 0 0 0 1 1.7zm10 0v2.7A2 2 0 0 0 18 8V7z" fill="currentColor"/></svg>Career
+        <button type="button" role="tab" data-panel="profile">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v2h3v3a4 4 0 0 1-4 4 5 5 0 0 1-3 2.6V17h3v4H8v-4h3v-2.4A5 5 0 0 1 8 12a4 4 0 0 1-4-4V5h3V3Zm0 4H6v1a2 2 0 0 0 1 1.7zm10 0v2.7A2 2 0 0 0 18 8V7z" fill="currentColor"/></svg>Profile
         </button>
       </nav>
     </section>
@@ -392,6 +386,7 @@
         <p id="results-saved" class="muted"></p>
         <div class="row">
           <button type="button" id="btn-again" class="primary">Race again</button>
+          <button type="button" id="btn-results-map">Career map</button>
           <button type="button" id="btn-home" class="secondary">Home</button>
         </div>
       </div>

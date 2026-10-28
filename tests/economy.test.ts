@@ -20,7 +20,7 @@ const race = { position: 1, fieldSize: 8, laps: 3, difficulty: 'normal' as const
 
 describe('economy', () => {
   it('starts you with the starter car and a little money', () => {
-    expect(newWallet()).toEqual({ credits: STARTING_CREDITS, owned: [STARTER_CAR], upgrades: {} });
+    expect(newWallet()).toEqual({ credits: STARTING_CREDITS, owned: [STARTER_CAR], upgrades: {}, events: {} });
     expect(CAR_PRICES[STARTER_CAR]).toBe(0);
   });
 

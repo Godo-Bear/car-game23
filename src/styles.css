@@ -280,10 +280,6 @@ kbd {
   background: var(--accent-2);
   color: #031018;
 }
-.track-blurb {
-  margin: 8px 2px 4px;
-  min-height: 2.4em;
-}
 .race-btn {
   width: 100%;
   margin-top: 14px;
@@ -901,74 +897,6 @@ input {
 }
 
 /* Track cards with preview pictures */
-.track-cards {
-  /* Two rows of cards that scroll sideways (about three columns in view). */
-  display: grid;
-  grid-auto-flow: column;
-  grid-template-rows: repeat(2, auto);
-  grid-auto-columns: calc((100% - 20px) / 3.25);
-  gap: 10px;
-  overflow-x: auto;
-  scroll-snap-type: x proximity;
-  padding-bottom: 6px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
-}
-.track-card {
-  scroll-snap-align: start;
-  position: relative;
-  padding: 0;
-  overflow: hidden;
-  aspect-ratio: 4 / 3;
-  border-radius: 12px;
-  border: 2px solid transparent;
-  background: linear-gradient(160deg, #26304a, #10131f);
-  text-align: left;
-}
-.track-card img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.3s;
-}
-.track-card:hover img {
-  transform: scale(1.05);
-}
-/* The course map over a dimmed picture of the circuit. */
-.track-card img {
-  filter: brightness(0.42) saturate(0.8);
-}
-.track-card .course {
-  position: absolute;
-  left: 4%;
-  right: 4%;
-  top: 3%;
-  width: 92%;
-  height: 64%;
-  pointer-events: none;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
-}
-.track-card .label {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 18px 8px 7px;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.85));
-  display: flex;
-  flex-direction: column;
-}
-.track-card .label small {
-  font-weight: 600;
-  font-size: 11px;
-  color: #d6d8ea;
-}
-.track-card.active {
-  border-color: var(--accent-2);
-  box-shadow: 0 0 0 3px rgba(25, 211, 255, 0.25);
-}
 .event-car {
   display: flex;
   align-items: center;
@@ -1267,10 +1195,6 @@ input {
 }
 
 @media (max-width: 640px) {
-  .track-cards {
-    grid-auto-columns: calc((100% - 12px) / 3.2);
-    gap: 6px;
-  }
   .profile-chip b {
     display: none;
   }
@@ -1455,6 +1379,7 @@ input {
 }
 .hub-nav button {
   flex: 1;
+  transition: none;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1505,5 +1430,240 @@ input {
   }
   .home-title b {
     font-size: 28px;
+  }
+}
+
+/* ---------- Career: the city map with an event pinned on it for every race ---------- */
+.hub[data-panel='career'] {
+  background: linear-gradient(90deg, rgba(8, 10, 18, 0.55) 0%, rgba(8, 10, 18, 0) 34%);
+}
+.career-map {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: var(--nav-h);
+  z-index: -1;
+  overflow: hidden;
+  background: #9fb9cf;
+}
+/* The picture keeps its 16:9 shape and covers the screen; pins sit at fractions of it. */
+.career-map {
+  cursor: grab;
+  touch-action: none;
+}
+.career-map.dragging {
+  cursor: grabbing;
+}
+/* Bigger than the screen; dragged around (see Screens.panMap). */
+.map-frame {
+  position: absolute;
+  left: 0;
+  top: 0;
+  aspect-ratio: 16 / 9;
+  background: url(/career/map.jpg) center / cover no-repeat;
+  will-change: transform;
+}
+.pin {
+  position: absolute;
+  padding: 0;
+  border: none;
+  background: none;
+  transform: translate(-50%, -100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.pin:hover {
+  background: none;
+  z-index: 2;
+}
+.pin-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 44px;
+  border-radius: 10px 10px 12px 12px;
+  background: linear-gradient(180deg, #ffd23d, #f29b12);
+  color: #2a1600;
+  font-weight: 900;
+  font-size: 17px;
+  box-shadow:
+    0 4px 10px rgba(0, 0, 0, 0.45),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.18);
+  transition: transform 0.15s;
+}
+.pin-icon::after {
+  /* The point at the bottom of the marker. */
+  content: '';
+  position: absolute;
+  bottom: -7px;
+  left: 50%;
+  border: 7px solid transparent;
+  border-top-color: #f29b12;
+  border-bottom: 0;
+  transform: translateX(-50%);
+}
+.pin .lock {
+  display: none;
+  width: 22px;
+  height: 22px;
+}
+.pin.locked .pin-icon {
+  background: linear-gradient(180deg, #ff5fb0, #e0207a);
+  color: #4a0a2a;
+}
+.pin.locked .pin-icon::after {
+  border-top-color: #e0207a;
+}
+.pin.locked .lock {
+  display: block;
+}
+.pin.locked .pin-num {
+  display: none;
+}
+/* Podium finishes: gold, silver or bronze. */
+.pin.done .pin-icon {
+  background: linear-gradient(180deg, #fff3b0, #e6b422);
+}
+.pin.done[data-medal='2'] .pin-icon {
+  background: linear-gradient(180deg, #ffffff, #b9c2cf);
+}
+.pin.done[data-medal='3'] .pin-icon {
+  background: linear-gradient(180deg, #ffd6b0, #c9783a);
+}
+.pin.done .pin-num::after {
+  content: ' ✓';
+  font-size: 12px;
+}
+/* The next event: a pulsing ring and a green arrow over it. */
+.pin.next::before {
+  content: '';
+  position: absolute;
+  top: -30px;
+  left: 50%;
+  border: 12px solid transparent;
+  border-top: 18px solid #b6f36a;
+  border-bottom: 0;
+  transform: translateX(-50%);
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5));
+  animation: pin-bob 1.2s ease-in-out infinite;
+}
+.pin.next .pin-icon {
+  animation: pin-pulse 1.6s ease-out infinite;
+}
+.pin.selected .pin-icon {
+  transform: scale(1.22);
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+.pin-label {
+  pointer-events: none;
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 9px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(8, 8, 16, 0.78);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.pin:hover .pin-label,
+.pin.selected .pin-label,
+.pin.next .pin-label {
+  opacity: 1;
+}
+@keyframes pin-pulse {
+  0% {
+    box-shadow:
+      0 4px 10px rgba(0, 0, 0, 0.45),
+      0 0 0 0 rgba(182, 243, 106, 0.8);
+  }
+  100% {
+    box-shadow:
+      0 4px 10px rgba(0, 0, 0, 0.45),
+      0 0 0 16px rgba(182, 243, 106, 0);
+  }
+}
+@keyframes pin-bob {
+  50% {
+    transform: translate(-50%, -6px);
+  }
+}
+.event-card {
+  width: min(380px, 100%);
+}
+.event-card h2 {
+  margin: 2px 0 4px;
+  font-style: italic;
+  text-transform: uppercase;
+}
+.ev-num {
+  color: var(--accent-2);
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  font-size: 12px;
+}
+.ev-course {
+  height: 120px;
+  margin: 8px 0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.ev-course .course {
+  width: 100%;
+  height: 100%;
+}
+.ev-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ev-chips span {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+.ev-reward b {
+  color: var(--gold);
+}
+.ev-locked {
+  margin-top: 8px;
+  color: #ff8fc4;
+}
+.career-progress {
+  position: fixed;
+  right: clamp(16px, 3vw, 32px);
+  bottom: calc(var(--nav-h) + 14px);
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(8, 8, 16, 0.75);
+  font-weight: 800;
+  font-size: 13px;
+}
+.hub[data-panel='career'] .hub-foot {
+  display: none;
+}
+@media (max-width: 640px) {
+  .pin-icon {
+    width: 28px;
+    height: 32px;
+    font-size: 13px;
+  }
+  .event-card {
+    font-size: 14px;
+  }
+  .ev-course {
+    height: 80px;
   }
 }

@@ -1,6 +1,7 @@
 import type { AdminRequest } from '../../shared/admin';
 import type { CareerStats, PlayerSettings, ProfileResponse, Purchase, RaceRecord, Wallet } from '../../shared/api';
-import { cleanWallet, newWallet, purchase, raceReward } from '../../shared/economy';
+import { settleRace } from '../../shared/career';
+import { cleanWallet, newWallet, purchase } from '../../shared/economy';
 
 /** 'no-database': the API Worker is deployed but its D1 binding is missing. */
 export type BackendStatus = 'unknown' | 'online' | 'offline' | 'no-database';
@@ -195,7 +196,8 @@ export class AccountService {
     const trackBest = s.bestLaps[result.track];
     if (result.bestLap !== null && (trackBest === undefined || result.bestLap < trackBest)) s.bestLaps[result.track] = result.bestLap;
     s.totalLaps += result.laps;
-    this.guest.wallet = { ...this.guest.wallet, credits: this.guest.wallet.credits + raceReward(result) };
+    const settled = settleRace(this.guest.wallet, result);
+    if (typeof settled !== 'string') this.guest.wallet = settled.wallet;
     this.guest.recent = [{ ...result, createdAt: Math.floor(Date.now() / 1000) }, ...this.guest.recent].slice(0, 5);
     saveGuest(this.guest);
     this.emit();

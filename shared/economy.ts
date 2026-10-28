@@ -1,4 +1,5 @@
 import { CAR_IDS, type CarId, type Difficulty, type Purchase, type RaceRecord, type UpgradePart, type Upgrades, type Wallet } from './api';
+import { CAREER_EVENT_IDS } from './career';
 
 /**
  * The career economy, shared by the game (guest profiles) and the Worker (accounts), so prices
@@ -42,7 +43,7 @@ const PAY_PER_LAP = 3500;
 export const NO_UPGRADES: Upgrades = { engine: 0, gearbox: 0, aero: 0, tyres: 0, suspension: 0, brakes: 0, diff: 0, nitro: 0 };
 
 export function newWallet(): Wallet {
-  return { credits: STARTING_CREDITS, owned: [STARTER_CAR], upgrades: {} };
+  return { credits: STARTING_CREDITS, owned: [STARTER_CAR], upgrades: {}, events: {} };
 }
 
 /** Pay for a finished race: more for a better place, more laps, a harder field and more rivals. */
@@ -100,7 +101,13 @@ export function cleanWallet(raw: unknown): Wallet {
       UPGRADE_PARTS.map((part) => [part, u[part] === undefined && ['tyres', 'suspension', 'brakes'].includes(part) ? old : level(u[part])]),
     ) as Upgrades;
   }
-  return { credits, owned, upgrades };
+  // Career results (only known events, positions 1..12).
+  const events: Wallet['events'] = {};
+  const rawEvents = r.events && typeof r.events === 'object' ? (r.events as Record<string, unknown>) : {};
+  for (const [id, pos] of Object.entries(rawEvents)) {
+    if (CAREER_EVENT_IDS.includes(id) && Number.isInteger(pos) && (pos as number) >= 1 && (pos as number) <= 12) events[id] = pos as number;
+  }
+  return { credits, owned, upgrades, events };
 }
 
 /** "¥12,300" */

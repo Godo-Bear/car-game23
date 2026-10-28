@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { CarId, PlayerSettings, TimeOfDay, TrackId } from '../../shared/api';
+import { settleRace } from '../../shared/career';
 import { raceReward, upgradesOf } from '../../shared/economy';
 import { AccountService } from '../account/AccountService';
 import type { RacingLine } from '../ai/RacingLine';
@@ -207,9 +208,9 @@ export class Game {
     }
   }
 
-  /** Home, garage and shop show your car on the turntable; the other tabs show the homescreen race. */
+  /** Your car on the turntable (behind the career map too); the profile shows the homescreen race. */
   private get showroom(): boolean {
-    return this.hubPanel === 'home' || this.hubPanel === 'garage' || this.hubPanel === 'shop';
+    return this.hubPanel !== 'profile';
   }
 
   private onHubPanel(panel: HubPanel): void {
@@ -572,7 +573,7 @@ export class Game {
       return;
     }
     if (this.state === 'home') {
-      if (input.consume('confirm') && document.activeElement?.tagName !== 'BUTTON') void this.startRace(this.screens.settings);
+      if (input.consume('confirm') && document.activeElement?.tagName !== 'BUTTON') this.screens.quickStart();
       if (input.consume('pause')) this.screens.back();
       input.clearActions();
       return;
@@ -651,11 +652,15 @@ export class Game {
       difficulty: settings.difficulty,
       totalTime: me.finishTime,
       bestLap: me.bestLapTime,
+      ...(this.screens.raceEvent ? { event: this.screens.raceEvent } : {}),
     };
+    // What this result pays (prize money, plus a career event's first-podium bonus).
+    const settled = settleRace(this.account.wallet, record);
+    const earned = typeof settled === 'string' ? raceReward(record) : settled.earned;
     const saving = this.account.recordRace(record);
     setTimeout(async () => {
       if (this.state !== 'finished') return;
-      this.screens.showResults(this.resultsData(), 'Saving result…', raceReward(record));
+      this.screens.showResults(this.resultsData(), 'Saving result…', earned);
       const where = await saving;
       if (this.state !== 'finished') return;
       this.screens.setResultsSaved(

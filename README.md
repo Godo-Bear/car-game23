@@ -5,14 +5,21 @@ countryside, by day, at sunset or at night — running in the browser and hosted
 
 - **Core racing loop:** cinematic fly-in over the grid, F1-style start lights, lap counting, live
   positions, lap timing, 3–7 AI opponents, a slow-motion trackside finish shot and a results screen.
-- **Menu hub:** a bottom menu bar (*Home*, *Race*, *Garage*, *Shop*, *Career*) with money,
+- **Menu hub:** a bottom menu bar (*Home*, *Career*, *Garage*, *Shop*, *Profile*) with money,
   profile and settings at the top. *Home* shows your car on a turntable under neon with quick
-  links (Quick race on your last event, Garage with its upgrade level, Profile & career); *Race*
-  has circuit cards with a map of each course, time of day, laps, opponents and difficulty, over
-  the field racing on the Hakone pass.
+  links (your next career event, Garage with its upgrade level, Profile & stats).
+- **Career map:** the whole game is a career. *Career* shows an aerial view of a Japanese city
+  (downtown towers and Tokyo Tower, green outskirts, snowy mountains and Fuji behind) with 20
+  events pinned on it - city races downtown, countryside races on the outskirts, mountain passes
+  up in the hills. Each event sets the circuit, time of day, laps, rivals and difficulty; locked
+  events show a padlock, the next one pulses under a green arrow, finished ones show your medal.
+  A podium unlocks the next event, and the first podium on each pays a bonus (¥5,000 – ¥40,000,
+  up to the Tokyo Grand Final). Drag the map to look around; tap a pin for its course map,
+  prizes and your best result. The server checks every event result (unlocked, matching the
+  event) for accounts. The map picture (`public/career/map.jpg`) is rendered from the game.
 - **Career:** you start with ¥3,000 and the Mame 1.3 starter car. Every finished race pays prize
   money (more for a better place, more laps, harder difficulty and more rivals; a 3-lap win on
-  Normal is ¥10,500). Spend it in the *Shop* on other cars (¥30,000 – ¥220,000) or on upgrades
+  Normal is ¥10,500), plus career bonuses. Spend it in the *Shop* on other cars (¥30,000 – ¥220,000) or on upgrades
   in the garage: Engine, Gearbox, Aero, Tyres, Suspension, Brakes, Differential and Nitro, four
   levels each. Every car starts with similar stats (each with a little personality: the drift
   coupe slides best, the hypercar is fastest), and a fully upgraded car has every stat maxed at
@@ -174,6 +181,7 @@ runs at a fixed 120 Hz, and is covered by unit tests — including a headless 8-
 ├── server/                     # Cloudflare Worker: /api/* accounts, sessions, stats, settings, shop
 ├── shared/api.ts               # Types + validation shared by client and Worker
 ├── shared/economy.ts           # Prices, prize money, upgrades, purchase rules (client and Worker)
+├── shared/career.ts            # Career events, unlocks, bonuses (client and Worker)
 ├── migrations/                 # D1 schema (applied automatically by the Worker)
 ├── public/models/<car>/car.glb # Car models (see 3D assets)
 ├── public/previews/            # Track-picker pictures (rendered by `npm run previews`)

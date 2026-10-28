@@ -1,5 +1,6 @@
 import type { CarId, PlayerSettings, TrackId } from '../../shared/api';
-import { formatYen, STARTER_CAR, upgradesOf } from '../../shared/economy';
+import { bestResult, CAREER_EVENTS, careerEvent, eventUnlocked, nextEvent } from '../../shared/career';
+import { formatYen, raceReward, STARTER_CAR, upgradesOf } from '../../shared/economy';
 import { type AccountService, ApiError } from '../account/AccountService';
 import type { Input } from '../core/Input';
 import type { SettingsStore } from '../core/Settings';
@@ -26,7 +27,7 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   garage: {},
 };
 
-export type HubPanel = 'home' | 'race' | 'garage' | 'shop' | 'career';
+export type HubPanel = 'home' | 'career' | 'garage' | 'shop' | 'profile';
 
 export interface ScreenHandlers {
   onRace(settings: PlayerSettings): void;
@@ -54,6 +55,10 @@ type AuthMode = 'login' | 'register';
 export class Screens {
   settings: PlayerSettings = { ...DEFAULT_PLAYER_SETTINGS };
   panelName: HubPanel = 'home';
+  /** Career event picked on the map, and the one being raced (sent with the result). */
+  private selectedEvent = '';
+  private mapPos: [number, number] = [0, 0];
+  raceEvent: string | null = null;
   private authMode: AuthMode = 'login';
   private settingsReturnTo: 'none' | 'pause' = 'none';
   private readonly panel: SettingsPanel;
@@ -82,7 +87,8 @@ export class Screens {
       (id) => this.handlers.onPreviewCar(id),
       (id) => this.update({ car: id }, true),
     );
-    this.buildTrackCards();
+    this.buildPins();
+    this.wireMapDrag();
     this.wire();
     this.admin = new AdminPanel(account, () => this.handlers.onModalChange(this.isModalOpen));
     // Money, cars and upgrades change with purchases, race results and the admin tools.
@@ -120,7 +126,12 @@ export class Screens {
     });
     document.querySelectorAll<HTMLElement>('.hub-panel').forEach((p) => p.classList.toggle('hidden', p.dataset.panel !== panel));
     if (panel === 'garage') this.garage.render();
-    if (panel === 'race') $('btn-race').focus({ preventScroll: true });
+    if (panel === 'career') {
+      $('btn-race').focus({ preventScroll: true });
+      // Open on the selected (or next) event.
+      const e = careerEvent(this.selectedEvent) ?? nextEvent(this.account.wallet);
+      requestAnimationFrame(() => this.panMap(e.pin));
+    }
     if (panel === 'home') $('home-quick').focus({ preventScroll: true });
     this.handlers.onHubPanel(panel);
     // After the turntable is set up, so the shop's first car replaces yours on it.
@@ -154,11 +165,12 @@ export class Screens {
   private renderHome(): void {
     const s = this.settings;
     const a = this.account;
-    const track = TRACKS[s.track];
     const car = CARS[s.car];
-    $('home-quick-info').textContent = `${track.name} · ${s.laps} lap${s.laps > 1 ? 's' : ''} · ${s.difficulty}`;
+    const next = nextEvent(a.wallet);
+    $('home-quick-name').textContent = next.name;
+    $('home-quick-info').textContent = `${TRACKS[next.track].name} · ${next.laps} laps · ${next.difficulty}`;
     $('home-quick').style.backgroundImage =
-      `linear-gradient(100deg, rgba(20, 8, 40, 0.92) 30%, rgba(20, 8, 40, 0.35)), url(previews/${s.track}-${s.timeOfDay}.jpg)`;
+      `linear-gradient(100deg, rgba(20, 8, 40, 0.92) 30%, rgba(20, 8, 40, 0.35)), url(previews/${next.track}-${next.timeOfDay}.jpg)`;
     $('home-car').textContent = car.name;
     const levels = Object.values(upgradesOf(a.wallet, s.car)).reduce((sum, v) => sum + v, 0);
     $('home-car-lv').textContent = `LV ${levels}`;
@@ -228,7 +240,7 @@ export class Screens {
   // ---------- rendering ----------
   private render(): void {
     this.renderProfile();
-    this.renderEvent();
+    this.renderCareer();
     this.garage.render();
   }
 
@@ -280,44 +292,130 @@ export class Screens {
     $('btn-logout').classList.toggle('hidden', !a.signedIn);
   }
 
-  private buildTrackCards(): void {
-    $('track-cards').replaceChildren(
-      ...Object.values(TRACKS).map((t) => {
+  /**
+   * Size and place the map picture: at least 1.3x the screen so there is something to drag,
+   * centred on `focus` (a pin, as fractions of the picture) in the part of the screen beside
+   * the event card, and never leaving a gap at the edges.
+   */
+  private panMap(focus?: [number, number], dx = 0, dy = 0): void {
+    const view = document.querySelector<HTMLElement>('.career-map')!;
+    const frame = $('map-frame');
+    const vw = view.clientWidth;
+    const vh = view.clientHeight;
+    if (!vw || !vh) return;
+    const w = Math.max(vw * 1.3, vh * 1.3 * (16 / 9));
+    const h = (w * 9) / 16;
+    frame.style.width = `${w}px`;
+    if (focus) {
+      const card = document.querySelector<HTMLElement>('.event-card');
+      const left = vw > 760 && card ? card.getBoundingClientRect().right : 0;
+      this.mapPos = [left + (vw - left) / 2 - focus[0] * w, vh / 2 - focus[1] * h];
+    }
+    const x = Math.min(0, Math.max(vw - w, this.mapPos[0] + dx));
+    const y = Math.min(0, Math.max(vh - h, this.mapPos[1] + dy));
+    this.mapPos = [x, y];
+    frame.style.transform = `translate(${x}px, ${y}px)`;
+  }
+
+  /** Drag the map with the mouse or a finger (a short tap still picks a pin). */
+  private wireMapDrag(): void {
+    const view = document.querySelector<HTMLElement>('.career-map')!;
+    let start: [number, number] | null = null;
+    let moved = false;
+    view.addEventListener('pointerdown', (e) => {
+      start = [e.clientX, e.clientY];
+      moved = false;
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (!start) return;
+      const dx = e.clientX - start[0];
+      const dy = e.clientY - start[1];
+      if (!moved && Math.hypot(dx, dy) < 6) return;
+      moved = true;
+      view.classList.add('dragging');
+      this.panMap(undefined, dx, dy);
+      start = [e.clientX, e.clientY];
+    });
+    window.addEventListener('pointerup', () => {
+      start = null;
+      view.classList.remove('dragging');
+    });
+    // A drag shouldn't also count as clicking the pin it started on.
+    view.addEventListener(
+      'click',
+      (e) => {
+        if (moved) e.stopPropagation();
+        moved = false;
+      },
+      true,
+    );
+    window.addEventListener('resize', () => this.panMap());
+  }
+
+  /** One pin per career event on the city map. */
+  private buildPins(): void {
+    $('map-frame').replaceChildren(
+      ...CAREER_EVENTS.map((e, k) => {
         const b = document.createElement('button');
-        b.className = 'track-card';
-        b.dataset.value = t.id;
-        const img = document.createElement('img');
-        img.alt = '';
-        img.decoding = 'async';
-        img.addEventListener('error', () => (img.style.visibility = 'hidden'));
-        img.addEventListener('load', () => (img.style.visibility = ''));
-        const label = document.createElement('span');
-        label.className = 'label';
-        b.insertAdjacentHTML('beforeend', courseMap(t.id));
-        label.innerHTML = `<b>${t.short}</b><small>${t.label} · ${trackLengthKm(t.id).toFixed(2)} km</small>`;
-        b.prepend(img);
-        b.append(label);
-        b.addEventListener('click', () => this.update({ track: t.id }, false));
+        b.type = 'button';
+        b.className = 'pin';
+        b.dataset.event = e.id;
+        b.style.left = `${e.pin[0] * 100}%`;
+        b.style.top = `${e.pin[1] * 100}%`;
+        b.innerHTML = `<span class="pin-icon"><span class="pin-num">${k + 1}</span>${PADLOCK}</span><span class="pin-label">${escapeHtml(e.name)}</span>`;
+        b.addEventListener('click', () => {
+          this.selectedEvent = e.id;
+          this.renderCareer();
+        });
         return b;
       }),
     );
   }
 
-  private renderEvent(): void {
-    const s = this.settings;
-    const track = TRACKS[s.track];
-    $('track-blurb').textContent = track.blurb;
-    document.querySelectorAll<HTMLButtonElement>('#track-cards .track-card').forEach((b) => {
-      const active = b.dataset.value === s.track;
-      // Bring a newly picked track into view (the strip scrolls sideways).
-      if (active && !b.classList.contains('active')) b.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-      b.classList.toggle('active', active);
-      b.setAttribute('aria-pressed', String(active));
-      const img = b.querySelector('img')!;
-      const src = `previews/${b.dataset.value}-${s.timeOfDay}.jpg`;
-      if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+  /** The career map: pin states, and the card for the selected event. */
+  private renderCareer(): void {
+    const wallet = this.account.wallet;
+    const next = nextEvent(wallet);
+    if (!this.selectedEvent) this.selectedEvent = next.id;
+    document.querySelectorAll<HTMLButtonElement>('#map-frame .pin').forEach((b) => {
+      const id = b.dataset.event!;
+      const best = bestResult(wallet, id);
+      const open = eventUnlocked(wallet, id);
+      b.classList.toggle('locked', !open);
+      b.classList.toggle('done', best !== undefined && best <= 3);
+      b.dataset.medal = best === undefined || best > 3 ? '' : String(best);
+      b.classList.toggle('next', id === next.id && open);
+      b.classList.toggle('selected', id === this.selectedEvent);
     });
-    $('event-car-name').textContent = CARS[s.car].name;
+    const e = careerEvent(this.selectedEvent) ?? next;
+    const k = CAREER_EVENTS.indexOf(e);
+    const track = TRACKS[e.track];
+    const open = eventUnlocked(wallet, e.id);
+    const best = bestResult(wallet, e.id);
+    $('ev-num').textContent = `EVENT ${k + 1} / ${CAREER_EVENTS.length}`;
+    $('ev-name').textContent = e.name;
+    $('ev-track').textContent = `${track.name} · ${track.label} · ${trackLengthKm(e.track).toFixed(2)} km`;
+    $('ev-course').innerHTML = courseMap(e.track);
+    const time = { day: '☀ Day', sunset: '🌇 Sunset', night: '🌙 Night' }[e.timeOfDay];
+    $('ev-chips').replaceChildren(
+      ...[time, `${e.laps} laps`, `${e.rivals} rivals`, e.difficulty].map((t) => Object.assign(document.createElement('span'), { textContent: t })),
+    );
+    const win = raceReward({ position: 1, fieldSize: e.rivals + 1, laps: e.laps, difficulty: e.difficulty });
+    const claimed = best !== undefined && best <= 3;
+    $('ev-reward').innerHTML = `Win <b>${formatYen(win)}</b> · ${claimed ? 'podium bonus claimed ✓' : `first podium bonus <b>${formatYen(e.bonus)}</b>`}`;
+    $('ev-best').textContent = best === undefined ? 'Not raced yet' : `Best finish: P${best}`;
+    $('event-car-name').textContent = CARS[this.settings.car].name;
+    const race = $<HTMLButtonElement>('btn-race');
+    race.disabled = !open;
+    race.textContent = open ? 'START EVENT ▶' : '🔒 LOCKED';
+    $('ev-locked').textContent = open ? '' : `Finish “${CAREER_EVENTS[k - 1].name}” on the podium to unlock.`;
+    const done = CAREER_EVENTS.filter((ev) => (bestResult(wallet, ev.id) ?? 99) <= 3).length;
+    $('career-progress').textContent = `${done} / ${CAREER_EVENTS.length} events on the podium`;
+    this.renderSegs();
+  }
+
+  private renderSegs(): void {
+    const s = this.settings;
     document.querySelectorAll<HTMLElement>('.seg[data-setting]').forEach((seg) => {
       const key = seg.dataset.setting as keyof PlayerSettings;
       const current = String(s[key]);
@@ -327,6 +425,23 @@ export class Screens {
         b.setAttribute('aria-pressed', String(active));
       });
     });
+  }
+
+  /** Race a career event (if it's unlocked): its circuit, time, laps, rivals and difficulty. */
+  startEvent(id: string): void {
+    const e = careerEvent(id);
+    if (!e || !eventUnlocked(this.account.wallet, id)) return;
+    this.raceEvent = id;
+    this.selectedEvent = id;
+    this.update({ track: e.track, timeOfDay: e.timeOfDay, laps: e.laps, opponents: e.rivals, difficulty: e.difficulty }, false);
+    this.handlers.onRace(this.settings);
+  }
+
+  /** Enter / quick buttons: the selected event on the career map, otherwise the next one. */
+  quickStart(): void {
+    const wallet = this.account.wallet;
+    const pick = this.panelName === 'career' && this.selectedEvent && eventUnlocked(wallet, this.selectedEvent) ? this.selectedEvent : nextEvent(wallet).id;
+    this.startEvent(pick);
   }
 
   // ---------- auth ----------
@@ -385,16 +500,16 @@ export class Screens {
 
   // ---------- wiring ----------
   private wire(): void {
-    $('btn-race').addEventListener('click', () => this.handlers.onRace(this.settings));
-    $('home-quick').addEventListener('click', () => this.handlers.onRace(this.settings));
+    $('btn-race').addEventListener('click', () => this.selectedEvent && this.startEvent(this.selectedEvent));
+    $('home-quick').addEventListener('click', () => this.startEvent(nextEvent(this.account.wallet).id));
     $('home-garage').addEventListener('click', () => this.showPanel('garage'));
-    $('home-career').addEventListener('click', () => this.showPanel('career'));
-    $('btn-garage-race').addEventListener('click', () => this.handlers.onRace(this.settings));
+    $('home-career').addEventListener('click', () => this.showPanel('profile'));
+    $('btn-garage-race').addEventListener('click', () => this.quickStart());
     $('btn-event-garage').addEventListener('click', () => this.showPanel('garage'));
     document
       .querySelectorAll<HTMLElement>('.hub-nav [data-panel]')
       .forEach((b) => b.addEventListener('click', () => this.showPanel(b.dataset.panel as HubPanel)));
-    $('profile-chip').addEventListener('click', () => this.showPanel('career'));
+    $('profile-chip').addEventListener('click', () => this.showPanel('profile'));
     $('btn-settings').addEventListener('click', () => this.openSettings('graphics'));
     $('btn-hud-controls').addEventListener('click', () => this.openSettings('controls'));
     $('btn-pause-settings').addEventListener('click', () => this.openSettings('graphics'));
@@ -418,7 +533,16 @@ export class Screens {
     $('btn-restart').addEventListener('click', () => this.handlers.onRestart());
     $('btn-quit').addEventListener('click', () => this.handlers.onQuit());
     $('btn-again').addEventListener('click', () => this.handlers.onRestart());
-    $('btn-home').addEventListener('click', () => this.handlers.onQuit());
+    $('btn-home').addEventListener('click', () => {
+      this.panelName = 'home';
+      this.handlers.onQuit();
+    });
+    $('btn-results-map').addEventListener('click', () => {
+      // Back to the map with the next event picked.
+      this.panelName = 'career';
+      this.selectedEvent = nextEvent(this.account.wallet).id;
+      this.handlers.onQuit();
+    });
 
     document.querySelectorAll<HTMLElement>('.seg[data-setting]').forEach((seg) => {
       seg.addEventListener('click', (e) => {
@@ -507,3 +631,6 @@ function courseMap(id: TrackId): string {
     <path d="M2.6 0 L-1.6 -2.2 L-0.6 0 L-1.6 2.2 Z" fill="#19d3ff" transform="translate(${ax.toFixed(1)} ${ay.toFixed(1)}) rotate(${arrowAngle.toFixed(0)})"/>
   </svg>`;
 }
+
+const PADLOCK =
+  '<svg class="lock" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V7a5 5 0 0 1 10 0v3h1a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V11a1 1 0 0 1 1-1h1Zm2 0h6V7a3 3 0 0 0-6 0v3Zm3 4a1.5 1.5 0 0 0-.8 2.8V19h1.6v-2.2A1.5 1.5 0 0 0 12 14Z" fill="currentColor"/></svg>';

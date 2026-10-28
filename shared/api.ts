@@ -42,6 +42,8 @@ export interface RaceRecord {
   bestLap: number | null;
   /** Unix seconds (set by the server; optional when submitting). */
   createdAt?: number;
+  /** Career event this race was (see shared/career.ts). */
+  event?: string;
 }
 
 export interface PlayerSettings {
@@ -65,6 +67,8 @@ export interface Wallet {
   owned: CarId[];
   /** Upgrade levels per owned car. */
   upgrades: Partial<Record<CarId, Upgrades>>;
+  /** Career events raced: best finishing position per event id. */
+  events: Record<string, number>;
 }
 
 export type UpgradePart = 'engine' | 'gearbox' | 'aero' | 'tyres' | 'suspension' | 'brakes' | 'diff' | 'nitro';
