@@ -1864,3 +1864,79 @@ ul.quest-list {
 .mega-list .quest-text b {
   font-size: 16px;
 }
+
+/* ---------- Home fits the screen: no scrolling at any size ---------- */
+.home-cards {
+  gap: clamp(6px, 1.3vh, 12px);
+}
+.home-card {
+  min-height: clamp(64px, 11vh, 112px);
+  padding: clamp(8px, 1.5vh, 16px) 16px;
+}
+.home-card.quick {
+  min-height: clamp(84px, 14vh, 140px);
+}
+.home-card.mini {
+  min-height: clamp(52px, 8vh, 78px);
+  padding-block: clamp(6px, 1.2vh, 12px);
+}
+.home-card.mega {
+  min-height: clamp(62px, 10vh, 92px);
+  padding-block: clamp(6px, 1.2vh, 14px);
+}
+.quests {
+  padding: clamp(6px, 1.2vh, 12px) 14px;
+}
+.home-panel ul.quest-list {
+  gap: clamp(3px, 0.8vh, 8px);
+}
+/* The car's name sits clear of its class label. */
+.home-title small {
+  margin-bottom: 6px;
+}
+/* Six tabs always fit the bar, however narrow the screen. */
+.hub-nav button {
+  min-width: 0;
+  padding: 0 2px;
+  overflow: hidden;
+}
+@media (max-height: 760px) {
+  .hub {
+    gap: 10px;
+    padding-top: 12px;
+  }
+  .hub-brand {
+    font-size: 22px;
+  }
+  .top-icon,
+  .profile-chip .avatar {
+    width: 34px;
+    height: 34px;
+  }
+  .home-card b {
+    font-size: 17px;
+  }
+  .home-card.quick .go {
+    width: 36px;
+    height: 36px;
+    bottom: 10px;
+  }
+  .quests-head b {
+    font-size: 15px;
+  }
+}
+@media (max-height: 640px) {
+  /* Very short screens: quest descriptions go, the names and bars stay. */
+  .home-panel .quest-text small {
+    display: none;
+  }
+  .home-card.mini small {
+    display: none;
+  }
+}
+@media (max-width: 640px) {
+  .hub-nav button {
+    font-size: 10px;
+    letter-spacing: 0;
+  }
+}
