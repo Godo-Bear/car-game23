@@ -1,17 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CAR_IDS } from '../shared/api';
-import {
-  CAR_PRICES,
-  MAX_UPGRADE,
-  NO_UPGRADES,
-  newWallet,
-  purchase,
-  raceReward,
-  STARTER_CAR,
-  STARTING_CREDITS,
-  UPGRADE_PARTS,
-  upgradeCost,
-} from '../shared/economy';
+import { MAX_UPGRADE, NO_UPGRADES, newWallet, PLAYER_CAR, purchase, raceReward, STARTING_CREDITS, UPGRADE_PARTS, upgradeCost } from '../shared/economy';
 import { cleanWallet } from '../shared/wallet';
 import { VehiclePhysics } from '../src/physics/VehiclePhysics';
 import { CARS, carStats, upgradedSpec } from '../src/vehicles/cars';
@@ -19,10 +8,10 @@ import { CARS, carStats, upgradedSpec } from '../src/vehicles/cars';
 const race = { position: 1, fieldSize: 8, laps: 3, difficulty: 'normal' as const };
 
 describe('economy', () => {
-  it('starts you with the starter car and a little money', () => {
-    expect(newWallet()).toMatchObject({ credits: STARTING_CREDITS, owned: [STARTER_CAR], upgrades: {}, events: {}, quests: [] });
+  it('starts you with the Kaze GT and a little money', () => {
+    expect(newWallet()).toMatchObject({ credits: STARTING_CREDITS, owned: [PLAYER_CAR], upgrades: {}, events: {}, quests: [] });
+    expect(PLAYER_CAR).toBe('gt');
     expect(newWallet().daily.races).toBe(0);
-    expect(CAR_PRICES[STARTER_CAR]).toBe(0);
   });
 
   it('pays more for a better place, more laps, harder rivals and a bigger field', () => {
@@ -33,48 +22,56 @@ describe('economy', () => {
     expect(raceReward({ ...race, difficulty: 'hard' })).toBeGreaterThan(win);
     expect(raceReward({ ...race, difficulty: 'easy' })).toBeLessThan(win);
     expect(raceReward({ ...race, fieldSize: 4 })).toBeLessThan(win);
-    // Last place still earns something; the first car is a few wins away.
+    // Last place still earns something.
     expect(raceReward({ ...race, position: 8 })).toBeGreaterThan(0);
-    expect(CAR_PRICES.hatch / win).toBeGreaterThan(2);
-    expect(CAR_PRICES.hatch / win).toBeLessThan(5);
   });
 
-  it('sells cars once, only when you can afford them', () => {
-    expect(purchase(newWallet(), { kind: 'car', car: 'hatch' })).toBe('Not enough money.');
-    const rich = { ...newWallet(), credits: 100_000 };
-    const bought = purchase(rich, { kind: 'car', car: 'hatch' });
-    expect(bought).toEqual({ ...rich, credits: 100_000 - CAR_PRICES.hatch, owned: [STARTER_CAR, 'hatch'] });
-    expect(purchase(bought as typeof rich, { kind: 'car', car: 'hatch' })).toBe('You already own this car.');
-    expect(purchase(rich, { kind: 'car', car: 'nope' as never })).toBe('Unknown car.');
+  it('does not sell cars, and only upgrades the Kaze GT', () => {
+    const rich = { ...newWallet(), credits: 1_000_000 };
+    expect(purchase(rich, { kind: 'car', car: 'hatch' })).toBe('Cars are not for sale: the Kaze GT is your car.');
+    expect(purchase(rich, { kind: 'upgrade', car: 'super', part: 'engine' })).toBe('You can only upgrade your Kaze GT.');
   });
 
-  it('upgrades owned cars level by level up to the maximum', () => {
+  it('upgrades your car level by level up to the maximum', () => {
     let wallet = { ...newWallet(), credits: 1_000_000 };
-    expect(purchase(wallet, { kind: 'upgrade', car: 'gt', part: 'engine' })).toBe('Buy the car first.');
     for (let level = 1; level <= MAX_UPGRADE; level++) {
-      const next = purchase(wallet, { kind: 'upgrade', car: STARTER_CAR, part: 'engine' });
+      const next = purchase(wallet, { kind: 'upgrade', car: PLAYER_CAR, part: 'engine' });
       if (typeof next === 'string') throw new Error(next);
-      expect(next.credits).toBe(wallet.credits - upgradeCost(STARTER_CAR, 'engine', level));
-      expect(next.upgrades[STARTER_CAR]).toEqual({ ...NO_UPGRADES, engine: level });
+      expect(next.credits).toBe(wallet.credits - upgradeCost('engine', level));
+      expect(next.upgrades[PLAYER_CAR]).toEqual({ ...NO_UPGRADES, engine: level });
       wallet = next;
     }
-    expect(purchase(wallet, { kind: 'upgrade', car: STARTER_CAR, part: 'engine' })).toBe('Already fully upgraded.');
-    // Each level costs more, and tuning a dearer car costs more.
-    expect(upgradeCost('gt', 'engine', 2)).toBeGreaterThan(upgradeCost('gt', 'engine', 1));
-    expect(upgradeCost('super', 'engine', 1)).toBeGreaterThan(upgradeCost(STARTER_CAR, 'engine', 1));
+    expect(purchase(wallet, { kind: 'upgrade', car: PLAYER_CAR, part: 'engine' })).toBe('Already fully upgraded.');
+    // Each level costs more; the first engine level is a race win or so away.
+    expect(upgradeCost('engine', 2)).toBeGreaterThan(upgradeCost('engine', 1));
+    expect(upgradeCost('engine', 1) / raceReward(race)).toBeLessThan(1);
   });
 
-  it('cleans stored wallets: bad values fall back, the starter car is always yours', () => {
+  it('cleans stored wallets: bad values fall back, the Kaze GT is always yours', () => {
     expect(cleanWallet(null)).toEqual(newWallet());
     expect(cleanWallet({})).toEqual(newWallet());
-    const w = cleanWallet({ credits: 5000, owned: ['gt', 'bogus'], upgrades: { gt: { engine: 9, tyres: -2, nitro: 1.5, aero: 2 }, super: { engine: 3 } } });
+    const w = cleanWallet({ credits: 5000, owned: ['gt', 'bogus'], upgrades: { gt: { engine: 9, tyres: -2, nitro: 1.5, aero: 2 } } });
     expect(w.credits).toBe(5000);
-    expect(w.owned).toEqual([STARTER_CAR, 'gt']);
-    expect(w.upgrades).toEqual({ gt: { ...NO_UPGRADES, engine: MAX_UPGRADE, aero: 2 } }); // not super: not owned
+    expect(w.owned).toEqual([PLAYER_CAR]);
+    expect(w.upgrades).toEqual({ gt: { ...NO_UPGRADES, engine: MAX_UPGRADE, aero: 2 } });
     // Old saves had a single "handling" upgrade: it carries over to tyres, suspension and brakes.
     const old = cleanWallet({ credits: 0, owned: [], upgrades: { starter: { engine: 2, handling: 3, nitro: 1 } } });
-    expect(old.upgrades.starter).toEqual({ ...NO_UPGRADES, engine: 2, tyres: 3, suspension: 3, brakes: 3, nitro: 1 });
-    expect(cleanWallet({ credits: -5, owned: CAR_IDS }).credits).toBe(STARTING_CREDITS);
+    expect(old.upgrades.gt).toEqual({ ...NO_UPGRADES, engine: 2, tyres: 3, suspension: 3, brakes: 3, nitro: 1 });
+  });
+
+  it('refunds cars bought before there was only one, and keeps their best upgrades on the GT', () => {
+    const w = cleanWallet({
+      credits: 1000,
+      owned: ['starter', 'hatch', 'gt', 'super'],
+      upgrades: { hatch: { engine: 4, brakes: 1 }, gt: { engine: 1, tyres: 3 }, super: { nitro: 2 } },
+    });
+    // The hatch and the hypercar come back as money (the GT stays yours).
+    expect(w.credits).toBe(1000 + 30_000 + 220_000);
+    expect(w.owned).toEqual([PLAYER_CAR]);
+    expect(w.upgrades).toEqual({ gt: { ...NO_UPGRADES, engine: 4, brakes: 1, tyres: 3, nitro: 2 } });
+    // Cleaning again changes nothing (the refund is paid once).
+    expect(cleanWallet(w)).toEqual(w);
+    expect(cleanWallet({ credits: -5 }).credits).toBe(STARTING_CREDITS);
   });
 
   it('starts every car with similar stats, and maxes every stat when fully upgraded', () => {

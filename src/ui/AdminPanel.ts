@@ -1,12 +1,11 @@
 import { type AdminPlayer, type AdminStats, cleanAdminStats, isAdminCode } from '../../shared/admin';
-import { CAR_IDS, type CarId, type UpgradePart, type Upgrades, type Wallet } from '../../shared/api';
+import type { UpgradePart, Upgrades, Wallet } from '../../shared/api';
 import { CAREER_EVENT_IDS, MAX_STARS, totalStars } from '../../shared/career';
-import { formatYen, MAX_UPGRADE, STARTER_CAR, UPGRADE_PARTS, upgradesOf } from '../../shared/economy';
+import { formatYen, MAX_UPGRADE, PLAYER_CAR, UPGRADE_PARTS, upgradesOf } from '../../shared/economy';
 import { formatDp, ITEM_IDS } from '../../shared/items';
 import { DAILY_POOL, dailyFor, freshDaily, MEGA_QUESTS, todayKey } from '../../shared/quests';
 import { cleanWallet } from '../../shared/wallet';
 import { type AccountService, ApiError } from '../account/AccountService';
-import { CARS } from '../vehicles/cars';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -17,7 +16,7 @@ type ProfileTab = 'career' | 'admin';
 
 /**
  * The Admin tab on the Profile page, shown once unlocked with the admin code: set any player's
- * money, drift points, cars, upgrades, shop items, career results, stars, quests and stats.
+ * money, drift points, Kaze GT upgrades, shop items, career results, stars, quests and stats.
  * Online it edits accounts through the server (which checks the code on every request); without
  * a server it edits this device's guest profile.
  */
@@ -54,8 +53,7 @@ export class AdminPanel {
         ...w,
         credits: w.credits + 1_000_000,
         dp: w.dp + 100_000,
-        owned: [...CAR_IDS],
-        upgrades: Object.fromEntries(CAR_IDS.map((id) => [id, Object.fromEntries(UPGRADE_PARTS.map((part) => [part, MAX_UPGRADE])) as Upgrades])),
+        upgrades: { [PLAYER_CAR]: Object.fromEntries(UPGRADE_PARTS.map((part) => [part, MAX_UPGRADE])) as Upgrades },
         // Every career event won with every star (so they're all unlocked), and every item.
         events: Object.fromEntries(CAREER_EVENT_IDS.map((id) => [id, 1])),
         stars: Object.fromEntries(CAREER_EVENT_IDS.map((id) => [id, MAX_STARS])),
@@ -207,7 +205,7 @@ export class AdminPanel {
           const li = document.createElement('li');
           const name = Object.assign(document.createElement('button'), { type: 'button', className: 'link-btn', textContent: p.username });
           name.addEventListener('click', () => void this.load(p.username));
-          li.append(name, Object.assign(document.createElement('span'), { textContent: `${formatYen(p.wallet.credits)} · ${p.wallet.owned.length} cars` }));
+          li.append(name, Object.assign(document.createElement('span'), { textContent: `${formatYen(p.wallet.credits)} · ${formatDp(p.wallet.dp)}` }));
           return li;
         }),
       );
@@ -265,46 +263,27 @@ export class AdminPanel {
     $('admin-career-sum').textContent = `— ${podiums}/${CAREER_EVENT_IDS.length} podiums · ★ ${totalStars(w)}/${CAREER_EVENT_IDS.length * MAX_STARS}`;
     $('admin-items-sum').textContent = `— ${w.items.length}/${ITEM_IDS.length} owned · ${formatDp(w.dp)}`;
     $('admin-quests-sum').textContent = `— ${w.quests.length}/${MEGA_QUESTS.length} mega claimed`;
-    $('admin-cars').replaceChildren(
-      ...CAR_IDS.map((id) => {
-        const row = document.createElement('tr');
-        const owned = w.owned.includes(id);
-        const box = Object.assign(document.createElement('input'), { type: 'checkbox', checked: owned, disabled: id === STARTER_CAR });
-        box.setAttribute('aria-label', `Owns ${CARS[id].name}`);
-        box.addEventListener('change', () => this.setOwned(id, box.checked));
-        const name = document.createElement('label');
-        name.append(box, ` ${CARS[id].name}`);
-        const cells = [name, ...UPGRADE_PARTS.map((part) => this.levelPicker(id, part, owned))];
-        row.append(
-          ...cells.map((c) => {
-            const td = document.createElement('td');
-            td.append(c);
-            return td;
-          }),
-        );
-        return row;
+    // The Kaze GT's upgrade levels (the only car players drive).
+    const row = document.createElement('tr');
+    row.append(
+      ...UPGRADE_PARTS.map((part) => {
+        const td = document.createElement('td');
+        td.append(this.levelPicker(part));
+        return td;
       }),
     );
+    $('admin-cars').replaceChildren(row);
   }
 
-  private levelPicker(car: CarId, part: UpgradePart, owned: boolean): HTMLElement {
+  private levelPicker(part: UpgradePart): HTMLElement {
     const select = document.createElement('select');
-    select.setAttribute('aria-label', `${CARS[car].name} ${part}`);
+    select.setAttribute('aria-label', `Kaze GT ${part}`);
     for (let level = 0; level <= MAX_UPGRADE; level++) select.append(new Option(`${part[0].toUpperCase()}${part.slice(1)} ${level}`, String(level)));
-    select.value = String(upgradesOf(this.wallet!, car)[part]);
-    select.disabled = !owned;
+    select.value = String(upgradesOf(this.wallet!, PLAYER_CAR)[part]);
     select.addEventListener('change', () =>
-      this.change((w) => ({ ...w, upgrades: { ...w.upgrades, [car]: { ...upgradesOf(w, car), [part]: Number(select.value) } } })),
+      this.change((w) => ({ ...w, upgrades: { ...w.upgrades, [PLAYER_CAR]: { ...upgradesOf(w, PLAYER_CAR), [part]: Number(select.value) } } })),
     );
     return select;
-  }
-
-  private setOwned(car: CarId, owned: boolean): void {
-    this.change((w) => {
-      const upgrades = { ...w.upgrades };
-      if (!owned) delete upgrades[car];
-      return { ...w, owned: owned ? [...w.owned, car] : w.owned.filter((id) => id !== car), upgrades };
-    });
   }
 
   private isMe(username: string): boolean {
@@ -323,9 +302,7 @@ export class AdminPanel {
       }
       this.wallet = wallet;
       this.render();
-      this.say(
-        `Saved ✓ ${this.target ?? 'This device'} now has ${formatYen(wallet.credits)}, ${formatDp(wallet.dp)} and ${wallet.owned.length} car${wallet.owned.length === 1 ? '' : 's'}.`,
-      );
+      this.say(`Saved ✓ ${this.target ?? 'This device'} now has ${formatYen(wallet.credits)} and ${formatDp(wallet.dp)}.`);
     } catch (e) {
       this.say(e instanceof ApiError ? e.message : 'Could not save.');
     }

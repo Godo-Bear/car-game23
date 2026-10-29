@@ -1,6 +1,6 @@
-import type { CarId, CarSetup, PlayerSettings, Purchase, TrackId } from '../../shared/api';
+import type { CarSetup, PlayerSettings, Purchase, TrackId } from '../../shared/api';
 import { bestResult, CAREER_EVENTS, careerEvent, eventUnlocked, MAX_STARS, nextEvent, STAR_BONUS, starTimes, totalStars } from '../../shared/career';
-import { formatYen, raceReward, STARTER_CAR, upgradesOf } from '../../shared/economy';
+import { formatYen, PLAYER_CAR, raceReward, upgradesOf } from '../../shared/economy';
 import { formatDp } from '../../shared/items';
 import { dailyFor, dailyQuests, MEGA_QUESTS, megaToShow, msUntilReset, todayKey } from '../../shared/quests';
 import { type AccountService, ApiError } from '../account/AccountService';
@@ -25,7 +25,7 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   camera: 'chase',
   track: 'tokyo',
   timeOfDay: 'night',
-  car: STARTER_CAR,
+  car: PLAYER_CAR,
   garage: {},
 };
 
@@ -36,8 +36,6 @@ export interface ScreenHandlers {
   /** Race setup or car changed (already applied to `settings`); `car` is true for garage changes. */
   onSettingsChanged(settings: PlayerSettings, car: boolean): void;
   onHubPanel(panel: HubPanel): void;
-  /** The shop is showing a car (on the turntable). */
-  onPreviewCar(id: CarId): void;
   /** The shop is trying a cosmetic on your car. */
   onTryOn(setup: CarSetup): void;
   onResume(): void;
@@ -96,8 +94,6 @@ export class Screens {
     );
     this.shop = new ShopScreen(
       account,
-      (id) => this.handlers.onPreviewCar(id),
-      (id) => this.update({ car: id }, true),
       () => carSetup(this.settings.car, this.settings.garage),
       (setup) => this.handlers.onTryOn(setup),
     );
@@ -107,8 +103,6 @@ export class Screens {
     this.admin = new AdminPanel(account);
     // Money, cars and upgrades change with purchases, race results and the admin tools.
     account.onChange(() => {
-      // An admin may have taken away the car you were going to race.
-      if (!account.wallet.owned.includes(this.settings.car)) this.update({ car: STARTER_CAR }, true);
       this.renderProfile();
       this.garage.render();
       this.shop.render();
@@ -272,8 +266,8 @@ export class Screens {
   /** Settings from the account (or guest profile) merged over defaults. */
   loadSettings(saved: Partial<PlayerSettings>): void {
     this.settings = { ...DEFAULT_PLAYER_SETTINGS, ...saved, garage: { ...saved.garage } };
-    // You can only race a car you own (e.g. a new account, or settings from before the shop).
-    if (!this.account.wallet.owned.includes(this.settings.car)) this.settings.car = STARTER_CAR;
+    // You always drive the Kaze GT (settings from when there were more cars to pick from).
+    this.settings.car = PLAYER_CAR;
     this.render();
   }
 

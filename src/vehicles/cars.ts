@@ -1,4 +1,4 @@
-import { CAR_IDS, type CarId, type CarSetup, type UpgradePart, type Upgrades } from '../../shared/api';
+import type { CarId, CarSetup, UpgradePart, Upgrades } from '../../shared/api';
 import { MAX_UPGRADE } from '../../shared/economy';
 import { clamp, createRng, lerp } from '../core/math';
 import { SPORTS_CAR, type VehicleSpec } from '../physics/VehiclePhysics';
@@ -483,15 +483,16 @@ export interface FieldCar {
   power: number;
 }
 
+/** The cars the AI drive: the ones with 3D models (see importedCars.ts). */
+export const AI_CARS: CarId[] = ['starter', 'hatch', 'gt', 'drift', 'super'];
+
 /**
- * The cars the AI drive: your car's class and the ones either side of it (the shop's order), in
- * a shuffled order with your car in twice, so a few usually match. Engines are evened out a
- * little toward your car's pace; upgrades are yours alone, so tuning your car pays off.
+ * The AI field: the modelled cars in a shuffled order. Engines are evened out a little toward
+ * your car's pace; upgrades are yours alone, so tuning your car pays off.
  */
 export function aiField(player: CarId, count: number, seed: number): FieldCar[] {
   const rng = createRng(seed);
-  const tier = CAR_IDS.indexOf(player);
-  const order = [...CAR_IDS.filter((_, i) => Math.abs(i - tier) <= 1), player];
+  const order = [...AI_CARS];
   for (let i = order.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
     [order[i], order[j]] = [order[j], order[i]];

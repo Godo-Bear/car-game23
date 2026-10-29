@@ -1,6 +1,7 @@
 import type { CareerStats, RaceRecord, Wallet } from './api';
 import { CAREER_EVENTS, careerEvent, MAX_STARS, raceDriftPoints, type Settled, settleRace, totalStars } from './career';
-import { CAR_PRICES, MAX_UPGRADE, UPGRADE_PARTS } from './economy';
+import { MAX_UPGRADE, UPGRADE_PARTS } from './economy';
+import { ITEM_IDS } from './items';
 
 /**
  * Quests, shared by the game (guests) and the Worker (which checks every claim):
@@ -21,8 +22,8 @@ export interface Quest {
 
 const careerPodiums = (w: Wallet) => CAREER_EVENTS.filter((e) => (w.events[e.id] ?? 99) <= 3).length;
 const upgradeLevels = (w: Wallet) => Object.values(w.upgrades).reduce((sum, u) => sum + Object.values(u ?? {}).reduce((a, b) => a + b, 0), 0);
-/** Cars bought (the free starter car doesn't count). */
-const carsBought = (w: Wallet) => w.owned.filter((c) => CAR_PRICES[c] > 0).length;
+/** Shop cosmetics owned. */
+const itemsOwned = (w: Wallet) => w.items.length;
 /** Best-upgraded car: how many parts are at the top level. */
 const maxedParts = (w: Wallet) => Math.max(0, ...Object.values(w.upgrades).map((u) => UPGRADE_PARTS.filter((p) => (u?.[p] ?? 0) >= MAX_UPGRADE).length));
 
@@ -38,17 +39,17 @@ const q = (id: string, name: string, detail: string, reward: number, goal: numbe
 export const MEGA_QUESTS: Quest[] = [
   q('career-10', 'Rising star', 'Get 10 career events on the podium', 25000, 10, careerPodiums),
   q('circuits-10', 'Grand tour', 'Set a lap time on all 10 circuits', 30000, 10, (_, s) => Object.keys(s.bestLaps).length),
-  q('cars-3', 'Collector', 'Buy 3 cars', 40000, 3, carsBought),
-  q('upgrades-32', 'Tuning shop', 'Fit 32 upgrades to your cars', 40000, 32, upgradeLevels),
+  q('items-5', 'Collector', 'Buy 5 cosmetics in the shop', 40000, 5, itemsOwned),
+  q('upgrades-32', 'Tuning shop', 'Fit all 32 upgrades to your Kaze GT', 40000, 32, upgradeLevels),
   q('wins-25', 'Champion', 'Win 25 races', 50000, 25, (_, s) => s.wins),
-  q('max-car', 'Maxed out', 'Fully upgrade every part of one car', 50000, UPGRADE_PARTS.length, maxedParts),
+  q('max-car', 'Maxed out', 'Fully upgrade every part of your car', 50000, UPGRADE_PARTS.length, maxedParts),
   q('podiums-50', 'Podium machine', 'Finish on the podium 50 times', 60000, 50, (_, s) => s.podiums),
   q('laps-300', 'Road warrior', 'Drive 300 laps', 70000, 300, (_, s) => s.totalLaps),
   q('races-100', 'Marathon', 'Finish 100 races', 80000, 100, (_, s) => s.races),
   q('stars-30', 'Star collector', 'Earn 30 career stars', 60000, 30, totalStars),
   q('drift-100k', 'Drift king', 'Score 100,000 drift points', 60000, 100_000, (w) => w.dpTotal),
   q('career-20', 'Legend', 'Get every career event on the podium', 100000, CAREER_EVENTS.length, careerPodiums),
-  q('cars-all', 'Full garage', 'Own every car', 150000, Object.keys(CAR_PRICES).length - 1, carsBought),
+  q('items-all', 'Show-off', 'Own every cosmetic in the shop', 150000, ITEM_IDS.length, itemsOwned),
   q('stars-all', 'Perfectionist', 'Earn every career star', 200000, CAREER_EVENTS.length * MAX_STARS, totalStars),
 ];
 

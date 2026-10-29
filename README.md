@@ -12,7 +12,7 @@ countryside, by day, at sunset or at night — running in the browser and hosted
   on the left: your next career event, Garage (upgrade level) and Profile cards, the featured
   *mega quest* (tap it to open *Quests*) and today's *daily quests*.
 - **Quests:** *mega quests* are big goals that take a while (win 25 races, drive 300 laps, fully
-  upgrade a car, own every car, every career event on the podium, 30 stars, 100,000 drift
+  fully upgrade your car, own 5 / every cosmetic, every career event on the podium, 30 stars, 100,000 drift
   points, every star...) paying ¥25,000 – ¥200,000;
   *daily quests* are three small goals a day picked from a pool (finish 3 races, win one, a
   night race, a mountain pass, two circuits, a Hard race, 3,000 drift points...) that reset at midnight UTC. Finished
@@ -33,33 +33,29 @@ countryside, by day, at sunset or at night — running in the browser and hosted
   *Next event* button finds it again); drag the map to look around; tap a pin for its course map,
   prizes, star times and your best result. The server checks every event result (unlocked,
   matching the event) for accounts. The map picture (`public/career/map.jpg`) is rendered from the game.
-- **Career:** you start with ¥3,000 and the Mame 1.3 starter car. Every finished race pays prize
-  money (more for a better place, more laps, harder difficulty and more rivals; a 3-lap win on
-  Normal is ¥10,500), plus career bonuses. Spend it in the *Shop* on other cars (¥30,000 – ¥220,000) or on upgrades
-  in the garage: Engine, Gearbox, Aero, Tyres, Suspension, Brakes, Differential and Nitro, four
-  levels each. Every car starts with similar stats (each with a little personality: the drift
-  coupe slides best, the hypercar is fastest), and a fully upgraded car has every stat maxed at
-  10, so any car you like can be tuned to the top. Old saves' "Handling" upgrade carries over to
-  tyres, suspension and brakes. With an account the server does
-  the sums (prices, prize money, what you own), so money only comes from racing; guests are saved
-  on the device. A guest's money doesn't move to a new account.
-- **Garage:** six cars with their own feel — Mame 1.3 (starter), Shiro Spyder (roadster),
-  Kaze GT (all-rounder), Oni 86R (drift coupe), Yama R4 (rally special) and Raijin V12 (hypercar).
-  Five use 3D models from `public/models/` (see *3D assets*); the rally car (and any car whose
-  model fails to load) uses the built-in body with wheel arches, glasshouse, lights, grilles and
-  brake calipers. Customise paint colour and finish (gloss / metallic / pearl / matte, plus satin,
-  candy and chrome from the shop), livery
-  (racing stripes, side stripe, two-tone, race livery), accent colour, rim colour, race number and
-  your own number plate text (up to 8 characters), and *Extras* bought in the shop (underglow,
-  nitro flame colour, tyre smoke colour); saved per car to your account.
-- **Drift points and cosmetics:** drifting scores drift points (speed x slide angle; a crash
-  mid-drift loses that drift's points). They're banked into your DP balance at the finish (the
-  server caps them by the race time). Spend DP in *Shop → Cosmetics* on neon underglow (7
-  colours), nitro flame colours (6) and tyre smoke colours (7); the premium paint finishes cost
-  money. Tap an item to try it on your car on the turntable before buying.
-  The AI race your car's class and the classes either side of it (a few the same as yours) in team
-  colours, with their engines evened out a little toward your car's pace; your upgrades are yours
-  alone, so tuning pays off.
+- **Career:** you drive one car, the **Kaze GT**, and start with ¥3,000. Every finished race pays
+  prize money (more for a better place, more laps, harder difficulty and more rivals; a 3-lap win
+  on Normal is ¥10,500), plus career bonuses. Spend it on upgrades in the garage: Engine, Gearbox,
+  Aero, Tyres, Suspension, Brakes, Differential and Nitro, four levels each; fully upgraded, every
+  stat is maxed at 10. With an account the server does the sums (prices, prize money, what you
+  own), so money only comes from racing; guests are saved on the device. A guest's money doesn't
+  move to a new account. Saves from when other cars were for sale get their price back for each
+  car bought, and the GT gets the best level of each part fitted to any of them (old saves'
+  "Handling" upgrade carries over to tyres, suspension and brakes).
+- **Garage:** your Kaze GT (3D model in `public/models/gt/`, see *3D assets*). Customise paint
+  colour and finish (gloss / metallic / pearl / matte, plus satin, candy and chrome from the shop),
+  livery (racing stripes, side stripe, two-tone, race livery), accent colour, rim colour, race
+  number and your own number plate text (up to 8 characters), and *Extras* bought in the shop
+  (underglow, nitro flame colour, tyre smoke colour); saved to your account.
+- **AI field:** the bots drive the cars with 3D models - Mame 1.3, Shiro Spyder, Kaze GT, Oni 86R
+  and Raijin V12 - in team colours, shuffled, with their engines evened out a little toward your
+  car's pace; your upgrades are yours alone, so tuning pays off. (The Yama R4 rally car has no
+  model and isn't used.)
+- **Shop:** cosmetics. Drifting scores drift points (speed x slide angle; a crash mid-drift loses
+  that drift's points), banked into your DP balance at the finish (the server caps them by the
+  race time). Spend DP on neon underglow (7 colours), nitro flame colours (6) and tyre smoke
+  colours (7); the premium paint finishes cost money. Tap an item to try it on your car on the
+  turntable before buying.
 - **Admin tab:** on the Profile page. Press *Admin* and enter the admin code to unlock it; it then
   shows as a Profile tab for the account (or guest) that entered it on that device, until *Lock*
   is pressed. Look up any player (or list them all) and set their money and drift points, which

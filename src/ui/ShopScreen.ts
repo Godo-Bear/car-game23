@@ -1,98 +1,33 @@
-import { CAR_IDS, type CarId, type CarSetup } from '../../shared/api';
-import { CAR_PRICES, formatYen, NO_UPGRADES } from '../../shared/economy';
+import type { CarSetup } from '../../shared/api';
+import { formatYen } from '../../shared/economy';
 import { formatDp, ITEM_KINDS, SHOP_ITEMS, type ShopItem } from '../../shared/items';
 import { type AccountService, ApiError } from '../account/AccountService';
-import { CARS } from '../vehicles/cars';
-import { CAR_MODELS } from '../vehicles/importedCars';
-import { renderDots, renderStats } from './GarageScreen';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
-type ShopTab = 'cars' | 'items';
-
-/** Shop tab: browse every car on the turntable and buy the ones you can afford, plus cosmetics. */
+/** Shop tab: cosmetics for your car, bought with drift points (paint finishes with money). */
 export class ShopScreen {
-  private viewing: CarId = CAR_IDS[1];
-  private tab: ShopTab = 'cars';
   /** Cosmetic being tried on. */
   private trying: ShopItem | null = null;
 
   constructor(
     private readonly account: AccountService,
-    /** Show a car on the turntable. */
-    private readonly preview: (id: CarId) => void,
-    /** A car was bought: make it the one you race. */
-    private readonly bought: (id: CarId) => void,
     /** Your car as set up in the garage. */
     private readonly yourSetup: () => CarSetup,
     /** Show your car on the turntable with a cosmetic tried on. */
     private readonly tryOn: (setup: CarSetup) => void,
-  ) {
-    document.querySelectorAll<HTMLElement>('.shop-tabs [data-stab]').forEach((b) => b.addEventListener('click', () => this.showTab(b.dataset.stab as ShopTab)));
-    $('shop-prev').addEventListener('click', () => this.cycle(-1));
-    $('shop-next').addEventListener('click', () => this.cycle(1));
-    $('shop-buy').addEventListener('click', () => void this.buy());
-    window.addEventListener('keydown', (e) => {
-      if ($('screen-home').classList.contains('hidden') || document.querySelector('.hub-panel[data-panel=shop]')!.classList.contains('hidden')) return;
-      if (e.target instanceof HTMLInputElement || this.tab !== 'cars') return;
-      if (e.code === 'ArrowLeft' || e.code === 'KeyQ') this.cycle(-1);
-      if (e.code === 'ArrowRight' || e.code === 'KeyE') this.cycle(1);
-    });
-  }
+  ) {}
 
-  /** Opening the shop: start on the cheapest car you don't have yet. */
+  /** Opening the shop: your car on the turntable as it is. */
   open(): void {
-    const owned = this.account.wallet.owned;
-    this.viewing = CAR_IDS.find((id) => !owned.includes(id)) ?? CAR_IDS[CAR_IDS.length - 1];
-    $('shop-note').textContent = '';
-    this.showTab(this.tab);
-  }
-
-  private showTab(tab: ShopTab): void {
-    this.tab = tab;
-    document.querySelectorAll<HTMLElement>('.shop-tabs [data-stab]').forEach((b) => {
-      b.classList.toggle('active', b.dataset.stab === tab);
-      b.setAttribute('aria-selected', String(b.dataset.stab === tab));
-    });
-    document.querySelectorAll<HTMLElement>('[data-spane]').forEach((p) => p.classList.toggle('hidden', p.dataset.spane !== tab));
     $('item-note').textContent = '';
     this.trying = null;
-    if (tab === 'cars') this.show();
-    else {
-      this.render();
-      this.tryOn(this.yourSetup());
-    }
-  }
-
-  private cycle(dir: number): void {
-    const i = CAR_IDS.indexOf(this.viewing);
-    this.viewing = CAR_IDS[(i + dir + CAR_IDS.length) % CAR_IDS.length];
-    $('shop-note').textContent = '';
-    this.show();
-  }
-
-  private show(): void {
     this.render();
-    this.preview(this.viewing);
+    this.tryOn(this.yourSetup());
   }
 
   render(): void {
     this.renderItems();
-    const id = this.viewing;
-    const car = CARS[id];
-    const { credits, owned } = this.account.wallet;
-    const have = owned.includes(id);
-    const price = CAR_PRICES[id];
-    $('shop-name').textContent = car.name;
-    $('shop-kind').textContent = car.kind;
-    $('shop-blurb').textContent = car.blurb;
-    $('shop-credit').textContent = CAR_MODELS[id]?.credit ?? '';
-    renderDots($('shop-dots'), CAR_IDS, id);
-    renderStats($('shop-stats'), id, NO_UPGRADES);
-    $('shop-price').textContent = have ? 'Owned' : formatYen(price);
-    const buy = $<HTMLButtonElement>('shop-buy');
-    buy.textContent = have ? 'In your garage ✓' : credits >= price ? `Buy for ${formatYen(price)}` : `Need ${formatYen(price - credits)} more`;
-    buy.disabled = have || credits < price;
   }
 
   /** Cosmetics, by kind: each with its colour, price and a buy button. */
@@ -144,19 +79,6 @@ export class ShopScreen {
     try {
       await this.account.buy({ kind: 'item', item: item.id });
       note.textContent = `${item.name} is yours! Fit it in the Garage${item.kind === 'finish' ? ' (Paint tab)' : ' (Extras tab)'}.`;
-    } catch (e) {
-      note.textContent = e instanceof ApiError ? e.message : 'Could not buy that. Please try again.';
-    }
-    this.render();
-  }
-
-  private async buy(): Promise<void> {
-    const id = this.viewing;
-    const note = $('shop-note');
-    try {
-      await this.account.buy({ kind: 'car', car: id });
-      note.textContent = `${CARS[id].name} is yours! It's waiting in your garage.`;
-      this.bought(id);
     } catch (e) {
       note.textContent = e instanceof ApiError ? e.message : 'Could not buy that. Please try again.';
     }

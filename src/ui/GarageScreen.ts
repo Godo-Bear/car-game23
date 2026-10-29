@@ -1,5 +1,4 @@
 import {
-  CAR_IDS,
   type CarId,
   type CarSetup,
   cleanPlate,
@@ -54,20 +53,9 @@ export function renderStats(el: HTMLElement, car: CarId, upgrades: Upgrades): vo
   );
 }
 
-/** One dot per car, the current one lit. */
-export function renderDots(el: HTMLElement, ids: CarId[], current: CarId): void {
-  el.replaceChildren(
-    ...ids.map((id) => {
-      const dot = document.createElement('span');
-      dot.className = id === current ? 'on' : '';
-      return dot;
-    }),
-  );
-}
-
 type ColorKey = 'paint' | 'accent' | 'rims';
 
-/** Garage tab: your cars - pick one, paint it, fit plates and buy upgrades. */
+/** Garage tab: your Kaze GT - paint it, fit plates and extras, and buy upgrades. */
 export class GarageScreen {
   constructor(
     private readonly get: () => PlayerSettings,
@@ -86,21 +74,9 @@ export class GarageScreen {
     return carSetup(s.car, s.garage);
   }
 
-  private get owned(): CarId[] {
-    const owned = this.account.wallet.owned;
-    return CAR_IDS.filter((id) => owned.includes(id));
-  }
-
   private customise(patch: Partial<CarSetup>): void {
     const s = this.get();
     this.set({ garage: { ...s.garage, [s.car]: { ...this.setup, ...patch } } });
-  }
-
-  private cycle(dir: number): void {
-    const owned = this.owned;
-    if (owned.length < 2) return;
-    const i = owned.indexOf(this.get().car);
-    this.set({ car: owned[(i + dir + owned.length) % owned.length] });
   }
 
   render(): void {
@@ -112,8 +88,6 @@ export class GarageScreen {
     $('car-kind').textContent = car.kind;
     $('car-blurb').textContent = car.blurb;
     $('car-credit').textContent = CAR_MODELS[s.car]?.credit ?? '';
-    renderDots($('car-dots'), this.owned, s.car);
-    for (const id of ['car-prev', 'car-next']) $<HTMLButtonElement>(id).disabled = this.owned.length < 2;
     renderStats($('car-stats'), s.car, upgrades);
     for (const key of ['paint', 'accent', 'rims'] as const) {
       const value = setup[key];
@@ -183,7 +157,6 @@ export class GarageScreen {
   }
 
   private renderUpgrades(upgrades: Upgrades): void {
-    const car = this.get().car;
     const credits = this.account.wallet.credits;
     $('upgrades').replaceChildren(
       ...UPGRADE_PARTS.map((part) => {
@@ -203,7 +176,7 @@ export class GarageScreen {
           buy.textContent = 'MAX';
           buy.disabled = true;
         } else {
-          const price = upgradeCost(car, part, level + 1);
+          const price = upgradeCost(part, level + 1);
           buy.textContent = `Upgrade ${formatYen(price)}`;
           buy.disabled = credits < price;
           buy.title = credits < price ? 'Win races to earn more money' : '';
@@ -257,8 +230,6 @@ export class GarageScreen {
   }
 
   private wire(): void {
-    $('car-prev').addEventListener('click', () => this.cycle(-1));
-    $('car-next').addEventListener('click', () => this.cycle(1));
     document.querySelectorAll<HTMLElement>('.garage-tabs [data-ctab]').forEach((tab) =>
       tab.addEventListener('click', () => {
         document.querySelectorAll<HTMLElement>('.garage-tabs [data-ctab]').forEach((t) => t.classList.toggle('active', t === tab));
@@ -293,13 +264,6 @@ export class GarageScreen {
       const garage = { ...s.garage };
       delete garage[s.car];
       this.set({ garage });
-    });
-    // Arrow keys browse cars while the garage is open (and nothing is being typed into).
-    window.addEventListener('keydown', (e) => {
-      if ($('screen-home').classList.contains('hidden') || document.querySelector('.hub-panel[data-panel=garage]')!.classList.contains('hidden')) return;
-      if (e.target instanceof HTMLInputElement) return;
-      if (e.code === 'ArrowLeft' || e.code === 'KeyQ') this.cycle(-1);
-      if (e.code === 'ArrowRight' || e.code === 'KeyE') this.cycle(1);
     });
   }
 }

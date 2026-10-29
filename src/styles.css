@@ -2497,3 +2497,9 @@ html.gamepad .pad-focus:focus {
 .hud.touch .hud-boost.pop {
   animation: none;
 }
+/* Seven paint finishes: the label sits above them. */
+.setting:has(#seg-finish) {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}

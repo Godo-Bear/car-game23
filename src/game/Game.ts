@@ -123,7 +123,6 @@ export class Game {
         onRace: (settings) => void this.startRace(settings),
         onSettingsChanged: (settings, car) => this.onSettingsChanged(settings, car),
         onHubPanel: (panel) => this.onHubPanel(panel),
-        onPreviewCar: (id) => this.onPreviewCar(id),
         onTryOn: (setup) => this.onTryOn(setup),
         onResume: () => this.setPaused(false),
         onRestart: () => void this.startRace(this.screens.settings),
@@ -238,11 +237,6 @@ export class Game {
     this.carModels[0].build(CARS[id], setup);
     // Light the nitro so a flame colour can be seen.
     this.carModels[0].showFlames = !!setup.flame;
-  }
-
-  /** Shop: show a car on the turntable in its factory paint. */
-  private onPreviewCar(id: CarId): void {
-    if (this.state === 'home' && this.hubPanel === 'shop') this.carModels[0].build(CARS[id], CARS[id].setup);
   }
 
   // ---------------------------------------------------------------- tracks & lighting

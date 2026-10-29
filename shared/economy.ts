@@ -1,4 +1,4 @@
-import { CAR_IDS, type CarId, type Difficulty, type Purchase, type RaceRecord, type UpgradePart, type Upgrades, type Wallet } from './api';
+import type { CarId, Difficulty, Purchase, RaceRecord, UpgradePart, Upgrades, Wallet } from './api';
 import { shopItem } from './items';
 
 /**
@@ -6,7 +6,8 @@ import { shopItem } from './items';
  * and race pay are identical either way and the server can check every purchase itself.
  */
 
-export const STARTER_CAR: CarId = 'starter';
+/** The one car you drive (the Kaze GT); the other cars are the AI's. */
+export const PLAYER_CAR: CarId = 'gt';
 /** Enough for a first upgrade. */
 export const STARTING_CREDITS = 3000;
 /** Levels per part. Every part at the top level maxes out every stat, on any car. */
@@ -24,16 +25,8 @@ const PART_PRICE: Record<UpgradePart, number> = {
   nitro: 2000,
 };
 const LEVEL_PRICE = [1, 1.7, 2.6, 3.8];
-
-/** Shop prices in yen; the starter car is free. */
-export const CAR_PRICES: Record<CarId, number> = {
-  starter: 0,
-  hatch: 30_000,
-  gt: 60_000,
-  drift: 80_000,
-  rally: 100_000,
-  super: 220_000,
-};
+/** Prices as the Kaze GT's were when every car was for sale. */
+const UPGRADE_FACTOR = 1.15;
 
 /** Share of the winner's pay by finishing position. */
 const PLACE_SHARE = [1, 0.7, 0.5, 0.35, 0.25, 0.2, 0.16, 0.13, 0.11, 0.1, 0.1, 0.1];
@@ -45,7 +38,7 @@ export const NO_UPGRADES: Upgrades = { engine: 0, gearbox: 0, aero: 0, tyres: 0,
 export function newWallet(): Wallet {
   return {
     credits: STARTING_CREDITS,
-    owned: [STARTER_CAR],
+    owned: [PLAYER_CAR],
     upgrades: {},
     events: {},
     quests: [],
@@ -64,10 +57,9 @@ export function raceReward(r: Pick<RaceRecord, 'position' | 'fieldSize' | 'laps'
   return Math.round((PAY_PER_LAP * r.laps * share * DIFFICULTY_PAY[r.difficulty] * rivals) / 100) * 100;
 }
 
-/** Price of upgrade `level` (1..MAX_UPGRADE) for a car: dearer cars cost a little more to tune. */
-export function upgradeCost(car: CarId, part: UpgradePart, level: number): number {
-  const carFactor = 1 + CAR_PRICES[car] / 400_000;
-  return Math.round((PART_PRICE[part] * LEVEL_PRICE[level - 1] * carFactor) / 100) * 100;
+/** Price of upgrade `level` (1..MAX_UPGRADE) of a part. */
+export function upgradeCost(part: UpgradePart, level: number): number {
+  return Math.round((PART_PRICE[part] * LEVEL_PRICE[level - 1] * UPGRADE_FACTOR) / 100) * 100;
 }
 
 export function upgradesOf(wallet: Wallet, car: CarId): Upgrades {
@@ -89,19 +81,13 @@ export function purchase(wallet: Wallet, p: Purchase): Wallet | string {
     if (wallet.credits < item.price) return 'Not enough money.';
     return { ...wallet, credits: wallet.credits - item.price, items: [...wallet.items, item.id] };
   }
-  if (!CAR_IDS.includes(p.car)) return 'Unknown car.';
-  if (p.kind === 'car') {
-    if (wallet.owned.includes(p.car)) return 'You already own this car.';
-    const price = CAR_PRICES[p.car];
-    if (wallet.credits < price) return 'Not enough money.';
-    return { ...wallet, credits: wallet.credits - price, owned: [...wallet.owned, p.car] };
-  }
-  if (!wallet.owned.includes(p.car)) return 'Buy the car first.';
+  if (p.kind === 'car') return 'Cars are not for sale: the Kaze GT is your car.';
+  if (p.car !== PLAYER_CAR) return 'You can only upgrade your Kaze GT.';
   if (!UPGRADE_PARTS.includes(p.part)) return 'Unknown upgrade.';
   const current = upgradesOf(wallet, p.car);
   const level = current[p.part] + 1;
   if (level > MAX_UPGRADE) return 'Already fully upgraded.';
-  const price = upgradeCost(p.car, p.part, level);
+  const price = upgradeCost(p.part, level);
   if (wallet.credits < price) return 'Not enough money.';
   return { ...wallet, credits: wallet.credits - price, upgrades: { ...wallet.upgrades, [p.car]: { ...current, [p.part]: level } } };
 }

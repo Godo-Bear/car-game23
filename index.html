@@ -160,11 +160,8 @@
       <div class="hub-panel hidden" data-panel="garage">
         <div class="panel garage-panel">
           <div class="car-switch">
-            <button type="button" id="car-prev" class="icon-btn" aria-label="Previous car">‹</button>
             <div class="car-title"><small id="car-kind">Grand Tourer</small><h2 id="car-name">Kaze GT</h2></div>
-            <button type="button" id="car-next" class="icon-btn" aria-label="Next car">›</button>
           </div>
-          <div id="car-dots" class="car-dots"></div>
           <p id="car-blurb" class="muted small-text"></p>
           <p id="car-credit" class="muted car-credit"></p>
           <div id="car-stats" class="car-stats"></div>
@@ -213,7 +210,7 @@
             <p id="upgrade-note" class="muted small-text" role="status"></p>
           </section>
           <div class="row">
-            <button type="button" id="btn-garage-race" class="primary">Race with this car ▶</button>
+            <button type="button" id="btn-garage-race" class="primary">Race next event ▶</button>
             <button type="button" id="btn-livery-reset" class="secondary">Reset paint</button>
           </div>
         </div>
@@ -221,27 +218,8 @@
 
       <div class="hub-panel hidden" data-panel="shop">
         <div class="panel garage-panel shop-panel">
-          <div class="tabs shop-tabs" role="tablist">
-            <button type="button" role="tab" data-stab="cars" class="active">Cars</button>
-            <button type="button" role="tab" data-stab="items">Cosmetics</button>
-          </div>
-          <div data-spane="cars">
-          <div class="car-switch">
-            <button type="button" id="shop-prev" class="icon-btn" aria-label="Previous car">‹</button>
-            <div class="car-title"><small id="shop-kind">Shop</small><h2 id="shop-name">Cars for sale</h2></div>
-            <button type="button" id="shop-next" class="icon-btn" aria-label="Next car">›</button>
-          </div>
-          <div id="shop-dots" class="car-dots"></div>
-          <p id="shop-blurb" class="muted small-text"></p>
-          <p id="shop-credit" class="muted car-credit"></p>
-          <div id="shop-stats" class="car-stats"></div>
-          <div class="shop-buy">
-            <div><small class="muted">Price</small><b id="shop-price"></b></div>
-            <button type="button" id="shop-buy" class="primary">Buy</button>
-          </div>
-          <p id="shop-note" class="muted small-text" role="status"></p>
-          </div>
-          <div data-spane="items" class="hidden">
+          <div class="car-title"><small>Shop</small><h2>Cosmetics</h2></div>
+          <div>
             <div class="shop-balance">
               <span><small class="muted">Drift points</small><b id="shop-dp">0 DP</b></span>
               <span><small class="muted">Money</small><b id="shop-money">¥0</b></span>
@@ -324,7 +302,7 @@
                   <button type="button" class="secondary" data-admin-dp="50000">+50k DP</button>
                   <button type="button" class="secondary" data-admin-dp="0">0 DP</button>
                 </div>
-                <h4>Cars and upgrades <span class="muted small-text">— tick to give a car, untick to take it</span></h4>
+                <h4>Kaze GT upgrades</h4>
                 <div class="admin-scroll"><table id="admin-cars" class="admin-cars"></table></div>
                 <h4>Career <span id="admin-career-sum" class="muted small-text"></span></h4>
                 <div class="row admin-quick">

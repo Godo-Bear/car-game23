@@ -1,6 +1,6 @@
-import { CAR_IDS, TRACK_IDS, type Upgrades, type Wallet } from './api';
+import { CAR_IDS, type CarId, TRACK_IDS, type Upgrades, type Wallet } from './api';
 import { CAREER_EVENT_IDS, MAX_STARS } from './career';
-import { MAX_UPGRADE, newWallet, STARTER_CAR, UPGRADE_PARTS } from './economy';
+import { MAX_UPGRADE, newWallet, PLAYER_CAR, UPGRADE_PARTS } from './economy';
 import { ITEM_IDS } from './items';
 import { DAILY_POOL, freshDaily, QUEST_IDS } from './quests';
 
@@ -9,25 +9,36 @@ import { DAILY_POOL, freshDaily, QUEST_IDS } from './quests';
  * (which themselves depend on the economy) - keeping those modules free of import cycles.
  */
 
+/** What each car cost when cars were sold (to refund them: see cleanWallet). */
+const OLD_CAR_PRICES: Record<CarId, number> = { starter: 0, hatch: 30_000, gt: 60_000, drift: 80_000, rally: 100_000, super: 220_000 };
+
 /** Validate a wallet from storage; anything missing or odd falls back to a fresh start. */
 export function cleanWallet(raw: unknown): Wallet {
   const fresh = newWallet();
   if (!raw || typeof raw !== 'object') return fresh;
   const r = raw as Record<string, unknown>;
-  const credits = Number.isInteger(r.credits) && (r.credits as number) >= 0 ? Math.min(r.credits as number, 1e9) : fresh.credits;
-  const owned = CAR_IDS.filter((id) => id === STARTER_CAR || (Array.isArray(r.owned) && r.owned.includes(id)));
-  const upgrades: Wallet['upgrades'] = {};
+  const base = Number.isInteger(r.credits) && (r.credits as number) >= 0 ? Math.min(r.credits as number, 1e9) : fresh.credits;
+  // You drive one car now. Saves from when cars were sold: the money for any other car bought
+  // comes back, and the Kaze GT gets the best level of each part fitted to any of your cars.
+  const hadOwned = Array.isArray(r.owned) ? CAR_IDS.filter((id) => (r.owned as unknown[]).includes(id)) : [];
+  const refund = hadOwned.reduce((sum, id) => sum + (id === PLAYER_CAR ? 0 : OLD_CAR_PRICES[id]), 0);
+  const credits = Math.min(base + refund, 1e9);
+  const owned = [PLAYER_CAR];
   const rawUpgrades = r.upgrades && typeof r.upgrades === 'object' ? (r.upgrades as Record<string, unknown>) : {};
-  for (const id of owned) {
+  const level = (v: unknown) => (Number.isInteger(v) ? Math.max(0, Math.min(MAX_UPGRADE, v as number)) : 0);
+  let best: Upgrades | null = null;
+  // (The free starter car was always owned, so its upgrades count too.)
+  for (const id of new Set<CarId>([...hadOwned, 'starter', PLAYER_CAR])) {
     const u = rawUpgrades[id] as Record<string, unknown> | undefined;
     if (!u || typeof u !== 'object') continue;
-    const level = (v: unknown) => (Number.isInteger(v) ? Math.max(0, Math.min(MAX_UPGRADE, v as number)) : 0);
     // Saves from before the parts were split up had one "handling" upgrade: tyres, suspension and brakes.
     const old = level(u.handling);
-    upgrades[id] = Object.fromEntries(
+    const levels = Object.fromEntries(
       UPGRADE_PARTS.map((part) => [part, u[part] === undefined && ['tyres', 'suspension', 'brakes'].includes(part) ? old : level(u[part])]),
     ) as Upgrades;
+    best = best ? (Object.fromEntries(UPGRADE_PARTS.map((part) => [part, Math.max(best![part], levels[part])])) as Upgrades) : levels;
   }
+  const upgrades: Wallet['upgrades'] = best ? { [PLAYER_CAR]: best } : {};
   // Career results (only known events, positions 1..12).
   const events: Wallet['events'] = {};
   const rawEvents = r.events && typeof r.events === 'object' ? (r.events as Record<string, unknown>) : {};
