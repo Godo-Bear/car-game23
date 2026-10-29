@@ -78,7 +78,7 @@ const PRESETS: Record<TimeOfDay, Preset> = {
       fuji: '#7f93b4',
       fujiSnow: 'rgba(250,252,255,0.95)',
     },
-    grade: { contrast: 1.06, saturation: 1.08, tint: [1, 1, 0.98], glare: 1 },
+    grade: { contrast: 1.06, saturation: 1.08, tint: [1, 1, 0.98], glare: 0.5 },
     atmosphere: { gain: 0.36, turbidity: 3.5, rayleigh: 1.1, mie: 0.004, mieG: 0.8, clouds: 0.38, cloudDensity: 0.55 },
     sunColor: 0xfff2dc,
     sunIntensity: 2.4,
@@ -111,15 +111,15 @@ const PRESETS: Record<TimeOfDay, Preset> = {
       fuji: '#3b2a4a',
       fujiSnow: 'rgba(255,200,190,0.75)',
     },
-    grade: { contrast: 1.08, saturation: 1.06, tint: [1.05, 0.98, 0.9], glare: 0.5 },
-    atmosphere: { gain: 0.62, turbidity: 7, rayleigh: 2.4, mie: 0.006, mieG: 0.86, clouds: 0.42, cloudDensity: 0.5 },
+    grade: { contrast: 1.08, saturation: 1.06, tint: [1.05, 0.98, 0.9], glare: 0.2 },
+    atmosphere: { gain: 0.55, turbidity: 6, rayleigh: 2.4, mie: 0.0028, mieG: 0.8, clouds: 0.42, cloudDensity: 0.5 },
     sunColor: 0xff9a5a,
     sunIntensity: 2.0,
     hemiSky: 0xffb48a,
     hemiGround: 0x4a3a48,
     hemiIntensity: 1.05,
     exposure: 1.0,
-    bloom: { strength: 0.4, radius: 0.5, threshold: 1.4 },
+    bloom: { strength: 0.26, radius: 0.45, threshold: 2.0 },
     shadows: true,
     fog: { city: [0x9a6a78, 0.0009], mountain: [0xc98a6a, 0.001], countryside: [0xe0a07a, 0.0008] },
   },
@@ -341,12 +341,22 @@ export class Lighting {
 }
 
 /** Three's physical sky, with a brightness control added. */
+/** Peak brightness of the sun's disc in the sky (bright enough to glow, not to blind). */
+const SUN_DISC = 4.0;
+
 function makeSky(): Sky {
   const sky = new Sky();
   const material = sky.material as THREE.ShaderMaterial;
   material.uniforms.skyGain = { value: 1 };
   material.fragmentShader = material.fragmentShader
     .replace('uniform float time;', 'uniform float time;\nuniform float skyGain;')
+    // The stock sun disc is tens of thousands of times brighter than the sky, which the bloom
+    // turns into a blinding white-out; keep its colour but cap its brightness (SUN_DISC).
+    .replace(
+      'vec3 sundiscColor = ( 760.0 * sundisc ) * min( vSunE * Fex, 80.0 );',
+      `vec3 discTone = min( vSunE * Fex, 80.0 );
+      vec3 sundiscColor = sundisc * ${SUN_DISC.toFixed(1)} * discTone / max( max( discTone.r, discTone.g ), max( discTone.b, 1e-4 ) );`,
+    )
     .replace('gl_FragColor = vec4( texColor, 1.0 );', 'gl_FragColor = vec4( texColor * skyGain, 1.0 );');
   return sky;
 }

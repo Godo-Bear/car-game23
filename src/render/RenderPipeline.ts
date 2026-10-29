@@ -157,8 +157,8 @@ const LensShader = {
         vis *= 0.2 * flare;
         vec2 d = (vUv - sunScreen) * vec2(aspect, 1.0);
         float r = length(d);
-        vec3 glare = sunColor * (exp(-r * 6.0) * 0.16 + exp(-r * 24.0) * 0.4);
-        glare += sunColor * exp(-abs(d.y) * 220.0) * exp(-abs(d.x) * 2.5) * 0.28;
+        vec3 glare = sunColor * (exp(-r * 6.0) * 0.07 + exp(-r * 24.0) * 0.25);
+        glare += sunColor * exp(-abs(d.y) * 220.0) * exp(-abs(d.x) * 2.5) * 0.14;
         // Ghosts mirrored through the centre of the image.
         vec2 axis = vec2(0.5) - sunScreen;
         for (int i = 1; i < 5; i++) {
