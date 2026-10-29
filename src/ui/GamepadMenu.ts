@@ -126,7 +126,7 @@ export class GamepadMenu {
   private press(): void {
     const el = document.activeElement as HTMLElement | null;
     const root = this.layer();
-    if (!el || !root || !root.contains(el)) {
+    if (!el || !root?.contains(el)) {
       const first = root && this.candidates(root)[0];
       if (first) this.focus(first);
       return;

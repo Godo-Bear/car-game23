@@ -2424,3 +2424,76 @@ html.gamepad .pad-focus:focus {
   outline-offset: 3px;
   box-shadow: 0 0 18px rgba(25, 211, 255, 0.55);
 }
+
+/* ---------- Nitro pickups and special boosts ---------- */
+.hud-boost {
+  position: absolute;
+  right: 16px;
+  bottom: 150px;
+  min-width: 230px;
+  text-align: center;
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  color: #8ee8ff;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.hud-boost.show {
+  opacity: 1;
+}
+.hud-boost.pop {
+  animation: boost-pop 0.35s ease-out;
+}
+.hud-boost.pickup {
+  font-size: 18px;
+}
+.hud-boost.perfect {
+  color: #dffcff;
+  text-shadow:
+    0 0 14px #35d8ff,
+    0 2px 8px rgba(0, 0, 0, 0.6);
+}
+.hud-boost.shockwave {
+  font-size: 32px;
+  color: #e4b5ff;
+  text-shadow:
+    0 0 18px #a34dff,
+    0 2px 8px rgba(0, 0, 0, 0.6);
+}
+.hud-boost.super {
+  font-size: 30px;
+  color: #ffd84d;
+  text-shadow:
+    0 0 18px #ff9d1a,
+    0 2px 8px rgba(0, 0, 0, 0.6);
+}
+@keyframes boost-pop {
+  0% {
+    transform: scale(1.6);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.nitro[data-boost='perfect'] div {
+  background: linear-gradient(90deg, #9ff3ff, #ffffff);
+  box-shadow: 0 0 14px #9ff3ff;
+}
+.nitro[data-boost='shockwave'] div {
+  background: linear-gradient(90deg, #7a2cff, #e4b5ff);
+  box-shadow: 0 0 16px #a34dff;
+}
+.nitro[data-boost='super'] div {
+  background: linear-gradient(90deg, #ff9d1a, #ffe36b);
+  box-shadow: 0 0 16px #ffb02e;
+}
+.hud.touch .hud-boost {
+  right: auto;
+  left: 50%;
+  bottom: 120px;
+  transform: translateX(-50%);
+}
+.hud.touch .hud-boost.pop {
+  animation: none;
+}

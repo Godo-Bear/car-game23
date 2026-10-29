@@ -193,6 +193,42 @@ export class AudioEngine {
     src.stop(t + 0.4);
   }
 
+  /** Nitro pickup (0), perfect nitro (1) or a big boost (2): a rising chime, with a whoosh for boosts. */
+  boost(level: number): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const notes = level === 0 ? [880, 1320] : level === 1 ? [660, 990, 1320] : [520, 780, 1040, 1560];
+    notes.forEach((f, i) => {
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.value = f;
+      const g = ctx.createGain();
+      const at = t + i * 0.06;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.setValueAtTime(0.16, at);
+      g.gain.exponentialRampToValueAtTime(0.001, at + 0.22);
+      o.connect(g).connect(this.fxBus);
+      o.start(at);
+      o.stop(at + 0.25);
+    });
+    if (level === 0) return;
+    // Whoosh: noise swept up through a band-pass filter.
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 1.2;
+    bp.frequency.setValueAtTime(300, t);
+    bp.frequency.exponentialRampToValueAtTime(level === 2 ? 3200 : 2000, t + 0.5);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(level === 2 ? 0.5 : 0.3, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+    src.connect(bp).connect(g).connect(this.fxBus);
+    src.start(t, Math.random());
+    src.stop(t + 0.75);
+  }
+
   beep(high: boolean): void {
     const ctx = this.ctx;
     if (!ctx) return;

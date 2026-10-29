@@ -166,6 +166,24 @@ const DRIFT_HOLD_GAIN = 4;
 /** Nitro tank refill (tanks per second): slowly on its own, quickly while drifting. */
 const NITRO_REFILL = 1 / 45;
 const NITRO_REFILL_DRIFT = 1 / 6;
+/**
+ * Special boosts (as in Asphalt):
+ *  - perfect nitro: fire the nitro just as a drift ends - a stronger push for that burn;
+ *  - shockwave: double-tap the nitro with a (nearly) full tank - the whole tank in one huge burst;
+ *  - super boost: from a gold pickup - a few seconds of strong, free boost.
+ */
+export type BoostKind = 'normal' | 'perfect' | 'shockwave' | 'super';
+const BOOST_POWER: Record<BoostKind, number> = { normal: 1, perfect: 1.4, shockwave: 2.2, super: 1.8 };
+/** How far past the gearing's top speed each boost can still push (x top speed). */
+const BOOST_REACH: Record<BoostKind, number> = { normal: 1, perfect: 1.06, shockwave: 1.14, super: 1.1 };
+/** Fire the nitro within this long (s) after a drift for a perfect nitro. */
+export const PERFECT_WINDOW = 0.8;
+/** Two nitro presses this close together (s) make a shockwave. */
+export const DOUBLE_TAP = 0.35;
+/** Tank needed for a shockwave. */
+const SHOCKWAVE_TANK = 0.8;
+/** A shockwave empties the tank this much faster than holding the nitro. */
+const SHOCKWAVE_BURN = 1.5;
 
 export class VehiclePhysics {
   readonly spec: VehicleSpec;
@@ -219,6 +237,16 @@ export class VehiclePhysics {
   nitro = 1;
   /** Nitro firing this step (for flames, sound and camera). */
   nitroActive = false;
+  /** The kind of boost burning (or last burnt). */
+  boostKind: BoostKind = 'normal';
+  /** A special boost that started this step (for the HUD), else null. */
+  boostEvent: BoostKind | null = null;
+  /** Seconds of super boost left (from a pickup). */
+  superTime = 0;
+  private nitroHeld = false;
+  private clock = 0;
+  private lastNitroTap = -10;
+  private sinceDrift = 99;
   /** Multiplier the AI/difficulty system can use; 1 = normal. */
   powerScale = 1;
   /** Aerodynamic drag multiplier; < 1 while slipstreaming another car. */
@@ -260,6 +288,44 @@ export class VehiclePhysics {
     this.settleTime = 0;
     this.straightening = false;
     this.nitroActive = false;
+    this.boostKind = 'normal';
+    this.boostEvent = null;
+    this.superTime = 0;
+    this.sinceDrift = 99;
+  }
+
+  /** A nitro pickup: top up the tank (0..1 of a tank). */
+  addNitro(amount: number): void {
+    this.nitro = Math.min(1, this.nitro + amount);
+  }
+
+  /** A super-boost pickup: a full tank and `seconds` of free, strong boost. */
+  superBoost(seconds: number): void {
+    this.nitro = 1;
+    this.superTime = Math.max(this.superTime, seconds);
+    this.boostKind = 'super';
+    this.boostEvent = 'super';
+  }
+
+  /** Perfect nitro and shockwave: decided when the nitro button is pressed. */
+  private updateBoostKind(nitro: boolean, dt: number): void {
+    this.clock += dt;
+    this.boostEvent = null;
+    this.sinceDrift = this.drifting ? 0 : this.sinceDrift + dt;
+    const tap = nitro && !this.nitroHeld;
+    this.nitroHeld = nitro;
+    if (this.superTime > 0) this.boostKind = 'super';
+    if (!tap || this.superTime > 0) return;
+    if (this.clock - this.lastNitroTap < DOUBLE_TAP && this.nitro >= SHOCKWAVE_TANK && this.boostKind !== 'shockwave') {
+      this.boostKind = 'shockwave';
+      this.boostEvent = 'shockwave';
+    } else if (!this.drifting && this.sinceDrift < PERFECT_WINDOW && this.nitro > 0.05 && this.boostKind !== 'shockwave') {
+      this.boostKind = 'perfect';
+      this.boostEvent = 'perfect';
+    } else if (this.boostKind !== 'shockwave') {
+      this.boostKind = 'normal';
+    }
+    this.lastNitroTap = this.clock;
   }
 
   /** Top speed the gearing allows (redline in top gear), m/s. */
@@ -446,10 +512,16 @@ export class VehiclePhysics {
     this.rearSlide = clamp(Math.abs(slipR) / 0.15, 0, 1) * smoothstep(3, 8, speed);
 
     // ---- Nitro: a push on top of the engine, fading out at the gearing's top speed ----
-    this.nitroActive = input.nitro && this.nitro > 0 && this.gear > 0 && u > 2;
-    if (this.nitroActive) this.nitro = Math.max(0, this.nitro - dt / s.nitroCapacity);
+    this.updateBoostKind(input.nitro, dt);
+    const firing = this.superTime > 0 || this.boostKind === 'shockwave' || input.nitro;
+    this.nitroActive = firing && (this.nitro > 0 || this.superTime > 0) && this.gear > 0 && u > 2;
+    if (this.superTime > 0) this.superTime = Math.max(0, this.superTime - dt);
+    else if (this.nitroActive) this.nitro = Math.max(0, this.nitro - (dt / s.nitroCapacity) * (this.boostKind === 'shockwave' ? SHOCKWAVE_BURN : 1));
     else this.nitro = Math.min(1, this.nitro + dt * (this.drifting && Math.abs(bodySlip) > 0.15 ? NITRO_REFILL_DRIFT : NITRO_REFILL));
-    const boost = this.nitroActive ? s.nitroForce * (1 - smoothstep(0.9, 1.05, u / this.gearedTopSpeed)) : 0;
+    // A burn is over (released, or a shockwave has emptied the tank): the next one starts as a normal nitro.
+    if (!this.nitroActive && this.superTime <= 0) this.boostKind = 'normal';
+    const reach = BOOST_REACH[this.boostKind];
+    const boost = this.nitroActive ? s.nitroForce * BOOST_POWER[this.boostKind] * (1 - smoothstep(0.9 * reach, 1.05 * reach, u / this.gearedTopSpeed)) : 0;
 
     // ---- Longitudinal forces ----
     const drag = -s.dragCoefficient * this.dragScale * u * Math.abs(u);

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { CarSetup, TimeOfDay } from '../../shared/api';
 import { shopItem } from '../../shared/items';
 import { damp, lerp, wrapAngle } from '../core/math';
+import type { BoostKind } from '../physics/VehiclePhysics';
 import type { SimCar } from '../race/RaceSimulation';
 import type { BodyDef, CarDef } from './cars';
 import { type CarAsset, carAsset, liveryMaterial, type PartRole } from './importedCars';
@@ -688,6 +689,12 @@ function wheelGeometry(def: CarDef): WheelSet {
   return out;
 }
 
+const SPECIAL_FLAMES: Record<Exclude<BoostKind, 'normal'>, THREE.Color> = {
+  perfect: new THREE.Color(1.6, 2.6, 3.2),
+  shockwave: new THREE.Color(2.4, 0.6, 3.4),
+  super: new THREE.Color(3.4, 2.1, 0.4),
+};
+
 const FINISHES: Record<CarSetup['finish'], THREE.MeshPhysicalMaterialParameters> = {
   gloss: { metalness: 0.12, roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.04 },
   metallic: { metalness: 0.6, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.08 },
@@ -718,6 +725,9 @@ export class CarModel {
   private readonly shadow: THREE.Mesh;
   /** Nitro flames, one per exhaust. */
   private readonly flames: THREE.Mesh[] = [];
+  /** Flames for the car's own nitro colour, and for special boosts (perfect, shockwave, super). */
+  private normalFlame: THREE.Material = getFlame().material;
+  private readonly specialFlame = (getFlame().material as THREE.MeshBasicMaterial).clone();
   /** Neon light on the road under the car (a shop item). */
   private readonly underglow: THREE.Mesh;
   /** Tyre smoke colour fitted from the shop (null: plain white smoke). */
@@ -850,6 +860,7 @@ export class CarModel {
     const shared = getFlame().material;
     const material = flameItem ? own((shared as THREE.MeshBasicMaterial).clone()) : shared;
     if (flameItem) (material as THREE.MeshBasicMaterial).color.set(flameItem.color).multiplyScalar(2.4);
+    this.normalFlame = material;
     for (const f of this.flames) f.material = material;
     const smoke = shopItem(setup.smoke);
     this.smokeColor = smoke ? new THREE.Color(smoke.color) : null;
@@ -943,7 +954,13 @@ export class CarModel {
     // Nitro flames flicker in length while they burn.
     for (const f of this.flames) {
       f.visible = p.nitroActive || this.showFlames;
-      if (f.visible) f.scale.set(1, 1, 0.65 + Math.random() * 0.7);
+      const special = p.nitroActive && p.boostKind !== 'normal';
+      f.material = special ? this.specialFlame : this.normalFlame;
+      if (special) {
+        // Long, hot flames: white-cyan (perfect), violet (shockwave) or gold (super).
+        this.specialFlame.color.copy(SPECIAL_FLAMES[p.boostKind as Exclude<BoostKind, 'normal'>]);
+        f.scale.set(1.5, 1.5, 1.4 + Math.random() * 0.9);
+      } else if (f.visible) f.scale.set(1, 1, 0.65 + Math.random() * 0.7);
     }
 
     const braking = p.braking && p.forwardSpeed > 0.5;

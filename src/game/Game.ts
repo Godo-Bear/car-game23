@@ -24,6 +24,7 @@ import { TouchControls } from '../ui/TouchControls';
 import { CarModel } from '../vehicles/CarModel';
 import { AI_LIVERIES, aiField, CARS, carSetup, randomPlate, upgradedSpec } from '../vehicles/cars';
 import { loadCarAsset, loadCarAssets, onCarAssetLoaded } from '../vehicles/importedCars';
+import { PickupView } from '../vehicles/PickupView';
 import { Sparks } from '../vehicles/Sparks';
 import { type EffectsCar, TireEffects } from '../vehicles/TireEffects';
 import { Lighting } from '../world/Lighting';
@@ -51,6 +52,7 @@ export class Game {
   private readonly input = new Input();
   private readonly touch = new TouchControls(this.input);
   private readonly padMenu = new GamepadMenu();
+  private readonly pickupView = new PickupView();
   private readonly audio = new AudioEngine();
   private readonly account = new AccountService();
   private readonly loader = new TrackLoader();
@@ -107,7 +109,7 @@ export class Game {
 
   async init(): Promise<void> {
     this.lighting = new Lighting(this.scene, this.pipeline.renderer);
-    this.scene.add(this.effects.group, this.sparks.points);
+    this.scene.add(this.effects.group, this.sparks.points, this.pickupView.group);
     // On the front bumper, aimed down the road (so it never lights our own bodywork).
     this.headlight.target.position.set(0, 0, 32);
     this.loader.line(HOME_TRACK);
@@ -349,6 +351,8 @@ export class Game {
     playerModel.root.add(this.headlight, this.headlight.target);
     this.headlight.position.set(0, 0.75, playerModel.frontZ + 0.25);
     this.effectCars = this.sim.cars.map((c, i) => ({ car: c, root: this.carModels[i].root, look: this.carModels[i] }));
+    // Nitro pickups on the road (not in the homescreen's showcase race).
+    this.pickupView.setPickups(home ? [] : this.sim.pickups);
     this.effects.clear();
     this.feedback.reset();
     this.syncCarModels(1, 0);
@@ -526,6 +530,7 @@ export class Game {
     const alpha = running ? this.accumulator / RaceSimulation.STEP : 1;
     this.syncCarModels(alpha, simDt);
     this.effects.update(this.effectCars, simDt, this.cam.camera, this.pipeline.renderer.domElement.height);
+    this.pickupView.update(this.sim.time, this.elapsed);
     const blur = running && !home ? this.feedback.update(this.sim, this.state === 'racing', this.frameImpact, simDt) : 0;
     if (running && !home && this.frameImpact > 3) this.input.rumble(this.frameImpact / 15);
     this.frameImpact = 0;
@@ -654,7 +659,21 @@ export class Game {
         setTimeout(() => this.hud.showMessage('FINAL LAP', 2, 'gold'), 2600);
       } else if (e.type === 'finish') {
         this.onPlayerFinished(e.position);
+      } else if (e.type === 'pickup' || e.type === 'boost') {
+        this.onBoost(e.kind === 'nitro' ? 'pickup' : e.kind);
       }
+    }
+  }
+
+  /** Nitro pickups and special boosts: a callout over the speedo, a sound and a kick. */
+  private onBoost(kind: 'pickup' | 'perfect' | 'shockwave' | 'super' | 'normal'): void {
+    if (kind === 'normal') return;
+    const text = { pickup: '+NITRO', perfect: 'PERFECT NITRO!', shockwave: 'SHOCKWAVE!', super: 'SUPER NITRO!' }[kind];
+    this.hud.showBoost(text, kind);
+    this.audio.boost(kind === 'pickup' ? 0 : kind === 'perfect' ? 1 : 2);
+    if (kind === 'shockwave' || kind === 'super') {
+      if (this.applied.cameraShake) this.cam.addShake(0.5);
+      this.input.rumble(0.7, 260);
     }
   }
 

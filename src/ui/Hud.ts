@@ -11,6 +11,8 @@ export class Hud {
   private readonly standings = $('hud-standings');
   private readonly tow = $('hud-tow');
   private readonly nitro = $('hud-nitro');
+  private readonly boost = $('hud-boost');
+  private boostTimer = 0;
   private readonly cache = new Map<string, string>();
   private messageTimer = 0;
   private standingsKey = '';
@@ -28,6 +30,16 @@ export class Hud {
     this.messageTimer = seconds;
   }
 
+  /** Nitro callouts over the speedo: "+NITRO", "PERFECT NITRO!", "SHOCKWAVE!", "SUPER NITRO!". */
+  showBoost(text: string, kind: string): void {
+    this.boost.textContent = text;
+    this.boost.className = `hud-boost show ${kind}`;
+    // Restart the pop animation.
+    void this.boost.offsetWidth;
+    this.boost.classList.add('pop');
+    this.boostTimer = kind === 'pickup' ? 1.1 : 1.8;
+  }
+
   clearMessage(): void {
     this.messageTimer = 0;
     this.message.className = 'hud-message';
@@ -43,6 +55,10 @@ export class Hud {
     if (this.messageTimer > 0) {
       this.messageTimer -= dt;
       if (this.messageTimer <= 0) this.message.className = 'hud-message';
+    }
+    if (this.boostTimer > 0) {
+      this.boostTimer -= dt;
+      if (this.boostTimer <= 0) this.boost.className = 'hud-boost';
     }
     const player = sim.player;
     const race = sim.race;
@@ -73,6 +89,7 @@ export class Hud {
     this.tow.classList.toggle('drift', drifting);
     (this.nitro.firstElementChild as HTMLElement).style.transform = `scaleX(${p.nitro.toFixed(3)})`;
     this.nitro.classList.toggle('firing', p.nitroActive);
+    this.nitro.dataset.boost = p.nitroActive ? p.boostKind : '';
 
     const order = race.standings();
     const key = order.map((r) => r.id).join(',');

@@ -73,6 +73,16 @@ countryside, by day, at sunset or at night — running in the browser and hosted
 - **Nitro:** Shift / N (X or RB on a gamepad). A tank of boost that pushes harder than the engine
   alone, with blue exhaust flames, a wider view and speed blur. It refills slowly on its own and
   quickly while drifting.
+- **Nitro pickups and special boosts (Asphalt style):** glowing blue nitro bottles sit on the road
+  every 150 m (weaving across it) and top up a third of your tank; every fifth is a big gold
+  *super nitro* - a full tank plus a few seconds of strong, free boost with gold flames. Taken
+  bottles come back after 15 seconds. Special boosts:
+  - *Perfect nitro* - fire the nitro just as a drift ends (within 0.8 s): a stronger push for
+    that burn, white-hot flames.
+  - *Shockwave* - double-tap the nitro with a (nearly) full tank: the whole tank in one huge
+    burst (more than twice the push, past your usual top speed) with violet flames - it keeps
+    going without holding the button.
+  Each gets a callout over the speedo, a chime/whoosh, a camera kick and controller rumble.
 - **Vehicle physics:** semi-simulation bicycle model — tyre slip, weight transfer, 6-speed automatic
   gearbox, handbrake drifting with skid marks and tyre smoke, stability control, slipstream, and
   crashes that cost real speed. Drifts are assisted: there's no countersteering to do - once the

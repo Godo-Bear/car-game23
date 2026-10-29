@@ -5,6 +5,7 @@ import { clamp, createRng, smoothstep, wrapAngle } from '../core/math';
 import { collideCars, collideWithWalls, type WallContact } from '../physics/Collisions';
 import { neutralControls, SPORTS_CAR, type VehicleControls, VehiclePhysics, type VehicleSpec } from '../physics/VehiclePhysics';
 import { createProjection, type TrackLayout, TrackPath, type TrackProjection } from '../track/TrackPath';
+import { NITRO_PICKUP, PICKUP_RESPAWN, type Pickup, pickupAt, placePickups, SUPER_SECONDS } from './Pickups';
 import { type RaceEvent, RaceManager } from './RaceManager';
 
 export type { Difficulty };
@@ -125,7 +126,12 @@ export class RaceSimulation {
   readonly cars: SimCar[] = [];
   race: RaceManager;
   phase: RacePhase = 'grid';
+  /** Nitro pickups on the road (the player collects them). */
+  readonly pickups: Pickup[];
+  /** Seconds since the start (for pickups coming back). */
+  time = 0;
   private traffic: TrafficCar[] = [];
+  private pending: RaceEvent[] = [];
 
   constructor(layout: TrackLayout | TrackPath, settings: Partial<RaceSettings> = {}, line?: RacingLine) {
     this.track = layout instanceof TrackPath ? layout : new TrackPath(layout);
@@ -184,6 +190,7 @@ export class RaceSimulation {
         return c.isPlayer && !c.autopilot;
       },
     }));
+    this.pickups = placePickups(this.track);
     this.race = this.placeOnGrid();
   }
 
@@ -209,6 +216,8 @@ export class RaceSimulation {
       startDistances.push(car.proj.distance);
     }
     this.phase = 'grid';
+    this.time = 0;
+    for (const p of this.pickups) p.backAt = 0;
     return new RaceManager(this.track.length, this.settings.laps, this.cars, startDistances);
   }
 
@@ -320,7 +329,11 @@ export class RaceSimulation {
       car.controls = controls;
       const slope = car.proj.slope * Math.cos(car.physics.heading - car.proj.heading);
       car.physics.step(controls, dt, slope);
-      if (car.isPlayer && !car.autopilot) this.driftGuide(car, dt);
+      if (car.isPlayer && !car.autopilot) {
+        this.driftGuide(car, dt);
+        const kind = car.physics.boostEvent;
+        if (kind) this.pending.push({ type: 'boost', racerId: car.id, kind });
+      }
     }
 
     for (let i = 0; i < this.cars.length; i++) {
@@ -342,11 +355,30 @@ export class RaceSimulation {
       ph.y = car.proj.y;
       this.updateStuck(car, dt);
     }
+    this.time += dt;
+    this.collectPickups();
 
-    return this.race.update(
+    const events = this.race.update(
       dt,
       this.cars.map((c) => c.proj.distance),
     );
+    if (this.pending.length) {
+      events.push(...this.pending);
+      this.pending = [];
+    }
+    return events;
+  }
+
+  /** The player drives through a pickup: a blue bottle tops up the tank, a gold one is a super boost. */
+  private collectPickups(): void {
+    const car = this.player;
+    if (car.autopilot) return;
+    const p = pickupAt(this.pickups, this.track.length, car.proj.distance, car.proj.lateral, this.time);
+    if (!p) return;
+    p.backAt = this.time + PICKUP_RESPAWN;
+    if (p.kind === 'super') car.physics.superBoost(SUPER_SECONDS);
+    else car.physics.addNitro(NITRO_PICKUP);
+    this.pending.push({ type: 'pickup', racerId: car.id, kind: p.kind });
   }
 
   /** Put a car back on the racing line (used by the player's reset key and for wedged AI cars). */

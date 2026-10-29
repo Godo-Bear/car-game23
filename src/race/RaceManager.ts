@@ -1,3 +1,5 @@
+import type { BoostKind } from '../physics/VehiclePhysics';
+import type { PickupKind } from './Pickups';
 export interface RacerInfo {
   id: number;
   name: string;
@@ -25,7 +27,10 @@ export interface RacerState extends RacerInfo {
 export type RaceEvent =
   | { type: 'lap'; racerId: number; lap: number; time: number; best: boolean }
   | { type: 'finalLap'; racerId: number }
-  | { type: 'finish'; racerId: number; position: number; time: number };
+  | { type: 'finish'; racerId: number; position: number; time: number }
+  /** Nitro pickups and special boosts (see Pickups.ts and VehiclePhysics). */
+  | { type: 'pickup'; racerId: number; kind: PickupKind }
+  | { type: 'boost'; racerId: number; kind: BoostKind };
 
 /**
  * Tracks laps, lap times and race positions.
