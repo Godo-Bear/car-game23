@@ -2,7 +2,7 @@ import type { AdminRequest, AdminStats } from '../../shared/admin';
 import type { CareerStats, PlayerSettings, ProfileResponse, Purchase, RaceRecord, Wallet } from '../../shared/api';
 import { newWallet, purchase } from '../../shared/economy';
 import { claimDaily, claimQuest, settleResult, todayKey } from '../../shared/quests';
-import { cleanWallet } from '../../shared/wallet';
+import { cleanWallet, hasGuestProgress } from '../../shared/wallet';
 
 /** 'no-database': the API Worker is deployed but its D1 binding is missing. */
 export type BackendStatus = 'unknown' | 'online' | 'offline' | 'no-database';
@@ -38,6 +38,8 @@ export class AccountService {
   profile: ProfileResponse | null = null;
   private guest: GuestData = loadGuest();
   private listeners = new Set<() => void>();
+  /** Set when this device's guest progress has just been added to the account. */
+  notice: string | null = null;
 
   onChange(fn: () => void): () => void {
     this.listeners.add(fn);
@@ -158,14 +160,38 @@ export class AccountService {
 
   async register(username: string, password: string): Promise<void> {
     this.profile = await this.call<ProfileResponse>('POST', '/api/register', { username, password });
-    // Carry this device's guest settings over to the new account.
+    // Carry this device's guest settings (paint, fitted cosmetics...) over to the new account.
     if (Object.keys(this.guest.settings).length) await this.saveSettings(this.guest.settings);
+    await this.importGuest();
     this.emit();
   }
 
   async login(username: string, password: string): Promise<void> {
     this.profile = await this.call<ProfileResponse>('POST', '/api/login', { username, password });
+    await this.importGuest();
     this.emit();
+  }
+
+  /**
+   * Anything earned or bought as a guest on this device (money, drift points, cosmetics,
+   * upgrades, career results) is added to the account just signed in to, and the guest profile
+   * starts afresh so it can't be added twice.
+   */
+  private async importGuest(): Promise<void> {
+    const g = this.guest;
+    if (!hasGuestProgress(g.wallet) && g.stats.races === 0) return;
+    try {
+      this.profile = await this.call<ProfileResponse>('POST', '/api/import', { wallet: g.wallet, stats: g.stats });
+    } catch (e) {
+      console.warn('[accounts] guest progress not moved', e);
+      return;
+    }
+    // Cosmetics fitted as a guest stay fitted if the account had none on its car.
+    const garage = g.settings.garage;
+    if (garage && !this.profile.settings.garage?.gt && garage.gt) await this.saveSettings({ garage: { ...this.profile.settings.garage, gt: garage.gt } });
+    this.guest = { ...g, stats: emptyStats(), recent: [], wallet: newWallet() };
+    saveGuest(this.guest);
+    this.notice = 'Your guest progress and purchases were added to this account ✓';
   }
 
   async logout(): Promise<void> {
@@ -173,6 +199,7 @@ export class AccountService {
       await this.call('POST', '/api/logout', {});
     } finally {
       this.profile = null;
+      this.notice = null;
       this.emit();
     }
   }

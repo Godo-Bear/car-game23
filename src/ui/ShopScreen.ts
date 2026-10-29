@@ -28,6 +28,8 @@ export class ShopScreen {
 
   render(): void {
     this.renderItems();
+    // Guests on a site with accounts: a nudge to log in so purchases are kept in the account.
+    $('shop-guest').classList.toggle('hidden', this.account.signedIn || this.account.backend !== 'online');
   }
 
   /** Cosmetics, by kind: each with its colour, price and a buy button. */

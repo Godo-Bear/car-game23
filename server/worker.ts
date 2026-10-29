@@ -1,4 +1,5 @@
 import { admin } from './api/admin';
+import { importGuest } from './api/import';
 import { login } from './api/login';
 import { logout } from './api/logout';
 import { me } from './api/me';
@@ -18,6 +19,7 @@ const routes: Record<string, Partial<Record<string, ApiHandler>>> = {
   '/api/settings': { PUT: settings },
   '/api/shop': { POST: shop },
   '/api/admin': { POST: admin },
+  '/api/import': { POST: importGuest },
 };
 
 /**

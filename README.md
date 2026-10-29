@@ -40,8 +40,11 @@ countryside, by day, at sunset or at night — running in the browser and hosted
   on Normal is ¥10,500), plus career bonuses. Spend it on upgrades in the garage: Engine, Gearbox,
   Aero, Tyres, Suspension, Brakes, Differential and Nitro, four levels each; fully upgraded, every
   stat is maxed at 10. With an account the server does the sums (prices, prize money, what you
-  own), so money only comes from racing; guests are saved on the device. A guest's money doesn't
-  move to a new account. Saves from when other cars were for sale get their price back for each
+  own), so money only comes from racing; shop purchases are saved to your account straight away.
+  Guests are saved on the device (the shop reminds them to log in); when a guest logs in or
+  creates an account, everything earned and bought as a guest - money, drift points, cosmetics,
+  upgrades, career results, race counts - is added to that account (`POST /api/import`) and the
+  guest profile starts afresh. Saves from when other cars were for sale get their price back for each
   car bought, and the GT gets the best level of each part fitted to any of them (old saves'
   "Handling" upgrade carries over to tyres, suspension and brakes).
 - **Garage:** your Kaze GT (3D model in `public/models/gt/`, see *3D assets*). Customise paint

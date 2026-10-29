@@ -344,7 +344,7 @@ export class Screens {
       $(`${prefix}-name`).textContent = a.displayName;
       $(`${prefix}-avatar`).textContent = a.displayName.slice(0, 1).toUpperCase();
     }
-    $('career-status').textContent = status;
+    $('career-status').textContent = a.signedIn && a.notice ? a.notice : status;
     $('money').textContent = formatYen(a.wallet.credits);
     $('dp-balance').textContent = a.wallet.dp.toLocaleString('en-US');
     this.renderHome();
@@ -632,6 +632,7 @@ export class Screens {
     $('btn-hud-controls').addEventListener('click', () => this.openSettings('controls'));
     $('btn-pause-settings').addEventListener('click', () => this.openSettings('graphics'));
     $('btn-login').addEventListener('click', () => this.openAuth('login'));
+    $('shop-login').addEventListener('click', () => this.openAuth('login'));
     $('btn-register').addEventListener('click', () => this.openAuth('register'));
     $('btn-logout').addEventListener('click', async () => {
       await this.account.logout();

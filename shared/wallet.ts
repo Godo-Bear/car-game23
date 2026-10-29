@@ -1,6 +1,6 @@
 import { CAR_IDS, type CarId, TRACK_IDS, type Upgrades, type Wallet } from './api';
 import { CAREER_EVENT_IDS, MAX_STARS } from './career';
-import { MAX_UPGRADE, newWallet, PLAYER_CAR, UPGRADE_PARTS } from './economy';
+import { MAX_UPGRADE, newWallet, PLAYER_CAR, STARTING_CREDITS, UPGRADE_PARTS } from './economy';
 import { ITEM_IDS } from './items';
 import { DAILY_POOL, freshDaily, QUEST_IDS } from './quests';
 
@@ -76,4 +76,45 @@ export function cleanWallet(raw: unknown): Wallet {
     ),
   };
   return { credits, owned, upgrades, events, quests, daily, stars, dp, dpTotal, items };
+}
+
+/** True if a guest wallet holds anything worth moving to an account. */
+export function hasGuestProgress(guest: Wallet): boolean {
+  return (
+    guest.credits > STARTING_CREDITS ||
+    guest.dp > 0 ||
+    guest.items.length > 0 ||
+    Object.values(guest.upgrades).some((u) => Object.values(u ?? {}).some((v) => v > 0)) ||
+    Object.keys(guest.events).length > 0 ||
+    guest.quests.length > 0
+  );
+}
+
+/**
+ * Add what was earned and bought as a guest on this device to an account's wallet (when the
+ * player logs in or creates an account): money and drift points on top (minus the guest's free
+ * starting money), every cosmetic from both, the higher level of each upgrade, the better result
+ * and stars on each career event, and mega quests claimed on either. The account keeps its own
+ * daily quests.
+ */
+export function mergeWallets(account: Wallet, guestRaw: unknown): Wallet {
+  const a = cleanWallet(account);
+  const g = cleanWallet(guestRaw);
+  const best = (x: Wallet['upgrades'][CarId], y: Wallet['upgrades'][CarId]) =>
+    Object.fromEntries(UPGRADE_PARTS.map((part) => [part, Math.max(x?.[part] ?? 0, y?.[part] ?? 0)])) as Upgrades;
+  const events = { ...a.events };
+  for (const [id, pos] of Object.entries(g.events)) events[id] = Math.min(events[id] ?? 99, pos);
+  const stars = { ...a.stars };
+  for (const [id, n] of Object.entries(g.stars)) stars[id] = Math.max(stars[id] ?? 0, n);
+  return cleanWallet({
+    ...a,
+    credits: a.credits + Math.max(0, g.credits - STARTING_CREDITS),
+    dp: a.dp + g.dp,
+    dpTotal: a.dpTotal + g.dpTotal,
+    items: [...new Set([...a.items, ...g.items])],
+    upgrades: { [PLAYER_CAR]: best(a.upgrades[PLAYER_CAR], g.upgrades[PLAYER_CAR]) },
+    events,
+    stars,
+    quests: [...new Set([...a.quests, ...g.quests])],
+  });
 }
