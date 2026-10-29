@@ -16,6 +16,7 @@ import { gridSlot, RaceSimulation } from '../race/RaceSimulation';
 import { RenderPipeline } from '../render/RenderPipeline';
 import type { TrackPath } from '../track/TrackPath';
 import { TRACKS } from '../track/tracks';
+import { GamepadMenu } from '../ui/GamepadMenu';
 import { Hud } from '../ui/Hud';
 import { Minimap } from '../ui/Minimap';
 import { type HubPanel, type RaceReward, Screens } from '../ui/Screens';
@@ -49,6 +50,7 @@ export class Game {
   private readonly store: SettingsStore;
   private readonly input = new Input();
   private readonly touch = new TouchControls(this.input);
+  private readonly padMenu = new GamepadMenu();
   private readonly audio = new AudioEngine();
   private readonly account = new AccountService();
   private readonly loader = new TrackLoader();
@@ -493,6 +495,9 @@ export class Game {
     this.lastTime = time;
     this.elapsed += dt;
     const controls = this.input.update();
+    // Gamepad menus while a menu is up (not mid-race).
+    const menus = this.state === 'home' || this.paused || this.modalOpen || this.screens.resultsVisible;
+    this.padMenu.update(dt, menus && !this.busy);
     this.handleActions();
     const measuring = !this.busy && !this.paused && !this.modalOpen && document.visibilityState === 'visible';
     if (this.perf.update(rawDt, measuring, this.applied.showFps)) this.onSlowFrames();
@@ -522,6 +527,7 @@ export class Game {
     this.syncCarModels(alpha, simDt);
     this.effects.update(this.effectCars, simDt, this.cam.camera, this.pipeline.renderer.domElement.height);
     const blur = running && !home ? this.feedback.update(this.sim, this.state === 'racing', this.frameImpact, simDt) : 0;
+    if (running && !home && this.frameImpact > 3) this.input.rumble(this.frameImpact / 15);
     this.frameImpact = 0;
     const boosting = running && !home && this.sim.player.physics.nitroActive;
     this.pipeline.setSpeedEffect(Math.min(1, blur + (boosting ? 0.35 : 0)), this.elapsed);

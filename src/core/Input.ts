@@ -14,6 +14,8 @@ export const GAMEPAD_BINDINGS: { action: string; button: string }[] = [
   { action: 'Change camera', button: 'Y / Triangle' },
   { action: 'Reset car', button: 'View / Share' },
   { action: 'Pause', button: 'Menu / Options' },
+  { action: 'Menus: move / select / back', button: 'D-pad or left stick / A / B' },
+  { action: 'Menus: switch tab', button: 'LB / RB' },
 ];
 
 const EDGE_ACTIONS: Partial<Record<ActionId, Action>> = {
@@ -23,7 +25,8 @@ const EDGE_ACTIONS: Partial<Record<ActionId, Action>> = {
   controls: 'controls',
   mute: 'mute',
 };
-const GAMEPAD_ACTIONS: Partial<Record<Action, number>> = { camera: 3, reset: 8, pause: 9, confirm: 0 };
+// A presses the focused menu button (see GamepadMenu), so it isn't also "confirm" here.
+const GAMEPAD_ACTIONS: Partial<Record<Action, number>> = { camera: 3, reset: 8, pause: 9 };
 const NO_SCROLL = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space']);
 
 export class Input {
@@ -97,6 +100,15 @@ export class Input {
     const had = this.pressed.has(action);
     this.pressed.delete(action);
     return had;
+  }
+
+  /** Shake the gamepad (0..1), e.g. on a crash. */
+  rumble(strength: number, ms = 140): void {
+    const pad = navigator.getGamepads?.().find((p) => p?.connected);
+    const actuator = (pad as (Gamepad & { vibrationActuator?: { playEffect?(type: string, p: object): Promise<unknown> } }) | undefined)?.vibrationActuator;
+    actuator
+      ?.playEffect?.('dual-rumble', { duration: ms, strongMagnitude: Math.min(1, strength), weakMagnitude: Math.min(1, strength * 0.6) })
+      .catch(() => undefined);
   }
 
   /** Trigger a one-shot action from elsewhere (on-screen buttons). */

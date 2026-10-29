@@ -2417,3 +2417,10 @@ html.touch .hub-foot {
     display: none;
   }
 }
+
+/* Gamepad menus: a clear ring on the focused button. */
+html.gamepad .pad-focus:focus {
+  outline: 3px solid var(--accent-2);
+  outline-offset: 3px;
+  box-shadow: 0 0 18px rgba(25, 211, 255, 0.55);
+}

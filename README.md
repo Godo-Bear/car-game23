@@ -261,6 +261,11 @@ right-click clears it; **Reset binds** restores these defaults).
 | Browse cars (garage) | `←` `→` / `Q` `E` | |
 | Mute | `M` | |
 
+**Gamepad menus:** the whole game can be played with a controller - the D-pad or left stick moves
+between buttons (a blue ring shows where you are), **A** presses, **B** goes back, **LB** / **RB**
+switch the bottom-bar tabs and **Menu** pauses. Crashes rumble the controller (where the browser
+supports it).
+
 **Touch screens** (phones and tablets, played sideways): menus are tapped as usual and the career
 map drags with a finger. In a race, a steering pad sits bottom-left - put your thumb on it and
 slide left or right (further from the middle steers harder) - and **GAS**, **BRAKE** (hold to
