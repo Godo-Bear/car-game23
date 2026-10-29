@@ -19,6 +19,7 @@ import { TRACKS } from '../track/tracks';
 import { Hud } from '../ui/Hud';
 import { Minimap } from '../ui/Minimap';
 import { type HubPanel, type RaceReward, Screens } from '../ui/Screens';
+import { TouchControls } from '../ui/TouchControls';
 import { CarModel } from '../vehicles/CarModel';
 import { AI_LIVERIES, aiField, CARS, carSetup, randomPlate, upgradedSpec } from '../vehicles/cars';
 import { loadCarAsset, loadCarAssets, onCarAssetLoaded } from '../vehicles/importedCars';
@@ -47,6 +48,7 @@ export class Game {
   private readonly pipeline: RenderPipeline;
   private readonly store: SettingsStore;
   private readonly input = new Input();
+  private readonly touch = new TouchControls(this.input);
   private readonly audio = new AudioEngine();
   private readonly account = new AccountService();
   private readonly loader = new TrackLoader();
@@ -364,6 +366,7 @@ export class Game {
     this.cine.endIntro();
     showCinematic(null);
     this.hud.setVisible(false);
+    this.touch.release();
     this.screens.hideAll();
     await this.loadTrack(HOME_TRACK);
     this.applyTimeOfDay(HOME_TIME);
@@ -460,8 +463,10 @@ export class Game {
     if (this.state === 'home') return;
     this.paused = paused;
     this.screens.showPause(paused && showMenu);
-    if (paused) this.feedback.quiet();
-    else this.input.clearActions();
+    if (paused) {
+      this.feedback.quiet();
+      this.touch.release();
+    } else this.input.clearActions();
   }
 
   /** The frame rate has stayed low: step the graphics down (if the player allows it). */

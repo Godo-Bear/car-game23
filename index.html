@@ -2,7 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="description" content="Tokyo Circuit Racer - a 3D racing game across Tokyo streets, the Hakone mountain pass and cherry-blossom countryside." />
     <meta name="theme-color" content="#0b0a14" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
@@ -35,8 +37,21 @@
       </div>
       <div class="hud-buttons">
         <button type="button" id="btn-hud-controls" class="icon-btn" title="Controls & settings (H)" aria-label="Controls and settings">?</button>
+        <button type="button" id="btn-touch-camera" class="icon-btn touch-only" aria-label="Change camera">🎥</button>
+        <button type="button" id="btn-touch-reset" class="icon-btn touch-only" aria-label="Reset car onto the road">↺</button>
         <button type="button" id="btn-hud-pause" class="icon-btn" title="Pause (Esc)" aria-label="Pause">❚❚</button>
       </div>
+      <!-- Touch screens: steering pad on the left, pedals on the right -->
+      <div id="touch" class="touch-controls" aria-hidden="true">
+        <div id="touch-steer" class="touch-steer"><span class="arrow l">◀</span><span class="knob"></span><span class="arrow r">▶</span></div>
+        <div class="touch-pedals">
+          <div data-pedal="nitro" class="pedal nitro-btn">NITRO</div>
+          <div data-pedal="handbrake" class="pedal drift-btn">DRIFT</div>
+          <div data-pedal="brake" class="pedal brake-btn">BRAKE</div>
+          <div data-pedal="throttle" class="pedal gas-btn">GAS</div>
+        </div>
+      </div>
+      <div class="rotate-hint">↻ Turn your device sideways to race</div>
       <div id="hud-message" class="hud-message"></div>
       <canvas id="minimap" class="minimap" width="440" height="440"></canvas>
       <div class="speedo">

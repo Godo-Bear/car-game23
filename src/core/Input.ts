@@ -28,6 +28,8 @@ const NO_SCROLL = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'S
 
 export class Input {
   readonly controls: VehicleControls = { throttle: 0, brake: 0, steer: 0, handbrake: false, nitro: false };
+  /** On-screen touch controls (set by TouchControls), merged with the keys and gamepad. */
+  readonly touch: VehicleControls = { throttle: 0, brake: 0, steer: 0, handbrake: false, nitro: false };
   private readonly down = new Set<string>();
   private readonly pressed = new Set<Action>();
   private padPrev: boolean[] = [];
@@ -97,6 +99,11 @@ export class Input {
     return had;
   }
 
+  /** Trigger a one-shot action from elsewhere (on-screen buttons). */
+  press(action: Action): void {
+    this.pressed.add(action);
+  }
+
   clearActions(): void {
     this.pressed.clear();
   }
@@ -133,11 +140,12 @@ export class Input {
       this.padPrev = pad.buttons.map((b) => b.pressed);
     }
 
-    c.throttle = throttle;
-    c.brake = brake;
-    c.steer = steer;
-    c.handbrake = handbrake;
-    c.nitro = nitro;
+    const t = this.touch;
+    c.throttle = Math.max(throttle, t.throttle);
+    c.brake = Math.max(brake, t.brake);
+    c.steer = clamp(steer + t.steer, -1, 1);
+    c.handbrake = handbrake || t.handbrake;
+    c.nitro = nitro || t.nitro;
     return c;
   }
 }

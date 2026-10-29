@@ -2178,3 +2178,242 @@ ul.quest-list {
 .garage-tabs button {
   padding: 7px 10px;
 }
+
+/* ---------- Touch screens ---------- */
+#game,
+.hud {
+  touch-action: none;
+}
+.hud,
+.touch-controls {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.touch-controls,
+.touch-only,
+.rotate-hint {
+  display: none;
+}
+.hud.touch .touch-controls {
+  display: block;
+}
+.hud.touch .touch-only {
+  display: grid;
+  place-items: center;
+}
+.touch-steer {
+  pointer-events: auto;
+  position: absolute;
+  left: max(16px, env(safe-area-inset-left));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  width: clamp(200px, 34vw, 340px);
+  height: clamp(100px, 24vh, 150px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: rgba(8, 8, 16, 0.4);
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  touch-action: none;
+}
+.touch-steer .arrow {
+  font-size: clamp(28px, 6vh, 40px);
+  font-style: normal;
+  color: rgba(255, 255, 255, 0.55);
+  transition: color 0.1s;
+}
+.touch-steer.left .arrow.l,
+.touch-steer.right .arrow.r {
+  color: var(--accent-2);
+}
+.touch-steer .knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 64px;
+  height: 64px;
+  margin: -32px 0 0 -32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  border: 2px solid rgba(255, 255, 255, 0.5);
+}
+.touch-steer.held .knob {
+  background: rgba(25, 211, 255, 0.45);
+  border-color: #fff;
+}
+.touch-pedals {
+  position: absolute;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  gap: 12px;
+  align-items: end;
+}
+.pedal {
+  pointer-events: auto;
+  touch-action: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-style: italic;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  color: #fff;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  background: rgba(8, 8, 16, 0.45);
+  width: clamp(64px, 14vh, 84px);
+  height: clamp(64px, 14vh, 84px);
+  font-size: 13px;
+  transition: transform 0.06s;
+}
+.pedal.held {
+  transform: scale(0.92);
+}
+.gas-btn {
+  width: clamp(88px, 22vh, 124px);
+  height: clamp(88px, 22vh, 124px);
+  font-size: 18px;
+  background: rgba(40, 200, 90, 0.5);
+}
+.gas-btn.held {
+  background: rgba(60, 230, 110, 0.85);
+}
+.brake-btn {
+  background: rgba(230, 50, 70, 0.45);
+  align-self: end;
+}
+.brake-btn.held {
+  background: rgba(255, 70, 90, 0.85);
+}
+.drift-btn {
+  background: rgba(255, 190, 40, 0.45);
+  justify-self: end;
+}
+.drift-btn.held {
+  background: rgba(255, 200, 60, 0.9);
+  color: #2a1600;
+}
+.nitro-btn {
+  background: rgba(30, 120, 255, 0.5);
+  justify-self: center;
+}
+.nitro-btn.held {
+  background: rgba(60, 200, 255, 0.9);
+}
+/* Make room for the controls: small minimap up top, compact speedo in the middle. */
+.hud.touch .minimap {
+  top: 70px;
+  bottom: auto;
+  width: 120px;
+  height: 120px;
+}
+.hud.touch .standings {
+  display: none;
+}
+.hud.touch .speedo {
+  left: 50%;
+  right: auto;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  min-width: 0;
+  width: clamp(150px, 22vw, 220px);
+  padding: 6px 12px 8px;
+}
+.hud.touch #hud-speed {
+  font-size: 36px;
+}
+.hud.touch .hud-buttons {
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.hud.touch .icon-btn {
+  width: 48px;
+  height: 48px;
+  font-size: 20px;
+  font-style: normal;
+}
+/* Phones held upright: ask for landscape (the pause button stays usable). */
+@media (orientation: portrait) {
+  .hud.touch .rotate-hint {
+    display: grid;
+    place-items: center;
+    position: absolute;
+    inset: 0;
+    padding: 24px;
+    background: rgba(8, 8, 16, 0.88);
+    text-align: center;
+    font-size: 22px;
+    font-weight: 900;
+    pointer-events: auto;
+  }
+  .hud.touch .hud-buttons {
+    z-index: 1;
+  }
+}
+/* Short landscape phones: the garage/profile shortcuts are in the bottom bar anyway. */
+@media (max-height: 480px) {
+  :root {
+    --nav-h: 52px;
+  }
+  .hub {
+    gap: 8px;
+    padding-top: 8px;
+  }
+  .hub-nav button {
+    flex-direction: row;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .hub-nav button svg {
+    width: 20px;
+    height: 20px;
+  }
+  /* Home: the cards fill the space above the bar; today's quests scroll inside their box. */
+  .home-panel {
+    min-height: 0;
+  }
+  .home-cards {
+    flex: 1;
+    min-height: 0;
+  }
+  .home-panel .quests {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .home-card .go {
+    width: 34px;
+    height: 34px;
+    bottom: 8px;
+  }
+  .home-row {
+    display: none;
+  }
+  .home-card.quick {
+    min-height: 0;
+  }
+  .home-card.mega small {
+    display: none;
+  }
+  .home-panel .quest-text small {
+    display: none;
+  }
+}
+/* Menus on touch screens: no keyboard hints; the career map drags with a finger. */
+html.touch .hub-foot {
+  display: none;
+}
+.career-map {
+  touch-action: none;
+}
+@media (pointer: coarse) {
+  .hub-foot {
+    display: none;
+  }
+}

@@ -3,6 +3,8 @@
 A Forza-inspired 3D racing game set in Japan — city streets, a mountain pass and cherry-blossom
 countryside, by day, at sunset or at night — running in the browser and hosted on Cloudflare.
 
+- **Touch screen support:** play on a phone or tablet with on-screen steering, pedals, drift and
+  nitro buttons (see *Controls*).
 - **Core racing loop:** cinematic fly-in over the grid, F1-style start lights, lap counting, live
   positions, lap timing, 3–7 AI opponents, a slow-motion trackside finish shot and a results screen.
 - **Menu hub:** a bottom menu bar (*Home*, *Career*, *Garage*, *Shop*, *Quests*, *Profile*) with
@@ -258,6 +260,14 @@ right-click clears it; **Reset binds** restores these defaults).
 | Controls & settings | `H` (or the **?** button) | |
 | Browse cars (garage) | `←` `→` / `Q` `E` | |
 | Mute | `M` | |
+
+**Touch screens** (phones and tablets, played sideways): menus are tapped as usual and the career
+map drags with a finger. In a race, a steering pad sits bottom-left - put your thumb on it and
+slide left or right (further from the middle steers harder) - and **GAS**, **BRAKE** (hold to
+reverse), **DRIFT** (handbrake) and **NITRO** sit bottom-right. Each control follows its own
+finger, so you can steer, accelerate and drift at once. Camera 🎥, reset ↺ and pause ❚❚ are at
+the top; tap the screen to skip the intro. The controls appear on touch screens automatically
+(or as soon as the screen is touched) and work alongside a keyboard or gamepad.
 
 ## Deploying to Cloudflare
 
