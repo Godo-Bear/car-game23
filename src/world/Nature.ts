@@ -133,7 +133,8 @@ class RoadField {
     const pts = track.samples.filter((_, i) => i % 2 === 0);
     this.xs = new Float64Array(pts.map((s) => s.x));
     this.zs = new Float64Array(pts.map((s) => s.z));
-    this.ys = new Float64Array(pts.map((s) => s.y));
+    // The ground under the road (a bridge's ground is down at the road it crosses).
+    this.ys = new Float64Array(pts.map((s) => s.y - s.bridge));
     pts.forEach((s, i) => {
       const key = this.key(Math.floor(s.x / this.cell), Math.floor(s.z / this.cell));
       const list = this.buckets.get(key);

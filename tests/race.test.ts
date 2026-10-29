@@ -141,6 +141,36 @@ describe('Mixed field', () => {
     expect(sim.race.racers.every((r) => r.finished)).toBe(true);
     expect(respawns).toBe(0);
   }, 30_000);
+
+  for (const id of ['tokyo', 'hakone', 'haruna'] as const) {
+    it(`races cleanly over and under the bridge at ${id}`, () => {
+      const sim = new RaceSimulation(TRACKS[id].layout, { laps: 1, opponents: 7, carSpec: CARS.gt.spec, seed: 5 });
+      sim.player.autopilot = true;
+      let respawns = 0;
+      const respawn = sim.respawn.bind(sim);
+      sim.respawn = (c) => {
+        respawns++;
+        respawn(c);
+      };
+      sim.startRace();
+      const input = neutralControls();
+      const { upper } = sim.track.crossings[0];
+      let onBridge = 0;
+      while (sim.race.raceTime < 200 && !sim.race.racers.every((r) => r.finished)) {
+        sim.step(input);
+        // Cars on the bridge really are up on it (the road height, not snapped to the road below).
+        for (const c of sim.cars) {
+          if (Math.abs(c.proj.index - upper) < 3) {
+            onBridge++;
+            expect(c.physics.y).toBeCloseTo(sim.track.samples[upper].y, 0);
+          }
+        }
+      }
+      expect(sim.race.racers.every((r) => r.finished)).toBe(true);
+      expect(onBridge).toBeGreaterThan(0);
+      expect(respawns).toBe(0);
+    }, 60_000);
+  }
 });
 
 describe('AI respects the player', () => {

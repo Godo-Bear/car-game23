@@ -142,8 +142,12 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
           const pp = at(i, side * (wall + 0.15));
           posts.box(pp[0], pp[1] - 0.4, pp[2], 0.12, 1.25, 0.12, s0.heading);
         }
-        // Road edge skirt so the terrain never shows a gap under the asphalt.
+        // Road edge skirt so the terrain never shows a gap under the asphalt (a bridge's fascia).
         facing(deck, at(i, side * wall, -1.6), at(i + 1, side * wall, -1.6), at(i + 1, side * wall, 0), at(i, side * wall, 0), [side * s0.rx, 0, side * s0.rz]);
+      }
+      // A bridge over another part of the course: the underside of the deck.
+      if (s0.bridge > 0.5 || s1.bridge > 0.5) {
+        facing(deck, at(i, -wall, -1.6), at(i + 1, -wall, -1.6), at(i + 1, wall, -1.6), at(i, wall, -1.6), [0, -1, 0]);
       }
     }
 
@@ -251,13 +255,29 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
   kerbs.receiveShadow = true;
   group.add(kerbs);
 
-  // ---------- Expressway pillars (city only; elsewhere the road sits on terrain) ----------
-  for (let i = 0; i < n; i += 12) {
+  // ---------- Pillars: under city expressways, and under bridges where the course crosses itself ----------
+  // (Never on the road underneath: a pillar there is left out and the deck spans over it.)
+  const clearOfRoads = (i: number, reach: number): boolean => {
     const s = S[i];
-    if (!city || s.y < 2.5) continue;
-    const h = s.y - 1.1;
-    deck.box(s.x, 0, s.z, 3.2, h, 1.8, s.heading);
-    deck.box(s.x, h - 1.2, s.z, (wall + BARRIER_THICKNESS + SIDEWALK_WIDTH) * 2, 1.2, 1.6, s.heading);
+    const apart = Math.ceil(60 / track.spacing);
+    for (let j = 0; j < n; j += 2) {
+      const dj = Math.abs(j - i);
+      if (Math.min(dj, n - dj) < apart) continue;
+      const o = S[j];
+      if ((o.x - s.x) ** 2 + (o.z - s.z) ** 2 < (wall + reach) ** 2) return false;
+    }
+    return true;
+  };
+  const cap = city ? (wall + BARRIER_THICKNESS + SIDEWALK_WIDTH) * 2 : wall * 2;
+  for (let i = 0; i < n; i += city ? 12 : 10) {
+    const s = S[i];
+    const high = city ? s.y >= 2.5 : s.bridge >= 2.5;
+    if (!high || !clearOfRoads(i, 4)) continue;
+    const top = s.y - (city ? 1.1 : 1.6);
+    // City pillars stand on the street; mountain ones go down into the valley floor.
+    const base = city ? 0 : s.y - s.bridge - 2;
+    deck.box(s.x, base, s.z, city ? 3.2 : 2.6, top - base, 1.8, s.heading);
+    deck.box(s.x, top - 1.2, s.z, cap, 1.2, 1.6, s.heading);
   }
   group.add(new THREE.Mesh(deck.build(), new THREE.MeshStandardMaterial({ color: city ? 0x5f6168 : 0x4a4740, roughness: 0.9, normalMap: concreteRelief })));
 

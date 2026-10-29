@@ -238,4 +238,17 @@ describe('Collisions', () => {
     expect(b.vz).toBeGreaterThan(a.vz);
     expect(b.z - a.z).toBeGreaterThan(3.5);
   });
+
+  it('cars on a bridge and on the road underneath never collide', () => {
+    const a = new VehiclePhysics();
+    const b = new VehiclePhysics();
+    const crash = (by: number) => {
+      a.place(0, 0, 0);
+      a.vz = 12;
+      b.place(0.5, 1.5, Math.PI / 2, by);
+      return collideCars(a, b);
+    };
+    expect(crash(8.5)).toBe(0);
+    expect(crash(0)).toBeGreaterThan(0);
+  });
 });

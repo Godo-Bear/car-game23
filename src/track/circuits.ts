@@ -1,17 +1,17 @@
 import type { TrackLayout } from './TrackPath';
 
 /**
- * "Hakone Mountain Pass" — a ~2.9 km touge loop. A long lakeside start straight, then a ladder of
- * hairpin switchbacks climbing ~55 m through cedar forest, a fast ridge road, and a long sweeping
- * descent back down to the lake.
+ * "Hakone Mountain Pass" — a ~3.9 km touge loop. A long lakeside start straight, then a ladder of
+ * hairpin switchbacks climbing ~55 m through cedar forest, a ridge road, a hairpin, and a
+ * descent that crosses high over the start straight on a viaduct before looping back to it.
  *
- *          L5 ═══════════ ridge ═══════════════ R1
- *          ║ hairpin                              ╲
- *          L4 ═══════════════════ L3               R2
- *                       hairpin ║                    ╲
- *          L1 ═══════════════════ L2                  R3
- *    hairpin ║                                       ╱
- *          S1 ══════ lakeside start straight ══ S0 ─ R4
+ *     R2 ═══════ ridge ═════════════════ R1
+ *      ╲                    L4 ═══════════ L5
+ *       D1                  ║ hairpin
+ *        ║ viaduct          L3 ════════════ L2
+ *     S0 ╋══════ lakeside start straight ══ S1
+ *        ║
+ *     D3 ══ D2
  */
 export const HAKONE_PASS: TrackLayout = {
   name: 'Hakone Mountain Pass',
@@ -27,10 +27,11 @@ export const HAKONE_PASS: TrackLayout = {
     { x: -187, z: -204, radius: 50, y: 28 }, // L3
     { x: 250, z: -204, radius: 52, y: 50 }, // L4  third hairpin (left)
     { x: 250, z: -306, radius: 52, y: 52 }, // L5
-    { x: -375, z: -340, radius: 151, y: 55 }, // R1  ridge
-    { x: -700, z: -255, radius: 130, y: 42 }, // R2  descent
-    { x: -875, z: 136, radius: 119, y: 20 }, // R3
-    { x: -600, z: 221, radius: 108, y: 7 }, // R4
+    { x: -375, z: -340, radius: 100, y: 55 }, // R1  ridge
+    { x: -720, z: -300, radius: 45, y: 44 }, // R2  hairpin at the top of the descent
+    { x: -300, z: -150, radius: 60, y: 30 }, // D1  down onto the viaduct
+    { x: -300, z: 230, radius: 60, y: 12 }, // D2  over the start straight
+    { x: -800, z: 200, radius: 90, y: 5 }, // D3
   ],
 };
 
@@ -87,7 +88,7 @@ export const IROHAZAKA: TrackLayout = {
 
 /**
  * "Mt. Haruna" — a touge over the shoulder of Mt. Haruna: two back-to-back hairpins up from the
- * lake, a fast ridge and a tricky run of esses on the way down.
+ * lake, a fast ridge, then a long run down that bridges high over the start straight.
  */
 export const HARUNA: TrackLayout = {
   name: 'Mt. Haruna',
@@ -104,8 +105,9 @@ export const HARUNA: TrackLayout = {
     { x: 150, z: -525, radius: 56, y: 35 },
     { x: -312, z: -475, radius: 96, y: 41 }, // ridge
     { x: -525, z: -312, radius: 64, y: 35 },
-    { x: -375, z: -187, radius: 48, y: 24 }, // esses
-    { x: -600, z: -75, radius: 56, y: 11 },
+    { x: 120, z: -150, radius: 56, y: 24 }, // down to the bridge
+    { x: 120, z: 200, radius: 56, y: 9 }, // over the start straight
+    { x: -600, z: 160, radius: 64, y: 3 },
   ],
 };
 

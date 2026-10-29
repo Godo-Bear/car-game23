@@ -23,7 +23,26 @@ export interface TrackLayout {
   /** Any point near the path; it is projected onto the centre line to place the start/finish line. */
   start: { x: number; z: number };
   sampleSpacing: number;
+  /**
+   * Where the course crosses itself, which pass goes over the other (in the order the crossings
+   * come round the lap, by their first pass): 'first' or 'second'. By default the pass that is
+   * already higher goes over (a mountain road may clear the other one without any lift; city
+   * roads are raised onto a flyover with ramps). See TrackPath.crossings.
+   */
+  over?: ('first' | 'second')[];
 }
+
+/** A place where the course passes over itself. */
+export interface TrackCrossing {
+  /** Sample index on the bridge, and on the road underneath. */
+  upper: number;
+  lower: number;
+  /** Height of the bridge deck above the road below (m). */
+  clearance: number;
+}
+
+/** Road surface to road surface where one pass goes over another (deck ~1.2 m, ~7 m headroom). */
+export const BRIDGE_CLEARANCE = 8.5;
 
 export interface TrackSample {
   x: number;
@@ -42,6 +61,11 @@ export interface TrackSample {
   curvature: number;
   /** dy/ds along the direction of travel. */
   slope: number;
+  /**
+   * Height of the road above the ground where it bridges another part of the course (m; 0 =
+   * on the ground). The terrain and scenery use `y - bridge`; the track draws a deck on pillars.
+   */
+  bridge: number;
 }
 
 export interface TrackProjection {
@@ -86,6 +110,8 @@ export class TrackPath {
   readonly spacing: number;
   readonly samples: TrackSample[];
   readonly bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
+  /** Where the course passes over itself (bridges). */
+  readonly crossings: TrackCrossing[];
 
   constructor(layout: TrackLayout) {
     this.name = layout.name;
@@ -154,8 +180,10 @@ export class TrackPath {
         dist: i * this.spacing,
         curvature: 0,
         slope: 0,
+        bridge: 0,
       });
     }
+    this.crossings = raiseBridges(samples, this.spacing, this.wallOffset, layout.over ?? []);
     for (let i = 0; i < count; i++) {
       const prev = samples[mod(i - 1, count)];
       const next = samples[(i + 1) % count];
@@ -224,9 +252,10 @@ export class TrackPath {
   /**
    * Project a world position onto the track. Pass the previous result's index as `hint`
    * so only a small window of samples is searched (fast, and never snaps to a different
-   * part of the circuit that happens to be nearby).
+   * part of the circuit that happens to be nearby). Without a hint, pass the height `y` too
+   * where the course crosses itself, so a car on a bridge isn't put on the road below.
    */
-  project(x: number, z: number, hint: number, out: TrackProjection): TrackProjection {
+  project(x: number, z: number, hint: number, out: TrackProjection, y?: number): TrackProjection {
     const n = this.samples.length;
     let best = -1;
     let bestD = Infinity;
@@ -245,7 +274,7 @@ export class TrackPath {
     if (best < 0 || bestD > (this.wallOffset + 15) ** 2) {
       for (let i = 0; i < n; i++) {
         const s = this.samples[i];
-        const d = (s.x - x) ** 2 + (s.z - z) ** 2;
+        const d = (s.x - x) ** 2 + (s.z - z) ** 2 + (y === undefined ? 0 : (4 * (s.y - y)) ** 2);
         if (d < bestD) {
           bestD = d;
           best = i;
@@ -354,6 +383,98 @@ function buildPrimitives(vertices: TrackVertex[]): { primitives: Primitive[]; co
     }
   }
   return { primitives, cornerMid, total: cursor };
+}
+
+/**
+ * Find where the centre line crosses itself and lift one pass over the other on a bridge with
+ * ramps either side (only as much as needed: a mountain road already high above the other pass
+ * stays as it is). Returns the crossings; adds the lift to the samples' heights.
+ */
+function raiseBridges(samples: TrackSample[], spacing: number, wallOffset: number, over: ('first' | 'second')[]): TrackCrossing[] {
+  const n = samples.length;
+  // Bucket the segments on a grid, then test pairs that are far apart along the lap.
+  const cell = 24;
+  const buckets = new Map<string, number[]>();
+  for (let i = 0; i < n; i++) {
+    const a = samples[i];
+    const b = samples[(i + 1) % n];
+    const keys = new Set([`${Math.floor(a.x / cell)},${Math.floor(a.z / cell)}`, `${Math.floor(b.x / cell)},${Math.floor(b.z / cell)}`]);
+    for (const k of keys) {
+      const list = buckets.get(k);
+      if (list) list.push(i);
+      else buckets.set(k, [i]);
+    }
+  }
+  const apart = Math.ceil(120 / spacing);
+  const found: [number, number][] = [];
+  const seen = new Set<string>();
+  for (const list of buckets.values()) {
+    for (let p = 0; p < list.length; p++) {
+      for (let q = p + 1; q < list.length; q++) {
+        const i = Math.min(list[p], list[q]);
+        const j = Math.max(list[p], list[q]);
+        if (Math.min(j - i, n - (j - i)) < apart || seen.has(`${i},${j}`)) continue;
+        seen.add(`${i},${j}`);
+        if (segmentsCross(samples[i], samples[(i + 1) % n], samples[j], samples[(j + 1) % n])) found.push([i, j]);
+      }
+    }
+  }
+  // One crossing per pair of passes (neighbouring segment hits are the same crossing).
+  found.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const crossings: [number, number][] = [];
+  for (const c of found) {
+    if (crossings.some((k) => Math.abs(k[0] - c[0]) < apart && Math.abs(k[1] - c[1]) < apart)) continue;
+    crossings.push(c);
+  }
+
+  const lift = new Float64Array(n);
+  const bridge = new Float64Array(n);
+  const out: TrackCrossing[] = [];
+  crossings.forEach(([i, j], k) => {
+    // By default the pass that is already higher goes over (the least lifting).
+    const pick = over[k] ?? (samples[i].y > samples[j].y ? 'first' : 'second');
+    const [upper, lower] = pick === 'first' ? [i, j] : [j, i];
+    const up = samples[upper];
+    const low = samples[lower];
+    const needed = Math.max(0, low.y + BRIDGE_CLEARANCE - up.y);
+    const rise = up.y + needed - low.y;
+    out.push({ upper, lower, clearance: rise });
+    // Flat over the road below (longer for a shallow crossing), with ramps at under ~10% grade.
+    const dir = (k: number) => {
+      const p = samples[k];
+      const q = samples[(k + 1) % n];
+      const len = Math.hypot(q.x - p.x, q.z - p.z) || 1;
+      return [(q.x - p.x) / len, (q.z - p.z) / len];
+    };
+    const [ux, uz] = dir(upper);
+    const [lx, lz] = dir(lower);
+    const sin = Math.abs(ux * lz - uz * lx);
+    const flat = clamp((wallOffset + 4) / Math.max(sin, 0.35), 14, 60);
+    // The deck comes down to the ground over the ramps (a high mountain road: a viaduct whose
+    // ground falls away to the road below).
+    // (Ramps up to a flyover stay under ~7%; a viaduct's ground falls away over at most 260 m.)
+    const ramp = Math.max(90, Math.min(rise * 20, 260), needed * 20);
+    for (let d = -(flat + ramp); d <= flat + ramp; d += spacing) {
+      const idx = mod(upper + Math.round(d / spacing), n);
+      const t = Math.abs(d) <= flat ? 1 : 1 - smoothstep(0, 1, (Math.abs(d) - flat) / ramp);
+      lift[idx] = Math.max(lift[idx], needed * t);
+      bridge[idx] = Math.max(bridge[idx], rise * t);
+    }
+  });
+  for (let i = 0; i < n; i++) {
+    samples[i].y += lift[i];
+    samples[i].bridge = bridge[i];
+  }
+  return out;
+}
+
+function segmentsCross(a: TrackSample, b: TrackSample, c: TrackSample, d: TrackSample): boolean {
+  const cross = (ox: number, oz: number, px: number, pz: number, qx: number, qz: number) => (px - ox) * (qz - oz) - (pz - oz) * (qx - ox);
+  const d1 = cross(c.x, c.z, d.x, d.z, a.x, a.z);
+  const d2 = cross(c.x, c.z, d.x, d.z, b.x, b.z);
+  const d3 = cross(a.x, a.z, b.x, b.z, c.x, c.z);
+  const d4 = cross(a.x, a.z, b.x, b.z, d.x, d.z);
+  return d1 * d2 < 0 && d3 * d4 < 0;
 }
 
 function normalize(x: number, z: number): { x: number; z: number } {

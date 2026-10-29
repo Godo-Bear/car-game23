@@ -20,8 +20,8 @@ export const SCENES: Record<TrackId, Scene> = {
     bridge: { x: 875, z: 1575 },
     rail: { x: 100, toZ: 800 },
     crossings: [
-      [-272, 188],
-      [-328, 188],
+      [-60, 330],
+      [-10, 330],
     ],
     fujiAt: [-3300, 3600],
     skyline: [188, -125],
@@ -124,7 +124,7 @@ export const SCENES: Record<TrackId, Scene> = {
   haruna: {
     kind: 'rural',
     theme: 'mountain',
-    terrain: mountainTerrain({ seed: 53, lake: { x: -62, z: 325, rx: 375, rz: 175 }, fujiAt: [-3750, 4000] }),
+    terrain: mountainTerrain({ seed: 53, lake: { x: -62, z: 500, rx: 375, rz: 175 }, fujiAt: [-3750, 4000] }),
     vegetation: 'cedar',
     props: ['autumnTree', 'sign'],
     signs: [

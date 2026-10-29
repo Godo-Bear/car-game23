@@ -95,22 +95,31 @@ countryside, by day, at sunset or at night — running in the browser and hosted
   where it is pointing instead of sliding wide into the barrier, and lifting off the throttle ends a drift
   cleanly (the rear grips up and the slide is reeled in). Steering calms down at speed, and with
   stability assist on a barrier assist nudges you away from walls you're about to hit.
-- **Ten circuits** with wide, flowing corners (the track picker scrolls sideways):
-  - **Tokyo** — 2.95 km *Shinjuku–Bay Street Circuit*: neon towers, a Shibuya scramble chicane, an
-    elevated Shuto-style expressway, Tokyo Tower, Skytree and Rainbow Bridge.
+- **Ten circuits** with wide, flowing corners. Three of them cross over themselves: wherever a
+  course crosses its own path, one pass is a bridge over the other (found automatically from the
+  layout - a city road is raised onto a flyover with gentle ramps, a mountain road already high
+  above the other pass becomes a viaduct and the valley drops away beneath it). Bridges get a deck
+  and pillars (never on the road below); cars on the two levels don't collide, and the physics
+  always keeps a car on its own level.
+  - **Crossovers:** Tokyo (a flyover over the main straight), Hakone and Mt. Haruna (viaducts high
+    over the start straight).
+  - **Tokyo** — 4.16 km *Shinjuku–Bay Street Circuit*: neon towers, an elevated Shuto-style
+    expressway, then a flyover straight across the main straight and a loop through the Shinjuku
+    towers; Tokyo Tower, Skytree and Rainbow Bridge.
   - **Osaka** — 3.71 km *Namba–Dotonbori Street Circuit*: a neon main straight, a square block
     through Namba, the elevated Hanshin Expressway, Osaka Castle in its park, a big wheel and
     Umeda's supertall tower.
   - **Yokohama** — 3.67 km *Minato Mirai Bay Circuit*: downtown blocks, then an elevated run along
     the harbour past the Cosmo Clock big wheel, the Landmark Tower, the Marine Tower and the Bay
     Bridge.
-  - **Hakone** — 3.71 km mountain pass (touge): a ladder of hairpin switchbacks climbing through
-    cedar forest, a ridge road and a long descent to the lake with its floating torii; guardrails
-    and hairpin chevrons.
+  - **Hakone** — 3.88 km mountain pass (touge): a ladder of hairpin switchbacks climbing through
+    cedar forest, a ridge road, a hairpin at the top and a descent that crosses high over the
+    lakeside start straight on a viaduct; the lake with its floating torii, guardrails and hairpin
+    chevrons.
   - **Irohazaka** — 3.74 km: Nikko's famous hairpin road, four tight switchbacks in a row through
     blazing autumn maples and gold broadleaf trees, falling leaves, a pagoda by the lake.
-  - **Mt. Haruna** — 2.75 km touge: back-to-back hairpins up from the lake, a fast ridge and a run
-    of esses on the way down; lakeside ryokan, torii and ropeway.
+  - **Mt. Haruna** — 3.94 km touge: back-to-back hairpins up from the lake, a fast ridge and a long
+    run down that bridges back over the start straight; lakeside ryokan, torii and ropeway.
   - **Niseko** — 3.22 km Hokkaido snow pass: wide, flowing road between frosted firs, a frozen
     lake, falling snow, red-and-white arrow poles marking the road edges, Mt. Yotei on the horizon.
   - **Sakura Valley** — 3.22 km fast countryside circuit through rolling grassland, cherry-blossom

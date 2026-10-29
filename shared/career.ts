@@ -96,12 +96,12 @@ export function matchesEvent(e: CareerEvent, r: Pick<RaceRecord, 'track' | 'laps
  * simulated races). Star time limits are a race's worth of par laps, stretched a little.
  */
 export const PAR_LAP: Record<TrackId, number> = {
-  tokyo: 81,
+  tokyo: 109,
   osaka: 98,
   yokohama: 94,
-  hakone: 93,
+  hakone: 105,
   irohazaka: 101,
-  haruna: 79,
+  haruna: 108,
   niseko: 77,
   sakura: 77,
   arashiyama: 83,

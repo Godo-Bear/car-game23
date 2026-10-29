@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createProjection, TrackPath } from '../src/track/TrackPath';
+import { BRIDGE_CLEARANCE, createProjection, TrackPath } from '../src/track/TrackPath';
 import { TOKYO_CIRCUIT } from '../src/track/tokyoCircuit';
 import { TRACKS } from '../src/track/tracks';
 
@@ -14,7 +14,7 @@ describe.each(Object.values(TRACKS))('$name circuit geometry', (def) => {
     expect(s.dist).toBe(0);
   });
 
-  it('never runs close to another part of itself', () => {
+  it('never runs close to another part of itself (except over and under a bridge)', () => {
     const minGap = 2 * track.wallOffset + 4;
     const n = track.count;
     const skip = Math.ceil(80 / track.spacing);
@@ -24,6 +24,8 @@ describe.each(Object.values(TRACKS))('$name circuit geometry', (def) => {
         if (n - (j - i) < skip) continue;
         const a = track.samples[i];
         const b = track.samples[j];
+        // Where the course crosses itself one pass is a bridge high over the other.
+        if (Math.abs(a.y - b.y) > BRIDGE_CLEARANCE - 1.5) continue;
         worst = Math.min(worst, Math.hypot(a.x - b.x, a.z - b.z));
       }
     }
@@ -54,7 +56,8 @@ describe('TrackPath', () => {
     const out = createProjection();
     for (const i of [0, 137, 400, 777, track.count - 3]) {
       const s = track.samples[i];
-      const p = track.project(s.x + s.rx * 3, s.z + s.rz * 3, -1, out);
+      // (With the height: sample 137 is on the main straight, under the flyover.)
+      const p = track.project(s.x + s.rx * 3, s.z + s.rz * 3, -1, out, s.y);
       expect(p.lateral).toBeCloseTo(3, 1);
       expect(Math.abs(p.distance - s.dist)).toBeLessThan(0.5);
     }
@@ -68,5 +71,42 @@ describe('TrackPath', () => {
     const first = track.samples[1];
     track.project(first.x, first.z, track.count - 1, out);
     expect(out.distance).toBeLessThan(3);
+  });
+});
+
+describe('Crossovers', () => {
+  it('Tokyo, Hakone and Haruna cross over themselves on a bridge with headroom', () => {
+    for (const id of ['tokyo', 'hakone', 'haruna'] as const) {
+      const track = new TrackPath(TRACKS[id].layout);
+      expect(track.crossings.length).toBe(1);
+      for (const c of track.crossings) {
+        const up = track.samples[c.upper];
+        const low = track.samples[c.lower];
+        expect(up.y - low.y).toBeGreaterThanOrEqual(BRIDGE_CLEARANCE - 0.01);
+        // The ground under the bridge is down at the road below.
+        expect(Math.abs(up.y - up.bridge - low.y)).toBeLessThan(0.5);
+        expect(low.bridge).toBe(0);
+      }
+    }
+    // The other circuits don't cross themselves.
+    expect(new TrackPath(TRACKS.sakura.layout).crossings).toEqual([]);
+  });
+
+  it('keeps a car on its own level where the roads cross', () => {
+    const track = new TrackPath(TRACKS.tokyo.layout);
+    const { upper, lower } = track.crossings[0];
+    const out = createProjection();
+    // Following the road underneath (with the hint), it stays on the lower road...
+    const low = track.samples[lower];
+    track.project(low.x, low.z, lower - 1, out);
+    expect(Math.abs(out.index - lower)).toBeLessThan(3);
+    expect(out.y).toBeCloseTo(low.y, 0);
+    // ...and on the bridge, on the bridge.
+    const up = track.samples[upper];
+    track.project(up.x, up.z, upper - 1, out);
+    expect(Math.abs(out.index - upper)).toBeLessThan(3);
+    // Without a hint, the height picks the level.
+    expect(Math.abs(track.project(up.x, up.z, -1, out, up.y).index - upper)).toBeLessThan(3);
+    expect(Math.abs(track.project(up.x, up.z, -1, out, low.y).index - lower)).toBeLessThan(3);
   });
 });

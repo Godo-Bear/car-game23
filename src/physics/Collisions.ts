@@ -93,6 +93,8 @@ export function collideCars(a: VehiclePhysics, b: VehiclePhysics): number {
   const dz = b.z - a.z;
   const reach = a.spec.halfLength + b.spec.halfLength;
   if (dx * dx + dz * dz > reach * reach) return 0;
+  // One on a bridge, the other on the road underneath.
+  if (Math.abs(b.y - a.y) > 3) return 0;
 
   const ra = a.spec.halfWidth;
   const rb = b.spec.halfWidth;

@@ -211,7 +211,7 @@ export class RaceSimulation {
       car.ai.reset();
       car.autopilot = false;
       car.stuckTime = 0;
-      this.track.project(p.x, p.z, -1, car.proj);
+      this.track.project(p.x, p.z, -1, car.proj, p.y);
       this.savePrev(car);
       startDistances.push(car.proj.distance);
     }
@@ -399,7 +399,7 @@ export class RaceSimulation {
     // Respawning must never gain ground: keep the race distance consistent.
     car.physics.place(p.x, p.z, p.heading, p.y);
     car.physics.gear = 1;
-    this.track.project(p.x, p.z, -1, car.proj);
+    this.track.project(p.x, p.z, -1, car.proj, p.y);
     car.ai.reset();
     car.stuckTime = 0;
     this.savePrev(car);

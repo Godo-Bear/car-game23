@@ -8,7 +8,7 @@ import { TRACKS } from '../src/track/tracks';
 
 const result = (i: number, position: number): RaceRecord => {
   const e = CAREER_EVENTS[i];
-  return { track: e.track, position, fieldSize: e.rivals + 1, laps: e.laps, difficulty: e.difficulty, totalTime: 300, bestLap: 90, event: e.id };
+  return { track: e.track, position, fieldSize: e.rivals + 1, laps: e.laps, difficulty: e.difficulty, totalTime: 900, bestLap: 90, event: e.id };
 };
 
 describe('career', () => {
