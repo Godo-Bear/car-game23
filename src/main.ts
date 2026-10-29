@@ -4,7 +4,7 @@ import { Game } from './game/Game';
 function showFatal(message: string): void {
   const loading = document.getElementById('loading');
   if (loading)
-    loading.innerHTML = `<div class="loading-title">TOKYO <span>CIRCUIT</span> RACER</div><p class="muted" style="max-width:420px;text-align:center">${message}</p>`;
+    loading.innerHTML = `<div class="loading-title"><img class="logo-mark" src="./logo.svg" alt="" /><span class="logo-text"><b>TOKYO CIRCUIT</b><small>RACER</small></span></div><p class="muted" style="max-width:420px;text-align:center">${message}</p>`;
 }
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;

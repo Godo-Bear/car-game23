@@ -8,7 +8,9 @@ countryside, by day, at sunset or at night — running in the browser and hosted
 - **Core racing loop:** cinematic fly-in over the grid, F1-style start lights, lap counting, live
   positions, lap timing, 3–7 AI opponents, a slow-motion trackside finish shot and a results screen.
 - **Menu hub:** a bottom menu bar (*Home*, *Career*, *Garage*, *Shop*, *Quests*, *Profile*) with
-  the logo, money, drift points (DP), profile and settings at the top. *Home* shows your car on a turntable under neon with,
+  the logo, money, drift points (DP), profile and settings at the top. The logo (`public/logo.svg`,
+  also the tab icon) is a car drifting round a circuit - smoke and skid marks behind it - around
+  the rising sun with Mt Fuji and the Tokyo skyline. *Home* shows your car on a turntable under neon with,
   on the left: your next career event, Garage (upgrade level) and Profile cards, the featured
   *mega quest* (tap it to open *Quests*) and today's *daily quests*.
 - **Quests:** *mega quests* are big goals that take a while (win 25 races, drive 300 laps, fully

@@ -814,10 +814,23 @@ input {
   gap: 10px;
 }
 .logo-mark {
-  width: 1.9em;
-  height: 1.9em;
+  width: 2.5em;
+  height: 2.5em;
   flex: none;
-  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.4));
+  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.45));
+}
+/* Loading screen: the big emblem over the name. */
+.loading-title {
+  flex-direction: column;
+  gap: 14px;
+  text-align: center;
+}
+.loading-title .logo-mark {
+  width: clamp(110px, 18vh, 170px);
+  height: clamp(110px, 18vh, 170px);
+}
+.loading-title .logo-text {
+  align-items: center;
 }
 .logo-text {
   display: flex;
