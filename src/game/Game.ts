@@ -497,6 +497,7 @@ export class Game {
     car.prevY = car.physics.y;
     car.prevHeading = heading;
     car.vy = 0;
+    car.grounded = true;
     car.groundRoll = 0;
     this.cam.snap();
   }
@@ -759,11 +760,13 @@ export class Game {
       this.screens.settings = { ...this.screens.settings, camera: mode };
       void this.account.saveSettings({ camera: mode });
     }
+    if (input.consume('jump') && this.state === 'freedrive' && this.sim.jump(this.sim.player)) this.input.rumble(0.3, 80);
     if (input.consume('reset') && this.state === 'freedrive') {
       // Back on your wheels where you are (stopped).
       const p = this.sim.player.physics;
       p.place(p.x, p.z, p.heading, p.y);
       this.sim.player.vy = 0;
+      this.sim.player.grounded = true;
       this.cam.snap();
     }
     if (input.consume('reset') && this.state === 'racing') {

@@ -3,7 +3,7 @@ import { clamp } from './math';
 import { type ActionId, DEFAULT_BINDINGS } from './Settings';
 
 /** One-shot actions the game reacts to (on press, not while held). */
-export type Action = 'pause' | 'camera' | 'reset' | 'mute' | 'confirm' | 'controls' | 'skip' | 'map';
+export type Action = 'pause' | 'camera' | 'reset' | 'mute' | 'confirm' | 'controls' | 'skip' | 'map' | 'jump';
 
 export const GAMEPAD_BINDINGS: { action: string; button: string }[] = [
   { action: 'Accelerate', button: 'Right trigger (RT / R2)' },
@@ -14,6 +14,7 @@ export const GAMEPAD_BINDINGS: { action: string; button: string }[] = [
   { action: 'Change camera', button: 'Y / Triangle' },
   { action: 'Reset car', button: 'View / Share' },
   { action: 'Free drive map', button: 'D-pad up' },
+  { action: 'Jump (free drive)', button: 'B / Circle' },
   { action: 'Pause', button: 'Menu / Options' },
   { action: 'Menus: move / select / back', button: 'D-pad or left stick / A / B' },
   { action: 'Menus: switch tab', button: 'LB / RB' },
@@ -25,9 +26,10 @@ const EDGE_ACTIONS: Partial<Record<ActionId, Action>> = {
   pause: 'pause',
   controls: 'controls',
   mute: 'mute',
+  jump: 'jump',
 };
 // A presses the focused menu button (see GamepadMenu), so it isn't also "confirm" here.
-const GAMEPAD_ACTIONS: Partial<Record<Action, number>> = { camera: 3, reset: 8, pause: 9, map: 12 };
+const GAMEPAD_ACTIONS: Partial<Record<Action, number>> = { camera: 3, reset: 8, pause: 9, map: 12, jump: 1 };
 const NO_SCROLL = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space']);
 
 export class Input {

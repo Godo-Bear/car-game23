@@ -159,4 +159,28 @@ describe('free drive', { timeout: 30_000 }, () => {
     expect(x).toBeCloseTo(123, 6);
     expect(z).toBeCloseTo(-456, 6);
   });
+
+  it('jumps (from the ground only) and lands again', () => {
+    const sim = freeSim({ surfaceAt: () => 0, obstacles: [] });
+    const car = sim.player;
+    car.physics.place(-400, 0, 0, 0);
+    for (let t = 0; t < 0.5; t += RaceSimulation.STEP) sim.step(drive({ throttle: 1 }));
+    expect(sim.jump(car)).toBe(true);
+    expect(sim.jump(car)).toBe(false);
+    let top = 0;
+    let air = 0;
+    for (let t = 0; t < 3; t += RaceSimulation.STEP) {
+      sim.step(drive({ throttle: 1 }));
+      top = Math.max(top, car.physics.y);
+      if (!car.grounded) air += RaceSimulation.STEP;
+    }
+    expect(top).toBeGreaterThan(2.5);
+    expect(air).toBeGreaterThan(1.2);
+    expect(car.physics.y).toBeCloseTo(0, 2);
+    expect(sim.jump(car)).toBe(true);
+
+    // Not in a race.
+    const race = new RaceSimulation(new TrackPath(FREE_ROAM_DEF.layout), { opponents: 0 });
+    expect(race.jump(race.player)).toBe(false);
+  });
 });

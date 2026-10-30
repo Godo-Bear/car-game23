@@ -8,7 +8,7 @@ import { clamp } from './math';
 
 export type Quality = 'low' | 'medium' | 'high';
 
-export type ActionId = 'accelerate' | 'brake' | 'left' | 'right' | 'handbrake' | 'nitro' | 'camera' | 'reset' | 'pause' | 'controls' | 'mute';
+export type ActionId = 'accelerate' | 'brake' | 'left' | 'right' | 'handbrake' | 'nitro' | 'camera' | 'reset' | 'pause' | 'controls' | 'mute' | 'jump';
 
 export const ACTIONS: { id: ActionId; label: string }[] = [
   { id: 'accelerate', label: 'Accelerate' },
@@ -19,6 +19,7 @@ export const ACTIONS: { id: ActionId; label: string }[] = [
   { id: 'nitro', label: 'Nitro' },
   { id: 'camera', label: 'Change camera' },
   { id: 'reset', label: 'Reset car to track' },
+  { id: 'jump', label: 'Jump (free drive)' },
   { id: 'pause', label: 'Pause' },
   { id: 'controls', label: 'Controls & settings' },
   { id: 'mute', label: 'Mute sound' },
@@ -37,6 +38,7 @@ export const DEFAULT_BINDINGS: Record<ActionId, string[]> = {
   pause: ['KeyP', ''],
   controls: ['KeyH', ''],
   mute: ['KeyM', ''],
+  jump: ['KeyJ', ''],
 };
 
 export const RESERVED_KEYS = new Set(['Escape', 'Enter']);

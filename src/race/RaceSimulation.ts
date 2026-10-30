@@ -51,6 +51,8 @@ export interface FreeRoamGround {
 const FREE_CAR_RADIUS = 2.1;
 /** Ground steeper than this (rise over run) is a rock face: the car can't climb it. */
 export const STEEPEST_CLIMB = 0.62;
+/** Free drive: a jump's take-off speed (m/s): about 3 m up, 1.5 s in the air. */
+export const JUMP_SPEED = 7.6;
 /** Where the wheels touch, from the car's centre: along and across it (m). */
 const WHEEL_ALONG = 1.4;
 const WHEEL_ACROSS = 0.85;
@@ -156,6 +158,8 @@ export interface SimCar {
   groundRoll: number;
   /** Free drive: vertical speed (m/s), so the car flies off crests instead of sticking to them. */
   vy: number;
+  /** Free drive: wheels on the ground (it can jump). */
+  grounded: boolean;
 }
 
 export type RacePhase = 'grid' | 'racing';
@@ -231,6 +235,7 @@ export class RaceSimulation {
         prevHeading: 0,
         groundRoll: 0,
         vy: 0,
+        grounded: true,
       });
     }
     this.traffic = this.cars.map((c) => ({
@@ -570,6 +575,7 @@ export class RaceSimulation {
     const dt = RaceSimulation.STEP;
     // (A few centimetres' leeway, so small folds and kerbs don't throw the car up.)
     const airborne = ph.y + car.vy * dt - 9.81 * dt * dt > target + (ph.y > target ? 0 : 0.06);
+    car.grounded = !airborne;
     if (airborne) {
       car.vy -= 9.81 * dt;
       ph.y += car.vy * dt;
@@ -579,6 +585,16 @@ export class RaceSimulation {
       ph.y = target;
     }
     return impact;
+  }
+
+  /** Free drive: hop into the air (only from the ground). Returns whether it jumped. */
+  jump(car: SimCar): boolean {
+    if (!this.settings.freeRoam || !car.grounded) return false;
+    car.vy = Math.max(car.vy, 0) + JUMP_SPEED;
+    // Off the ground already, so the next step counts it as in the air.
+    car.physics.y += 0.15;
+    car.grounded = false;
+    return true;
   }
 
   /** The player drives through a pickup: a blue bottle tops up the tank, a gold one is a super boost. */

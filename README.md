@@ -19,7 +19,7 @@ countryside, by day, at sunset or at night — running in the browser and hosted
   ring road; nitro bottles (and gold super boosts) sit along the ring road, the avenues, the ring
   streets and the slip roads, and the drift guide carries a drift round the bends of any road. The
   *Map* button (🗺, *Tab*, or D-pad up) opens the map: tap a starting-place pin, or anywhere, to
-  teleport to the nearest road. No laps or timing: *R* puts you back on your wheels where you are,
+  teleport to the nearest road. *J* (B on a controller, ⤒ on screen) jumps. No laps or timing: *R* puts you back on your wheels where you are,
   *Esc* for the menu (Resume / Settings / Quit to home). The map picture is the game seen from
   above with a road map drawn over it (buildings, roads, trails and the nitro).
 - **Touch screen support:** play on a phone or tablet with on-screen steering, pedals, drift and
