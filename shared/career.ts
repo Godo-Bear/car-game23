@@ -20,7 +20,10 @@ export interface CareerEvent {
   difficulty: Difficulty;
   /** Paid once, for the first podium. */
   bonus: number;
-  /** Pin on the career map picture, as fractions of its width and height. */
+  /**
+   * Pin on the map picture (the free drive map: the city in the middle, the countryside round it
+   * and the mountains beyond), as fractions of its width and height.
+   */
   pin: [number, number];
 }
 
@@ -37,26 +40,26 @@ const ev = (
 ): CareerEvent => ({ id, name, track, timeOfDay, laps, rivals, difficulty, bonus, pin });
 
 export const CAREER_EVENTS: CareerEvent[] = [
-  ev('tokyo-debut', 'Tokyo Night Debut', 'tokyo', 'night', 2, 3, 'easy', 5000, [0.558, 0.694]),
-  ev('sakura-spring', 'Sakura Spring Run', 'sakura', 'day', 2, 3, 'easy', 6000, [0.1, 0.765]),
-  ev('hakone-climb', 'Hakone Hillclimb', 'hakone', 'day', 2, 5, 'easy', 7000, [0.287, 0.37]),
-  ev('osaka-neon', 'Osaka Neon Sprint', 'osaka', 'night', 2, 5, 'easy', 8000, [0.382, 0.652]),
-  ev('arashiyama-dash', 'Bamboo Grove Dash', 'arashiyama', 'day', 2, 5, 'normal', 9000, [0.882, 0.736]),
-  ev('izu-cruise', 'Izu Coast Cruise', 'izu', 'sunset', 3, 5, 'normal', 10000, [0.151, 0.618]),
-  ev('yokohama-lights', 'Harbour Lights', 'yokohama', 'night', 3, 5, 'normal', 11000, [0.627, 0.589]),
-  ev('haruna-battle', 'Haruna Touge Battle', 'haruna', 'night', 3, 5, 'normal', 12000, [0.541, 0.346]),
-  ev('irohazaka-autumn', 'Autumn Hairpins', 'irohazaka', 'day', 3, 7, 'normal', 13000, [0.729, 0.369]),
-  ev('niseko-snow', 'Niseko Snow Run', 'niseko', 'day', 3, 7, 'normal', 14000, [0.418, 0.292]),
-  ev('tokyo-expressway', 'Expressway GP', 'tokyo', 'sunset', 3, 7, 'normal', 15000, [0.462, 0.565]),
-  ev('sakura-classic', 'Sakura Valley Classic', 'sakura', 'sunset', 3, 7, 'hard', 16000, [0.258, 0.503]),
-  ev('osaka-castle', 'Osaka Castle Cup', 'osaka', 'day', 3, 7, 'hard', 17000, [0.391, 0.532]),
-  ev('hakone-night', 'Hakone Night Pass', 'hakone', 'night', 3, 7, 'hard', 18000, [0.116, 0.403]),
-  ev('izu-showdown', 'Sunset Showdown', 'izu', 'sunset', 3, 7, 'hard', 19000, [0.816, 0.556]),
-  ev('niseko-midnight', 'Niseko Midnight', 'niseko', 'night', 3, 7, 'hard', 20000, [0.611, 0.276]),
-  ev('irohazaka-legends', 'Irohazaka Legends', 'irohazaka', 'sunset', 5, 7, 'hard', 22000, [0.912, 0.428]),
-  ev('yokohama-masters', 'Bay Masters', 'yokohama', 'sunset', 5, 7, 'hard', 24000, [0.694, 0.706]),
-  ev('haruna-king', 'Downhill King', 'haruna', 'night', 5, 7, 'hard', 26000, [0.453, 0.424]),
-  ev('tokyo-final', 'Tokyo Grand Final', 'tokyo', 'night', 5, 7, 'hard', 40000, [0.585, 0.547]),
+  ev('tokyo-debut', 'Tokyo Night Debut', 'tokyo', 'night', 2, 3, 'easy', 5000, [0.463, 0.578]),
+  ev('sakura-spring', 'Sakura Spring Run', 'sakura', 'day', 2, 3, 'easy', 6000, [0.309, 0.683]),
+  ev('hakone-climb', 'Hakone Hillclimb', 'hakone', 'day', 2, 5, 'easy', 7000, [0.162, 0.448]),
+  ev('osaka-neon', 'Osaka Neon Sprint', 'osaka', 'night', 2, 5, 'easy', 8000, [0.397, 0.5]),
+  ev('arashiyama-dash', 'Bamboo Grove Dash', 'arashiyama', 'day', 2, 5, 'normal', 9000, [0.691, 0.343]),
+  ev('izu-cruise', 'Izu Coast Cruise', 'izu', 'sunset', 3, 5, 'normal', 10000, [0.441, 0.905]),
+  ev('yokohama-lights', 'Harbour Lights', 'yokohama', 'night', 3, 5, 'normal', 11000, [0.61, 0.565]),
+  ev('haruna-battle', 'Haruna Touge Battle', 'haruna', 'night', 3, 5, 'normal', 12000, [0.838, 0.421]),
+  ev('irohazaka-autumn', 'Autumn Hairpins', 'irohazaka', 'day', 3, 7, 'normal', 13000, [0.176, 0.134]),
+  ev('niseko-snow', 'Niseko Snow Run', 'niseko', 'day', 3, 7, 'normal', 14000, [0.118, 0.892]),
+  ev('tokyo-expressway', 'Expressway GP', 'tokyo', 'sunset', 3, 7, 'normal', 15000, [0.549, 0.542]),
+  ev('sakura-classic', 'Sakura Valley Classic', 'sakura', 'sunset', 3, 7, 'hard', 16000, [0.324, 0.291]),
+  ev('osaka-castle', 'Osaka Castle Cup', 'osaka', 'day', 3, 7, 'hard', 17000, [0.412, 0.356]),
+  ev('hakone-night', 'Hakone Night Pass', 'hakone', 'night', 3, 7, 'hard', 18000, [0.103, 0.709]),
+  ev('izu-showdown', 'Sunset Showdown', 'izu', 'sunset', 3, 7, 'hard', 19000, [0.632, 0.866]),
+  ev('niseko-midnight', 'Niseko Midnight', 'niseko', 'night', 3, 7, 'hard', 20000, [0.868, 0.892]),
+  ev('irohazaka-legends', 'Irohazaka Legends', 'irohazaka', 'sunset', 5, 7, 'hard', 22000, [0.824, 0.134]),
+  ev('yokohama-masters', 'Bay Masters', 'yokohama', 'sunset', 5, 7, 'hard', 24000, [0.596, 0.709]),
+  ev('haruna-king', 'Downhill King', 'haruna', 'night', 5, 7, 'hard', 26000, [0.897, 0.657]),
+  ev('tokyo-final', 'Tokyo Grand Final', 'tokyo', 'night', 5, 7, 'hard', 40000, [0.5, 0.461]),
 ];
 
 export const CAREER_EVENT_IDS = CAREER_EVENTS.map((e) => e.id);

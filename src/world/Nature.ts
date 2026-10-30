@@ -431,6 +431,11 @@ export class NatureWorld {
   private readonly features: Feature[] = [];
   /** Areas kept free of trees (houses, paddies, under the railway). */
   private readonly blocked: { x: number; z: number; r: number }[] = [];
+  /**
+   * Free drive: tree trunks a car bumps into. `layer` is the instanced mesh they're drawn with:
+   * trees thinned out by a lower detail level (index >= its count) aren't there to hit.
+   */
+  readonly trees: { x: number; z: number; hw: number; hd: number; layer: { count: number }; index: number }[] = [];
   private railZ: number | null = null;
   /** Instanced vegetation and its full instance count, thinned by the graphics detail level. */
   private readonly detailMeshes: { mesh: THREE.InstancedMesh; count: number }[] = [];
@@ -810,6 +815,31 @@ export class NatureWorld {
     return this.trailIndex.nearest(x, z, 32)?.d ?? Infinity;
   }
 
+  /** Houses and other solid spots, for collisions in free drive (centre and half size). */
+  get solids(): { x: number; z: number; hw: number; hd: number }[] {
+    return this.blocked.map((b) => ({ x: b.x, z: b.z, hw: b.r * 0.55, hd: b.r * 0.55 }));
+  }
+
+  /**
+   * Height of the terrain exactly as drawn: the 12 m grid of the ground mesh, interpolated across
+   * its triangles (heightAt has finer detail the mesh smooths away, so a car on it would bob in
+   * and out of the grass).
+   */
+  meshHeightAt(x: number, z: number): number {
+    const g = this.ground;
+    const u = (x - g.originX) / g.res;
+    const v = (z - g.originZ) / g.res;
+    const i = Math.floor(u);
+    const j = Math.floor(v);
+    if (i < 0 || j < 0 || i >= g.verts - 1 || j >= g.verts - 1) return this.heightAt(x, z);
+    const fu = u - i;
+    const fv = v - j;
+    const h = (di: number, dj: number) => g.data[((j + dj) * g.verts + i + di) * 4];
+    // The same split as the mesh's triangles (the diagonal runs from (i+1, j) to (i, j+1)).
+    if (fu + fv <= 1) return h(0, 0) + fu * (h(1, 0) - h(0, 0)) + fv * (h(0, 1) - h(0, 0));
+    return h(1, 1) + (1 - fu) * (h(0, 1) - h(1, 1)) + (1 - fv) * (h(1, 0) - h(1, 1));
+  }
+
   /** Terrain height at a world position (road-conforming). */
   heightAt(x: number, z: number): number {
     const { d, y, field } = this.field.query(x, z);
@@ -936,7 +966,9 @@ export class NatureWorld {
       color.setHex(base).offsetHSL(0, 0, (rng() - 0.5) * 0.08);
       builder.cylinder(cx + Math.cos(a) * r, -20, cz + Math.sin(a) * r, 520 + rng() * 380, 30, h, 7, color);
     }
-    this.group.add(new THREE.Mesh(builder.build(), new THREE.MeshLambertMaterial({ vertexColors: true })));
+    const ridges = new THREE.Mesh(builder.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+    ridges.name = 'ridges';
+    this.group.add(ridges);
   }
 
   // ---------- vegetation ----------
@@ -984,6 +1016,7 @@ export class NatureWorld {
       trunks?.setMatrixAt(i, m);
       crowns.setMatrixAt(i, m);
       crowns.setColorAt(i, c.setHex(shape.palette[Math.floor(rng() * shape.palette.length)]).offsetHSL(0, 0, (rng() - 0.5) * 0.06));
+      if (trunks && this.scene.cityRadius) this.trees.push({ x, z, hw: 0.75 * scale, hd: 0.75 * scale, layer: crowns, index: i });
       // Contact shadow: follow the ground's slope so the disc doesn't cut into hillsides.
       normal.set(this.heightAt(x - 1, z) - this.heightAt(x + 1, z), 2, this.heightAt(x, z - 1) - this.heightAt(x, z + 1)).normalize();
       tilt.setFromUnitVectors(up, normal);

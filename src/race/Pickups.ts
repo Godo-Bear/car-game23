@@ -16,6 +16,8 @@ export interface Pickup {
   z: number;
   /** Race time when it's back after being taken (0 = there). */
   backAt: number;
+  /** Free drive: off the ring road (collected by position; `distance` and `lateral` mean nothing). */
+  free?: boolean;
 }
 
 /** Road between pickups (m), and every how many is a gold super boost. */
@@ -48,10 +50,18 @@ export function placePickups(track: TrackPath): Pickup[] {
 /** The pickup a car at (distance, lateral) drives through now, if any. */
 export function pickupAt(pickups: Pickup[], trackLength: number, distance: number, lateral: number, time: number): Pickup | null {
   for (const p of pickups) {
-    if (time < p.backAt) continue;
+    if (time < p.backAt || p.free) continue;
     let along = Math.abs(distance - p.distance) % trackLength;
     along = Math.min(along, trackLength - along);
     if (along < REACH_ALONG && Math.abs(lateral - p.lateral) < REACH_ACROSS) return p;
+  }
+  return null;
+}
+
+/** Free drive: the off-road pickup a car at (x, z) drives through now, if any. */
+export function pickupNear(pickups: Pickup[], x: number, z: number, time: number): Pickup | null {
+  for (const p of pickups) {
+    if (p.free && time >= p.backAt && (p.x - x) ** 2 + (p.z - z) ** 2 < REACH_ACROSS * REACH_ACROSS * 2) return p;
   }
   return null;
 }

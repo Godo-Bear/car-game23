@@ -39,6 +39,7 @@ export class TouchControls {
     tap('btn-hud-pause', 'pause');
     tap('btn-touch-camera', 'camera');
     tap('btn-touch-reset', 'reset');
+    tap('btn-hud-map', 'map');
     // A long press shouldn't open the browser's menu over the race.
     this.hud.addEventListener('contextmenu', (e) => e.preventDefault());
   }

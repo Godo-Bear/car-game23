@@ -1478,7 +1478,7 @@ input {
   left: 0;
   top: 0;
   aspect-ratio: 16 / 9;
-  background: url(/career/map.jpg) center / cover no-repeat;
+  background: url(/freedrive/map.jpg) center / cover no-repeat;
   will-change: transform;
 }
 .pin {
@@ -2566,7 +2566,7 @@ html.gamepad .pad-focus:focus {
 .mode-card.career {
   background:
     linear-gradient(100deg, rgba(60, 14, 70, 0.92) 30%, rgba(60, 14, 70, 0.3)),
-    url(/career/map.jpg) center / cover;
+    url(/freedrive/map.jpg) center / cover;
 }
 .mode-card.free {
   background:
@@ -2620,9 +2620,6 @@ html.gamepad .pad-focus:focus {
 .hub[data-panel='freedrive'] .hub-foot {
   display: none;
 }
-.map-frame.free-frame {
-  background-image: url(/freedrive/map.jpg);
-}
 .pin.spot .pin-icon {
   background: linear-gradient(180deg, #7ff0ff, #1a9dff);
   color: #00243a;
@@ -2648,4 +2645,70 @@ html.gamepad .pad-focus:focus {
   display: block;
   margin: -4px 0 6px -4px;
   font-weight: 800;
+}
+
+/* ---------- Free drive: the map overlay (teleport) ---------- */
+.hud .free-only {
+  display: none;
+}
+.hud.free .free-only {
+  display: inline-grid;
+}
+.drive-map {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: rgba(4, 8, 14, 0.82);
+  backdrop-filter: blur(4px);
+}
+.drive-map.hidden {
+  display: none;
+}
+.drive-map-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(100%, calc((100vh - 90px) * 16 / 9));
+  color: #fff;
+}
+.drive-map-head b {
+  font-size: 20px;
+  letter-spacing: 0.12em;
+}
+.drive-map-head span {
+  flex: 1;
+  font-size: 13px;
+  opacity: 0.75;
+}
+.drive-map-frame {
+  position: relative;
+  width: min(100%, calc((100vh - 90px) * 16 / 9));
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  overflow: hidden;
+  background: url(/freedrive/map.jpg) center / cover no-repeat;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  cursor: crosshair;
+  touch-action: manipulation;
+}
+.drive-map-frame .pin {
+  cursor: pointer;
+}
+/* Where you are: an arrow pointing the way you're facing. */
+.drive-map-me {
+  position: absolute;
+  z-index: 3;
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-bottom: 22px solid #4fd2ff;
+  filter: drop-shadow(0 0 4px #000);
+  pointer-events: none;
 }

@@ -5,7 +5,7 @@ import { clamp, createRng, smoothstep, wrapAngle } from '../core/math';
 import { collideCars, collideWithWalls, type WallContact } from '../physics/Collisions';
 import { neutralControls, SPORTS_CAR, type VehicleControls, VehiclePhysics, type VehicleSpec } from '../physics/VehiclePhysics';
 import { createProjection, type TrackLayout, TrackPath, type TrackProjection } from '../track/TrackPath';
-import { NITRO_PICKUP, PICKUP_RESPAWN, type Pickup, pickupAt, placePickups, SUPER_SECONDS } from './Pickups';
+import { NITRO_PICKUP, PICKUP_RESPAWN, type Pickup, type PickupKind, pickupAt, pickupNear, placePickups, SUPER_SECONDS } from './Pickups';
 import { type RaceEvent, RaceManager } from './RaceManager';
 
 export type { Difficulty };
@@ -32,13 +32,43 @@ export interface RaceSettings {
 /** The ground of a free drive map (see World.freeRoam). */
 export interface FreeRoamGround {
   surfaceAt(x: number, z: number): number;
-  /** Solid boxes (buildings, landmarks): centre and half sizes. */
-  obstacles: { x: number; z: number; hw: number; hd: number }[];
+  /**
+   * Solid boxes (buildings, landmarks, trees): centre and half sizes. A tree drawn as instance
+   * `index` of `layer` isn't there once the detail level has thinned it out (index >= count).
+   */
+  obstacles: { x: number; z: number; hw: number; hd: number; layer?: { count: number }; index?: number }[];
   bounds: { cx: number; cz: number; half: number };
+  /** Nitro bottles off the ring road (in town). */
+  pickups?: { x: number; y: number; z: number; kind: PickupKind }[];
+  /**
+   * The point `look` metres further along the road nearest (x, z), going in direction (dx, dz),
+   * or null if no road is near. Drifts on any road are guided round its bends with this.
+   */
+  roadAhead?(x: number, z: number, dx: number, dz: number, look: number): { x: number; z: number } | null;
 }
 
 /** A free-roaming car's footprint against buildings (m). */
 const FREE_CAR_RADIUS = 2.1;
+/** Ground steeper than this (rise over run) is a rock face: the car can't climb it. */
+export const STEEPEST_CLIMB = 0.62;
+/** Where the wheels touch, from the car's centre: along and across it (m). */
+const WHEEL_ALONG = 1.4;
+const WHEEL_ACROSS = 0.85;
+
+/**
+ * Swing a sliding car's direction of travel (and the car with it, so the drift angle is kept) by
+ * up to `accel` worth of cornering toward `err` radians off, scrubbing `scrub` m/s^2 of speed.
+ */
+function swingDrift(p: VehiclePhysics, dt: number, err: number, accel: number, scrub: number): void {
+  const speed = Math.hypot(p.vx, p.vz);
+  const maxTurn = (accel / speed) * dt;
+  const turn = clamp(err, -maxTurn, maxTurn);
+  const v = Math.max(Math.min(speed, 12), speed - scrub * dt);
+  const a = Math.atan2(p.vx, p.vz) + turn;
+  p.vx = Math.sin(a) * v;
+  p.vz = Math.cos(a) * v;
+  p.heading += turn;
+}
 
 export interface AICar {
   spec: VehicleSpec;
@@ -122,6 +152,10 @@ export interface SimCar {
   prevZ: number;
   prevY: number;
   prevHeading: number;
+  /** Free drive: sideways tilt of the ground under the car (rise to the left over its width). */
+  groundRoll: number;
+  /** Free drive: vertical speed (m/s), so the car flies off crests instead of sticking to them. */
+  vy: number;
 }
 
 export type RacePhase = 'grid' | 'racing';
@@ -195,6 +229,8 @@ export class RaceSimulation {
         prevZ: 0,
         prevY: 0,
         prevHeading: 0,
+        groundRoll: 0,
+        vy: 0,
       });
     }
     this.traffic = this.cars.map((c) => ({
@@ -205,7 +241,10 @@ export class RaceSimulation {
         return c.isPlayer && !c.autopilot;
       },
     }));
-    this.pickups = placePickups(this.track);
+    this.pickups = [
+      ...placePickups(this.track),
+      ...(this.settings.freeRoam?.pickups ?? []).map((p, i): Pickup => ({ ...p, distance: i * 37, lateral: 0, backAt: 0, free: true })),
+    ];
     for (const o of this.settings.freeRoam?.obstacles ?? []) {
       for (let i = Math.floor((o.x - o.hw) / 32); i <= Math.floor((o.x + o.hw) / 32); i++) {
         for (let j = Math.floor((o.z - o.hd) / 32); j <= Math.floor((o.z + o.hd) / 32); j++) {
@@ -311,14 +350,25 @@ export class RaceSimulation {
       if (Math.sign(err) !== away) err = away * Math.max(Math.abs(err), 0.2);
       accel += DRIFT_GUIDE_WALL * clamp(over / 2, 0, 1);
     }
-    const maxTurn = ((accel * k) / speed) * dt;
-    const turn = clamp(err, -maxTurn, maxTurn);
-    const scrub = DRIFT_GUIDE_SCRUB * k * Math.max(smoothstep(0.08, 0.4, Math.abs(err)), over > 0 ? 0.6 : 0);
-    const v = Math.max(Math.min(speed, 12), speed - scrub * dt);
-    const a = dir + turn;
-    p.vx = Math.sin(a) * v;
-    p.vz = Math.cos(a) * v;
-    p.heading += turn;
+    swingDrift(p, dt, err, accel * k, DRIFT_GUIDE_SCRUB * k * Math.max(smoothstep(0.08, 0.4, Math.abs(err)), over > 0 ? 0.6 : 0));
+  }
+
+  /**
+   * Free drive: the same drift guide on any road (the ring road, the streets, the slip roads and
+   * the trails), whichever way along it you're going. There are no barriers to keep off.
+   */
+  private freeDriftGuide(car: SimCar, dt: number, ground: FreeRoamGround): void {
+    const p = car.physics;
+    const speed = Math.hypot(p.vx, p.vz);
+    if (!ground.roadAhead || !(p.drifting || (p.sliding && Math.abs(p.driftAngle) > 0.08)) || speed < 12 || p.forwardSpeed < 5) return;
+    const target = ground.roadAhead(p.x, p.z, p.vx / speed, p.vz / speed, clamp(speed * 0.75, 16, 55));
+    if (!target) return;
+    const dir = Math.atan2(p.vx, p.vz);
+    const err = wrapAngle(Math.atan2(target.x - p.x, target.z - p.z) - dir);
+    // Only round a bend in the road, not a turn across a junction.
+    if (Math.abs(err) > 1.1) return;
+    const k = this.settings.playerAssist >= 0.3 ? 1 : 0.75;
+    swingDrift(p, dt, err, DRIFT_GUIDE_ACCEL * k, DRIFT_GUIDE_SCRUB * k * smoothstep(0.08, 0.4, Math.abs(err)));
   }
 
   /** Advance one fixed step. Returns lap/finish events produced during the step. */
@@ -358,8 +408,8 @@ export class RaceSimulation {
       const slope = car.proj.slope * Math.cos(car.physics.heading - car.proj.heading);
       car.physics.step(controls, dt, slope);
       if (car.isPlayer && !car.autopilot) {
-        // (Free drive has no road to guide a drift along.)
-        if (!free) this.driftGuide(car, dt);
+        if (free) this.freeDriftGuide(car, dt, free);
+        else this.driftGuide(car, dt);
         const kind = car.physics.boostEvent;
         if (kind) this.pending.push({ type: 'boost', racerId: car.id, kind });
       }
@@ -416,7 +466,7 @@ export class RaceSimulation {
     for (let i = Math.floor((ph.x - r) / 32); i <= Math.floor((ph.x + r) / 32); i++) {
       for (let j = Math.floor((ph.z - r) / 32); j <= Math.floor((ph.z + r) / 32); j++) {
         for (const o of this.obstacleGrid.get(i * 65536 + j) ?? []) {
-          if (seen.has(o)) continue;
+          if (seen.has(o) || (o.layer && o.index! >= o.layer.count)) continue;
           seen.add(o);
           const cx = clamp(ph.x, o.x - o.hw, o.x + o.hw);
           const cz = clamp(ph.z, o.z - o.hd, o.z + o.hd);
@@ -460,21 +510,74 @@ export class RaceSimulation {
         }
       }
     }
-    if (impact > 0) this.track.project(ph.x, ph.z, pr.index, pr);
-    // On the road: its surface. Anywhere else: the ground (and the slope under the car, for the
-    // engine and the body's pitch). Off the road the car isn't "on" the track, so pickups and the
-    // AI's traffic planning leave it alone.
-    if (Math.abs(pr.lateral) > this.track.wallOffset + 0.5) {
-      const fx = Math.sin(ph.heading);
-      const fz = Math.cos(ph.heading);
-      const ahead = ground.surfaceAt(ph.x + fx * 1.5, ph.z + fz * 1.5);
-      const behind = ground.surfaceAt(ph.x - fx * 1.5, ph.z - fz * 1.5);
-      pr.y = ground.surfaceAt(ph.x, ph.z);
-      pr.slope = (ahead - behind) / 3;
+    this.track.project(ph.x, ph.z, pr.index, pr);
+    // On the ring road? (Check the road really is under the car: far from it, the nearest point
+    // can be a long way off.)
+    const onRoad = () => {
+      const near = this.track.pointAt(pr.distance, pr.lateral);
+      return Math.abs(pr.lateral) <= this.track.wallOffset + 0.5 && Math.hypot(near.x - ph.x, near.z - ph.z) < 1;
+    };
+    const h = (x: number, z: number) => ground.surfaceAt(x, z);
+    if (!onRoad()) {
+      // Rock faces: too steep to drive up. The slope pushes back like a wall (driving along it
+      // or back down is fine).
+      const gx = (h(ph.x + 2, ph.z) - h(ph.x - 2, ph.z)) / 4;
+      const gz = (h(ph.x, ph.z + 2) - h(ph.x, ph.z - 2)) / 4;
+      const grade = Math.hypot(gx, gz);
+      if (grade > STEEPEST_CLIMB) {
+        // Downhill, along the ground.
+        const nx = -gx / grade;
+        const nz = -gz / grade;
+        const into = ph.vx * nx + ph.vz * nz;
+        if (into < 0) {
+          ph.vx -= into * nx * 1.2;
+          ph.vz -= into * nz * 1.2;
+          impact = Math.max(impact, -into * 0.5);
+          // Undo this step's climb (keep the sideways part of the move).
+          const back = (ph.x - car.prevX) * nx + (ph.z - car.prevZ) * nz;
+          if (back < 0) {
+            ph.x -= back * nx;
+            ph.z -= back * nz;
+            this.track.project(ph.x, ph.z, pr.index, pr);
+          }
+        }
+      }
+    }
+    // On the ring road: its surface. Anywhere else: the ground, sampled under the wheels so the
+    // car sits on the slope (pitch and roll) instead of jolting over every bump under its middle.
+    // Off the ring road the car isn't "on" the track, so the ring road's pickups and the AI's
+    // traffic planning leave it alone.
+    const fx = Math.sin(ph.heading);
+    const fz = Math.cos(ph.heading);
+    let target = pr.y;
+    if (!onRoad()) {
+      const at = (along: number, across: number) => h(ph.x + fx * along + fz * across, ph.z + fz * along - fx * across);
+      // (+across is the car's left.)
+      const fl = at(WHEEL_ALONG, WHEEL_ACROSS);
+      const fr = at(WHEEL_ALONG, -WHEEL_ACROSS);
+      const rl = at(-WHEEL_ALONG, WHEEL_ACROSS);
+      const rr = at(-WHEEL_ALONG, -WHEEL_ACROSS);
+      target = Math.max((fl + fr + rl + rr) / 4, h(ph.x, ph.z) - 0.15);
+      pr.y = target;
+      pr.slope = (fl + fr - rl - rr) / (4 * WHEEL_ALONG);
       pr.heading = ph.heading;
       pr.lateral = 1000;
+      car.groundRoll = (fl + rl - fr - rr) / (4 * WHEEL_ACROSS);
+    } else {
+      car.groundRoll = 0;
     }
-    ph.y = pr.y;
+    // Follow the ground up at once; over a crest, fly (and land) instead of sticking to it.
+    const dt = RaceSimulation.STEP;
+    // (A few centimetres' leeway, so small folds and kerbs don't throw the car up.)
+    const airborne = ph.y + car.vy * dt - 9.81 * dt * dt > target + (ph.y > target ? 0 : 0.06);
+    if (airborne) {
+      car.vy -= 9.81 * dt;
+      ph.y += car.vy * dt;
+    } else {
+      // Climbing with the ground: its slope times the speed (a kerb's step doesn't launch you).
+      car.vy = clamp((ph.vx * fx + ph.vz * fz) * pr.slope * Math.cos(ph.heading - pr.heading), -40, 25);
+      ph.y = target;
+    }
     return impact;
   }
 
@@ -482,7 +585,9 @@ export class RaceSimulation {
   private collectPickups(): void {
     const car = this.player;
     if (car.autopilot) return;
-    const p = pickupAt(this.pickups, this.track.length, car.proj.distance, car.proj.lateral, this.time);
+    const p =
+      pickupAt(this.pickups, this.track.length, car.proj.distance, car.proj.lateral, this.time) ??
+      (this.settings.freeRoam ? pickupNear(this.pickups, car.physics.x, car.physics.z, this.time) : null);
     if (!p) return;
     p.backAt = this.time + PICKUP_RESPAWN;
     if (p.kind === 'super') car.physics.superBoost(SUPER_SECONDS);

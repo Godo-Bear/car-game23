@@ -18,6 +18,16 @@
       <div class="muted">Loading…</div>
     </div>
 
+    <!-- Free drive: the map, to teleport anywhere -->
+    <div id="drive-map" class="drive-map hidden" role="dialog" aria-label="Map">
+      <div class="drive-map-head">
+        <b>MAP</b>
+        <span>Tap a place to teleport to the nearest road · Esc to close</span>
+        <button type="button" id="drive-map-close" class="icon-btn" aria-label="Close the map">✕</button>
+      </div>
+      <div id="drive-map-frame" class="drive-map-frame"><span id="drive-map-me" class="drive-map-me" aria-hidden="true"></span></div>
+    </div>
+
     <!-- In-race HUD -->
     <div id="hud" class="hud hidden">
       <div class="hud-top-left">
@@ -39,6 +49,7 @@
         <button type="button" id="btn-hud-controls" class="icon-btn" title="Controls & settings (H)" aria-label="Controls and settings">?</button>
         <button type="button" id="btn-touch-camera" class="icon-btn touch-only" aria-label="Change camera">🎥</button>
         <button type="button" id="btn-touch-reset" class="icon-btn touch-only" aria-label="Reset car onto the road">↺</button>
+        <button type="button" id="btn-hud-map" class="icon-btn free-only" title="Map: teleport anywhere (Tab)" aria-label="Map">🗺</button>
         <button type="button" id="btn-hud-pause" class="icon-btn" title="Pause (Esc)" aria-label="Pause">❚❚</button>
       </div>
       <!-- Touch screens: steering pad on the left, pedals on the right -->

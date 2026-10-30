@@ -810,7 +810,7 @@ function courseMap(id: TrackId): string {
 }
 
 /** A free drive starting place: a little car. */
-const SPOT_ICON =
+export const SPOT_ICON =
   '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M5.5 10.5 7.4 6A2 2 0 0 1 9.2 5h5.6a2 2 0 0 1 1.8 1l1.9 4.5H19a2 2 0 0 1 2 2V17h-1.5a2.5 2.5 0 0 1-5 0h-5a2.5 2.5 0 0 1-5 0H3v-4.5a2 2 0 0 1 2-2h.5Zm2.2 0h8.6l-1.4-3.4a.5.5 0 0 0-.5-.3H9.6a.5.5 0 0 0-.5.3z" fill="currentColor"/></svg>';
 
 const PADLOCK =

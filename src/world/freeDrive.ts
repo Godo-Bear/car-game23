@@ -32,3 +32,9 @@ export function mapFraction(x: number, z: number): [number, number] {
   const m = FREE_DRIVE_MAP;
   return [(x - m.minX) / m.width, (z - m.minZ) / m.height];
 }
+
+/** The world position at a place on the map picture (fractions of its width and height). */
+export function mapPosition(fx: number, fy: number): [number, number] {
+  const m = FREE_DRIVE_MAP;
+  return [m.minX + fx * m.width, m.minZ + fy * m.height];
+}

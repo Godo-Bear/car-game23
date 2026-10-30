@@ -5,7 +5,7 @@
  */
 
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
-const LAYERS = ['modal-auth', 'modal-settings', 'screen-pause', 'screen-results', 'screen-home'];
+const LAYERS = ['drive-map', 'modal-auth', 'modal-settings', 'screen-pause', 'screen-results', 'screen-home'];
 const TABS = ['home', 'modes', 'garage', 'shop', 'quests', 'profile'];
 /** Stick/D-pad auto-repeat: first delay, then the interval. */
 const REPEAT_FIRST = 0.38;

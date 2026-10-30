@@ -78,6 +78,9 @@ export interface Footprint {
   z: number;
   hw: number;
   hd: number;
+  /** A tree drawn as instance `index` of `layer`: gone (thinned out by the detail level) at or past its count. */
+  layer?: { count: number };
+  index?: number;
 }
 
 export class City {
@@ -105,8 +108,8 @@ export class City {
   }
 
   /**
-   * `keepOut` reserves corridors (e.g. under the railway viaduct) where no building may stand:
-   * it gets a building's centre and radius.
+   * `keepOut` reserves corridors (e.g. under the railway viaduct, or streets) where no building may
+   * stand: it gets a building's centre and radius.
    */
   constructor(
     track: TrackPath,
@@ -173,12 +176,14 @@ export class City {
     // The landmarks' solid bases (Tokyo Tower's legs, the castle's walls...).
     for (const l of landmarks) this.footprints.push({ x: l.x, z: l.z, hw: l.r * 0.42, hd: l.r * 0.42 });
     if (scene.skytree) this.footprints.push({ x: scene.skytree.x, z: scene.skytree.z, hw: 16, hd: 16 });
+    // The supertall's 60 m tower (turned a little).
+    if (scene.supertall) this.footprints.push({ x: scene.supertall.x, z: scene.supertall.z, hw: 37, hd: 37 });
     for (let gx = b.minX - 420; gx <= b.maxX + 420; gx += cell) {
       for (let gz = b.minZ - 420; gz <= scene.bayZ - 20; gz += cell) {
         const cx = gx + (rng() - 0.5) * 6;
         const cz = gz + (rng() - 0.5) * 6;
         if (landmarks.some((l) => Math.hypot(cx - l.x, cz - l.z) < l.r)) continue;
-        if (keepOut(cx, cz, 14)) continue;
+        if (keepOut(cx, cz, 6)) continue;
         let w = 13 + rng() * 15;
         let d = 13 + rng() * 15;
         const { d: dist, nx, nz, bx, by, bz } = distToTrack(cx, cz);
@@ -189,6 +194,14 @@ export class City {
           w *= maxR / r;
           d *= maxR / r;
         }
+        // A lot reaching into a kept-out corridor (a street) shrinks until it's clear of it.
+        let fit = Math.min(r, Math.hypot(w, d) / 2);
+        while (fit >= 6 && keepOut(cx, cz, fit)) {
+          w *= 0.85;
+          d *= 0.85;
+          fit *= 0.85;
+        }
+        if (fit < 6) continue;
 
         let h = scene.height(cx, cz, rng);
         if (dist > 320) h *= 0.75;

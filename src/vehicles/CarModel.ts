@@ -740,6 +740,8 @@ export class CarModel {
   private setup: CarSetup | null = null;
   private roll = 0;
   private pitch = 0;
+  private groundPitch = 0;
+  private groundRoll = 0;
   private visualSteer = 0;
 
   constructor(def: CarDef, setup: CarSetup) {
@@ -934,8 +936,11 @@ export class CarModel {
     const p = car.physics;
     this.root.position.set(lerp(car.prevX, p.x, alpha), lerp(car.prevY, p.y, alpha), lerp(car.prevZ, p.z, alpha));
     this.root.rotation.y = car.prevHeading + wrapAngle(p.heading - car.prevHeading) * alpha;
+    // Sit on the ground's slope (eased a little, so the car doesn't twitch over every fold in it).
     const slopeAlongCar = car.proj.slope * Math.cos(p.heading - car.proj.heading);
-    this.root.rotation.x = -Math.atan(slopeAlongCar);
+    this.groundPitch = damp(this.groundPitch, -Math.atan(slopeAlongCar), 14, dt);
+    this.groundRoll = damp(this.groundRoll, Math.atan(car.groundRoll), 14, dt);
+    this.root.rotation.set(this.groundPitch, this.root.rotation.y, this.groundRoll, 'YXZ');
 
     // Body roll leans out of corners; pitch dives under braking and squats on throttle.
     this.roll = damp(this.roll, -p.latAccel * 0.0045, 8, dt);

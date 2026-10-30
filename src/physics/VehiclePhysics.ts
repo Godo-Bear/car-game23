@@ -527,7 +527,7 @@ export class VehiclePhysics {
     const drag = -s.dragCoefficient * this.dragScale * u * Math.abs(u);
     const rolling = -s.rollingResistance * u;
     const engineBrake = this.gear > 0 && throttle < 0.05 && !this.nitroActive ? -u * 45 : 0;
-    const grade = -s.mass * G * clamp(slope, -0.2, 0.2);
+    const grade = -s.mass * G * clamp(slope, -0.6, 0.6);
     let fx = driveForce * dir + boost + drag + rolling + engineBrake + grade;
     const brakeForce = brakeF + brakeR;
     if (movingSign !== 0) {

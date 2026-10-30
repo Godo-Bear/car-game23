@@ -2,11 +2,12 @@ import * as THREE from 'three';
 import type { TimeOfDay } from '../../shared/api';
 import type { RacingLine } from '../ai/RacingLine';
 import { createRng } from '../core/math';
+import type { PickupKind } from '../race/Pickups';
 import { gridSlot } from '../race/RaceSimulation';
 import { BARRIER_THICKNESS, buildRubberLine, buildTrackVisual, SIDEWALK_WIDTH, type TrackVisual } from '../track/TrackMesh';
 import type { TrackPath } from '../track/TrackPath';
 import type { TrackDef } from '../track/tracks';
-import { City, type Footprint, placeLamps } from './City';
+import { City, type CityScene, type Footprint, placeLamps } from './City';
 import { windTime } from './foliage';
 import { GeometryBuilder } from './GeometryBuilder';
 import { type Feature, MountFuji, powerLines, Railway, trafficSignals, vendingMachines } from './japan';
@@ -35,12 +36,30 @@ export interface World {
 export interface FreeRoamMap {
   /** Height a car's wheels sit at, anywhere off the ring road (streets, slip roads, grass, trails). */
   surfaceAt(x: number, z: number): number;
+  /** Buildings, landmarks, houses and tree trunks. */
   obstacles: Footprint[];
   /** In the middle of town, on an avenue. */
   spawn: { x: number; z: number; heading: number };
   /** Drivable square: |x - cx| and |z - cz| up to `half`. */
   bounds: { cx: number; cz: number; half: number };
+  /** Every road on the map (for the map picture and for teleporting onto a road). */
+  roads: FreeRoad[];
+  /** Nitro bottles along the town's avenues and ring streets and on the slip roads. */
+  pickups: { x: number; y: number; z: number; kind: PickupKind }[];
+  /** The nearest place on a road to (x, z), heading along it. */
+  roadNear(x: number, z: number): { x: number; z: number; heading: number };
+  /** `look` metres on along the road under (x, z), going in direction (dx, dz); null off the roads. */
+  roadAhead(x: number, z: number, dx: number, dz: number, look: number): { x: number; z: number } | null;
 }
+
+export interface FreeRoad {
+  kind: 'ring' | 'street' | 'slip' | 'trail';
+  pts: [number, number][];
+  width: number;
+}
+
+/** Road between the nitro bottles in town (m), and every how many is a gold one. */
+const TOWN_PICKUP_SPACING = 170;
 
 export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, detail = 1, grass: 0 | 1 | 2 = 1): World {
   const group = new THREE.Group();
@@ -114,7 +133,7 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
   const trackVisual = buildTrackVisual(track, rng, { theme: def.theme, banner: def.banner, gridSlots: open ? [] : gridSlots, lamps: [], crossings: [], open });
   // Free drive: a city with an organic street network in the middle of the map, its avenues
   // joined to the ring road by smooth slip roads (the ground is shaped to them).
-  const streets = scene.kind === 'rural' && scene.cityRadius ? streetNetwork(scene.cityRadius, createRng(77)) : null;
+  const streets = scene.kind === 'rural' && scene.cityRadius && scene.city ? streetNetwork(scene.cityRadius, createRng(77), landmarkGrounds(scene.city)) : null;
   const connectors = streets ? connectorRoads(streets.spokes, track) : [];
   const nature = new NatureWorld({ ...scene, connectors }, track, rng, detail, grass);
   group.add(trackVisual.group, nature.group);
@@ -123,22 +142,34 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
   let freeRoam: FreeRoamMap | undefined;
   if (streets && scene.city && scene.cityRadius) {
     const R = scene.cityRadius;
-    city = new City(track, [], rng, scene.city, (x, z) => Math.hypot(x, z) > R - 20 || streets.near(x, z, 10));
+    city = new City(track, [], rng, scene.city, (x, z, r) => Math.hypot(x, z) > R - 8 - r || streets.near(x, z, r + 3));
     group.add(city.group, streets.mesh);
     // Start on the first avenue, a little way out from the centre, heading out of town.
     const avenue = streets.spokes[0].pts;
     const [sx, sz] = avenue[6];
     const [nx, nz] = avenue[7];
+    const roads: FreeRoad[] = [
+      { kind: 'ring', pts: track.samples.map((p) => [p.x, p.z]), width: track.halfWidth * 2 },
+      ...streets.streets.map((st): FreeRoad => ({ kind: 'street', pts: st.pts, width: st.width })),
+      ...connectors.map((P): FreeRoad => ({ kind: 'slip', pts: P.map(([x, , z]) => [x, z]), width: 14 })),
+      ...(scene.trails ?? []).map((P): FreeRoad => ({ kind: 'trail', pts: P, width: 8 })),
+    ];
+    const index = new RoadIndex(roads);
     freeRoam = {
       surfaceAt(x, z) {
-        // Slip roads are laid a little above the ground shaped to them; streets sit on the flat basin.
+        // Slip roads are laid a little above the ground shaped to them; streets sit on the flat
+        // basin; everywhere else, the ground exactly as it's drawn.
         const c = nature.connectorAt(x, z);
         if (c && c.d < 7.5) return c.y + 0.06;
-        return Math.max(nature.heightAt(x, z), Math.hypot(x, z) < R ? 0.06 : -Infinity);
+        return Math.max(nature.meshHeightAt(x, z), Math.hypot(x, z) < R ? 0.06 : -Infinity);
       },
-      obstacles: city.footprints,
+      obstacles: [...city.footprints, ...nature.solids, ...nature.trees],
       spawn: { x: sx, z: sz, heading: Math.atan2(nx - sx, nz - sz) },
       bounds: { ...nature.extent, half: nature.extent.half - 260 },
+      roads,
+      pickups: townPickups(streets.streets, connectors),
+      roadNear: (x, z) => roadNear(roads, x, z),
+      roadAhead: (x, z, dx, dz, look) => index.ahead(x, z, dx, dz, look),
     };
   }
   return {
@@ -162,6 +193,158 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
     dispose: () => disposeTree(group),
   };
 }
+
+/** The ground the free drive city's landmarks stand on (streets go round them). */
+function landmarkGrounds(c: CityScene): { x: number; z: number; r: number }[] {
+  return [
+    { ...c.tower, r: 52 },
+    ...(c.castle ? [{ ...c.castle, r: 66 }] : []),
+    ...(c.ferrisWheel ? [{ ...c.ferrisWheel, r: c.ferrisWheel.radius + 12 }] : []),
+    ...(c.supertall ? [{ ...c.supertall, r: 56 }] : []),
+    ...(c.skytree ? [{ ...c.skytree, r: 34 }] : []),
+  ];
+}
+
+/** Nitro bottles every so often along the avenues and ring streets (weaving across the lanes) and on the slip roads. */
+function townPickups(streets: Street[], connectors: [number, number, number][][]): FreeRoamMap['pickups'] {
+  const out: FreeRoamMap['pickups'] = [];
+  const lanes = [-3, 0, 3, 0];
+  let k = 0;
+  const along = (P: [number, number, number][], spacing: number, start: number) => {
+    let next = start;
+    let run = 0;
+    for (let i = 0; i + 1 < P.length; i++) {
+      const [ax, ay, az] = P[i];
+      const [bx, by, bz] = P[i + 1];
+      const len = Math.hypot(bx - ax, bz - az);
+      while (run + len >= next) {
+        const t = (next - run) / (len || 1);
+        const lat = lanes[k % lanes.length];
+        out.push({
+          x: ax + (bx - ax) * t - ((bz - az) / (len || 1)) * lat,
+          y: ay + (by - ay) * t + 0.06,
+          z: az + (bz - az) * t + ((bx - ax) / (len || 1)) * lat,
+          kind: (k + 1) % 5 === 0 ? 'super' : 'nitro',
+        });
+        k++;
+        next += spacing;
+      }
+      run += len;
+    }
+  };
+  // The avenues and ring streets (the side streets are too twisty to weave along).
+  for (const st of streets.filter((s) => s.width >= 14))
+    along(
+      st.pts.map(([x, z]) => [x, 0, z]),
+      TOWN_PICKUP_SPACING,
+      60,
+    );
+  for (const P of connectors) along(P, 1e9, 120);
+  return out;
+}
+
+/** The nearest point on any road to (x, z), heading along the road. */
+function roadNear(roads: FreeRoad[], x: number, z: number): { x: number; z: number; heading: number } {
+  let best = { x, z, heading: 0 };
+  let bestD = Infinity;
+  for (const road of roads) {
+    const P = road.pts;
+    for (let i = 0; i + 1 < P.length; i++) {
+      const [ax, az] = P[i];
+      const [bx, bz] = P[i + 1];
+      const dx = bx - ax;
+      const dz = bz - az;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+      const px = ax + dx * t;
+      const pz = az + dz * t;
+      const d = (x - px) ** 2 + (z - pz) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        best = { x: px, z: pz, heading: Math.atan2(dx, dz) };
+      }
+    }
+  }
+  return best;
+}
+
+/** The free drive roads' segments on a grid, for finding the road under a car quickly. */
+class RoadIndex {
+  private static readonly CELL = 40;
+  private readonly grid = new Map<number, number[]>();
+
+  constructor(private readonly roads: FreeRoad[]) {
+    const C = RoadIndex.CELL;
+    roads.forEach((road, r) => {
+      const P = road.pts;
+      for (let i = 0; i + 1 < P.length; i++) {
+        const pad = road.width / 2;
+        for (let gx = Math.floor((Math.min(P[i][0], P[i + 1][0]) - pad) / C); gx <= Math.floor((Math.max(P[i][0], P[i + 1][0]) + pad) / C); gx++) {
+          for (let gz = Math.floor((Math.min(P[i][1], P[i + 1][1]) - pad) / C); gz <= Math.floor((Math.max(P[i][1], P[i + 1][1]) + pad) / C); gz++) {
+            const key = gx * 65536 + gz;
+            const list = this.grid.get(key);
+            // Road and segment packed together.
+            if (list) list.push(r * 1e6 + i);
+            else this.grid.set(key, [r * 1e6 + i]);
+          }
+        }
+      }
+    });
+  }
+
+  ahead(x: number, z: number, dx: number, dz: number, look: number): { x: number; z: number } | null {
+    const C = RoadIndex.CELL;
+    let best = -1;
+    let bestT = 0;
+    let bestD = Infinity;
+    for (const id of this.grid.get(Math.floor(x / C) * 65536 + Math.floor(z / C)) ?? []) {
+      const road = this.roads[Math.floor(id / 1e6)];
+      const i = id % 1e6;
+      const [ax, az] = road.pts[i];
+      const [bx, bz] = road.pts[i + 1];
+      const sx = bx - ax;
+      const sz = bz - az;
+      const t = clamp01(((x - ax) * sx + (z - az) * sz) / (sx * sx + sz * sz || 1));
+      // Distance beyond the road's edge.
+      const d = Math.hypot(x - ax - sx * t, z - az - sz * t) - road.width / 2;
+      if (d < 3 && d < bestD) {
+        bestD = d;
+        best = id;
+        bestT = t;
+      }
+    }
+    if (best < 0) return null;
+    const P = this.roads[Math.floor(best / 1e6)].pts;
+    const loop = Math.hypot(P[0][0] - P[P.length - 1][0], P[0][1] - P[P.length - 1][1]) < 30;
+    let i = best % 1e6;
+    // Walk along the road, whichever way the car is going.
+    const step = (P[i + 1][0] - P[i][0]) * dx + (P[i + 1][1] - P[i][1]) * dz >= 0 ? 1 : -1;
+    let px = P[i][0] + (P[i + 1][0] - P[i][0]) * bestT;
+    let pz = P[i][1] + (P[i + 1][1] - P[i][1]) * bestT;
+    let left = look;
+    let next = step > 0 ? i + 1 : i;
+    while (left > 0) {
+      const [nx, nz] = P[next];
+      const seg = Math.hypot(nx - px, nz - pz);
+      if (seg >= left) {
+        px += ((nx - px) / seg) * left;
+        pz += ((nz - pz) / seg) * left;
+        break;
+      }
+      left -= seg;
+      px = nx;
+      pz = nz;
+      i = next + step;
+      if (i < 0 || i >= P.length) {
+        if (!loop) break;
+        i = (i + P.length) % P.length;
+      }
+      next = i;
+    }
+    return { x: px, z: pz };
+  }
+}
+
+const clamp01 = (t: number) => Math.max(0, Math.min(1, t));
 
 /** Free GPU memory for a world that's being replaced. */
 function disposeTree(root: THREE.Object3D): void {
@@ -223,8 +406,25 @@ interface Street {
   lines: boolean;
 }
 
-export function streetNetwork(R: number, rng: () => number) {
+export function streetNetwork(R: number, rng: () => number, reserved: { x: number; z: number; r: number }[] = []) {
   const streets: Street[] = [];
+  /** Inside a landmark's ground (no street may cross it)? */
+  const inLandmark = (x: number, z: number, margin = 0) => reserved.some((l) => Math.hypot(x - l.x, z - l.z) < l.r + margin);
+  /** Bend a street round the landmarks in its way. */
+  const skirt = (pts: [number, number][]) => {
+    for (const p of pts) {
+      for (const l of reserved) {
+        const dx = p[0] - l.x;
+        const dz = p[1] - l.z;
+        const d = Math.hypot(dx, dz) || 1;
+        if (d < l.r) {
+          p[0] = l.x + (dx / d) * l.r;
+          p[1] = l.z + (dz / d) * l.r;
+        }
+      }
+    }
+    return pts;
+  };
   const CELL = 40;
   const grid = new Map<number, [number, number, number, number, number, number][]>();
   const key = (i: number, j: number) => i * 100003 + j;
@@ -269,7 +469,7 @@ export function streetNetwork(R: number, rng: () => number) {
       const a = a0 + bend * Math.sin(t * Math.PI * 0.85);
       pts.push([Math.cos(a) * R * t, Math.sin(a) * R * t]);
     }
-    add({ pts, width: 16, lines: true });
+    add({ pts: skirt(pts), width: 16, lines: true });
   }
   // Wobbly ring roads.
   for (const [r, w] of [
@@ -283,7 +483,7 @@ export function streetNetwork(R: number, rng: () => number) {
       const rr = r * (1 + 0.08 * Math.sin(3 * a + ph) + 0.05 * Math.sin(5 * a + ph * 2));
       pts.push([Math.cos(a) * rr, Math.sin(a) * rr]);
     }
-    add({ pts, width: w, lines: true });
+    add({ pts: skirt(pts), width: w, lines: true });
   }
   // Winding side streets: they leave a bigger street at an angle, wander, and stop when they meet
   // another street or reach the edge of town.
@@ -313,7 +513,7 @@ export function streetNetwork(R: number, rng: () => number) {
       x += Math.cos(heading) * 6;
       z += Math.sin(heading) * 6;
       pts.push([x, z]);
-      if (Math.hypot(x, z) > R - 12) break;
+      if (Math.hypot(x, z) > R - 12 || inLandmark(x, z, 8)) break;
       // Joined another street: end here (a junction).
       if (s > 48 && near(x, z, 2, id)) break;
       // Too close alongside another street without meeting it: drop this one.
@@ -364,7 +564,7 @@ export function streetNetwork(R: number, rng: () => number) {
   mesh.add(new THREE.Mesh(asphalt.build(), new THREE.MeshStandardMaterial({ color: 0x45464b, roughness: 0.85 })));
   mesh.add(new THREE.Mesh(walk.build(), new THREE.MeshStandardMaterial({ color: 0xa9a59c, roughness: 0.95 })));
   mesh.add(new THREE.Mesh(paint.build(), new THREE.MeshStandardMaterial({ color: 0xe8e8e8, roughness: 0.6 })));
-  return { mesh, near: (x: number, z: number, r: number) => near(x, z, r), streets, spokes: streets.slice(0, 7) };
+  return { mesh, near: (x: number, z: number, r: number) => near(x, z, r), streets, spokes: streets.slice(0, SPOKES) };
 }
 
 /** Free drive: smooth slip roads from the ends of the avenues onto the ring road. */

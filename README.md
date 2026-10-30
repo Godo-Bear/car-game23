@@ -12,10 +12,16 @@ countryside, by day, at sunset or at night — running in the browser and hosted
   *Free Drive* cards on Home and Play show your progress, e.g. 2/3). Then drive anywhere on a big
   open map: a city in a basin (winding streets, avenues, Tokyo Tower, the Skytree, a castle, a big wheel
   and supertall towers), a ring road round it joined by slip roads from the avenues, mountains all
-  round and dirt trails through the hills. You can leave the road anywhere (the ground under the
-  car is followed everywhere); buildings and landmarks are solid and the edge of the map stops you.
-  A few cars cruise the ring road; nitro bottles sit along it. No laps or timing: *R* puts you
-  back on your wheels where you are, *Esc* for the menu (Resume / Settings / Quit to home).
+  round and dirt trails through the hills. You can leave the road anywhere: the car sits on the
+  ground exactly as it's drawn (pitching and rolling with it, and flying off crests), rock faces
+  are too steep to climb, and buildings, landmarks, houses, tree trunks and the edge of the map are
+  solid. No building stands on a street (streets go round the landmarks). A few cars cruise the
+  ring road; nitro bottles (and gold super boosts) sit along the ring road, the avenues, the ring
+  streets and the slip roads, and the drift guide carries a drift round the bends of any road. The
+  *Map* button (🗺, *Tab*, or D-pad up) opens the map: tap a starting-place pin, or anywhere, to
+  teleport to the nearest road. No laps or timing: *R* puts you back on your wheels where you are,
+  *Esc* for the menu (Resume / Settings / Quit to home). The map picture is the game seen from
+  above with a road map drawn over it (buildings, roads, trails and the nitro).
 - **Touch screen support:** play on a phone or tablet with on-screen steering, pedals, drift and
   nitro buttons (see *Controls*).
 - **Core racing loop:** cinematic fly-in over the grid, F1-style start lights, lap counting, live
@@ -47,7 +53,8 @@ countryside, by day, at sunset or at night — running in the browser and hosted
   results screen shows the stars you earned and the time for the next one. The map opens on your next event (a big green NEXT pin, and a
   *Next event* button finds it again); drag the map to look around; tap a pin for its course map,
   prizes, star times and your best result. The server checks every event result (unlocked,
-  matching the event) for accounts. The map picture (`public/career/map.jpg`) is rendered from the game.
+  matching the event) for accounts. The career map is the free drive map: the city events in town,
+  the countryside ones round it and the mountain passes out in the hills.
 - **Career:** you drive one car, the **Kaze GT**, and start with ¥3,000. Every finished race pays
   prize money (more for a better place, more laps, harder difficulty and more rivals; a 3-lap win
   on Normal is ¥10,500), plus career bonuses. Spend it on upgrades in the garage: Engine, Gearbox,

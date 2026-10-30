@@ -3,7 +3,7 @@ import { clamp } from './math';
 import { type ActionId, DEFAULT_BINDINGS } from './Settings';
 
 /** One-shot actions the game reacts to (on press, not while held). */
-export type Action = 'pause' | 'camera' | 'reset' | 'mute' | 'confirm' | 'controls' | 'skip';
+export type Action = 'pause' | 'camera' | 'reset' | 'mute' | 'confirm' | 'controls' | 'skip' | 'map';
 
 export const GAMEPAD_BINDINGS: { action: string; button: string }[] = [
   { action: 'Accelerate', button: 'Right trigger (RT / R2)' },
@@ -13,6 +13,7 @@ export const GAMEPAD_BINDINGS: { action: string; button: string }[] = [
   { action: 'Nitro', button: 'X / Square or RB / R1' },
   { action: 'Change camera', button: 'Y / Triangle' },
   { action: 'Reset car', button: 'View / Share' },
+  { action: 'Free drive map', button: 'D-pad up' },
   { action: 'Pause', button: 'Menu / Options' },
   { action: 'Menus: move / select / back', button: 'D-pad or left stick / A / B' },
   { action: 'Menus: switch tab', button: 'LB / RB' },
@@ -26,7 +27,7 @@ const EDGE_ACTIONS: Partial<Record<ActionId, Action>> = {
   mute: 'mute',
 };
 // A presses the focused menu button (see GamepadMenu), so it isn't also "confirm" here.
-const GAMEPAD_ACTIONS: Partial<Record<Action, number>> = { camera: 3, reset: 8, pause: 9 };
+const GAMEPAD_ACTIONS: Partial<Record<Action, number>> = { camera: 3, reset: 8, pause: 9, map: 12 };
 const NO_SCROLL = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space']);
 
 export class Input {
@@ -39,6 +40,11 @@ export class Input {
   /** code -> actions bound to it */
   private byCode = new Map<string, ActionId[]>();
   private capture: ((code: string | null) => void) | null = null;
+  /**
+   * Free drive: Tab and the D-pad's up open the map. (Off otherwise: Tab moves between buttons in
+   * the menus, and the D-pad moves round the map itself while it's open.)
+   */
+  mapKeys = false;
 
   constructor(target: Window = window) {
     this.setBindings(DEFAULT_BINDINGS);
@@ -59,6 +65,10 @@ export class Input {
         if (!e.repeat) {
           if (e.code === 'Escape') this.pressed.add('pause');
           if (e.code === 'Enter') this.pressed.add('confirm');
+          if (e.code === 'Tab' && this.mapKeys) {
+            e.preventDefault();
+            this.pressed.add('map');
+          }
           for (const id of this.byCode.get(e.code) ?? []) {
             const action = EDGE_ACTIONS[id];
             if (action) this.pressed.add(action);
@@ -144,7 +154,7 @@ export class Input {
       nitro ||= (pad.buttons[2]?.pressed || pad.buttons[5]?.pressed) ?? false;
       for (const [action, index] of Object.entries(GAMEPAD_ACTIONS) as [Action, number][]) {
         const now = pad.buttons[index]?.pressed ?? false;
-        if (now && !this.padPrev[index]) {
+        if (now && !this.padPrev[index] && (action !== 'map' || this.mapKeys)) {
           this.pressed.add(action);
           this.pressed.add('skip');
         }

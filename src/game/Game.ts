@@ -11,11 +11,13 @@ import { Input } from '../core/Input';
 import { createRng } from '../core/math';
 import { type LocalSettings, SettingsStore } from '../core/Settings';
 import { neutralControls } from '../physics/VehiclePhysics';
+import { placePickups } from '../race/Pickups';
 import { formatTime, type RaceEvent } from '../race/RaceManager';
 import { type FreeRoamGround, gridSlot, RaceSimulation } from '../race/RaceSimulation';
 import { RenderPipeline } from '../render/RenderPipeline';
 import type { TrackPath } from '../track/TrackPath';
 import { TRACKS, WORLDS, type WorldId } from '../track/tracks';
+import { DriveMap } from '../ui/DriveMap';
 import { GamepadMenu } from '../ui/GamepadMenu';
 import { Hud } from '../ui/Hud';
 import { Minimap } from '../ui/Minimap';
@@ -31,7 +33,7 @@ import { FREE_DRIVE_MAP, FREE_DRIVE_SPOTS } from '../world/freeDrive';
 import { Lighting } from '../world/Lighting';
 import { loadProps, loadScenery } from '../world/sceneryModels';
 import { sceneProps } from '../world/scenes';
-import { buildWorld, type World } from '../world/World';
+import { buildWorld, type FreeRoamMap, type World } from '../world/World';
 import { Cinematics } from './Cinematics';
 import { PerformanceMonitor } from './PerformanceMonitor';
 import { RaceFeedback } from './RaceFeedback';
@@ -53,6 +55,11 @@ export class Game {
   private readonly input = new Input();
   private readonly touch = new TouchControls(this.input);
   private readonly padMenu = new GamepadMenu();
+  /** Free drive: the map you teleport with. */
+  private readonly driveMap = new DriveMap(
+    (to) => this.teleport(to),
+    () => this.closeDriveMap(),
+  );
   private readonly pickupView = new PickupView();
   private readonly audio = new AudioEngine();
   private readonly account = new AccountService();
@@ -470,19 +477,46 @@ export class Game {
     this.busy = false;
   }
 
-  /** Put the player at a free drive starting place. */
-  private placeAtSpawn(at: { x: number; z: number; heading: number }): void {
+  /**
+   * Put the player on the road nearest a free drive place, stopped, facing along the road (the
+   * way `at.heading` points, if given).
+   */
+  private placeAtSpawn(at: { x: number; z: number; heading?: number }): void {
     const map = this.world?.freeRoam;
     if (!map) return;
-    const { x, z, heading } = at;
+    const road = map.roadNear(at.x, at.z);
+    const { x, z } = road;
+    const heading = at.heading !== undefined && Math.cos(road.heading - at.heading) < 0 ? road.heading + Math.PI : road.heading;
     const car = this.sim.player;
     car.physics.place(x, z, heading, map.surfaceAt(x, z));
     this.sim.track.project(x, z, -1, car.proj);
+    // On the ring road: its surface.
+    if (Math.abs(car.proj.lateral) < this.sim.track.halfWidth) car.physics.y = car.proj.y;
     car.prevX = x;
     car.prevZ = z;
     car.prevY = car.physics.y;
     car.prevHeading = heading;
+    car.vy = 0;
+    car.groundRoll = 0;
     this.cam.snap();
+  }
+
+  private openDriveMap(): void {
+    const p = this.sim.player.physics;
+    this.setPaused(true, false);
+    this.driveMap.open(p.x, p.z, p.heading);
+  }
+
+  private closeDriveMap(): void {
+    this.driveMap.close();
+    this.setPaused(false);
+  }
+
+  /** Free drive: jump to a place picked on the map. */
+  private teleport(to: { x: number; z: number; heading?: number }): void {
+    this.placeAtSpawn(to);
+    this.cam.follow(this.playerModel, 0, 0);
+    this.closeDriveMap();
   }
 
   /**
@@ -504,12 +538,24 @@ export class Game {
     cam.lookAt(minX + width / 2, 0, minZ + height / 2);
     const fog = this.scene.fog;
     this.scene.fog = null;
+    // The far ridges ring the map: from above they'd be blobs over its edges.
+    const ridges = this.world!.group.getObjectByName('ridges');
+    if (ridges) ridges.visible = false;
     this.world!.update(this.elapsed, 0, cam);
     await this.compile();
     const renderer = this.pipeline.renderer;
     renderer.setRenderTarget(null);
     renderer.render(this.scene, cam);
-    const data = renderer.domElement.toDataURL('image/jpeg', 0.85);
+    // Over the picture, a clear road map: buildings, then the trails, roads and the nitro.
+    const canvas = document.createElement('canvas');
+    canvas.width = renderer.domElement.width;
+    canvas.height = renderer.domElement.height;
+    const g = canvas.getContext('2d')!;
+    g.drawImage(renderer.domElement, 0, 0);
+    const map = this.world!.freeRoam!;
+    drawRoadMap(g, map, [...map.pickups, ...placePickups(this.track)], canvas.width / width, minX, minZ);
+    const data = canvas.toDataURL('image/jpeg', 0.88);
+    if (ridges) ridges.visible = true;
     this.scene.fog = fog;
     this.pickupView.group.visible = true;
     return data;
@@ -585,6 +631,7 @@ export class Game {
     const controls = this.input.update();
     // Gamepad menus while a menu is up (not mid-race).
     const menus = this.state === 'home' || this.paused || this.modalOpen || this.screens.resultsVisible;
+    this.input.mapKeys = this.state === 'freedrive' && !this.paused && !this.modalOpen;
     this.padMenu.update(dt, menus && !this.busy);
     this.handleActions();
     const measuring = !this.busy && !this.paused && !this.modalOpen && document.visibilityState === 'visible';
@@ -695,6 +742,13 @@ export class Game {
       input.clearActions();
       return;
     }
+    if (this.driveMap.isOpen) {
+      // Esc (or B) closes the map.
+      if (input.consume('pause')) this.closeDriveMap();
+      input.clearActions();
+      return;
+    }
+    if (this.state === 'freedrive' && !this.paused && input.consume('map')) this.openDriveMap();
     if (input.consume('pause') && !this.screens.resultsVisible) this.setPaused(!this.paused);
     if (this.paused) {
       input.clearActions();
@@ -709,6 +763,7 @@ export class Game {
       // Back on your wheels where you are (stopped).
       const p = this.sim.player.physics;
       p.place(p.x, p.z, p.heading, p.y);
+      this.sim.player.vy = 0;
       this.cam.snap();
     }
     if (input.consume('reset') && this.state === 'racing') {
@@ -864,4 +919,44 @@ function showCinematic(card: { kicker: string; name: string; meta: string } | nu
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+/** The free drive map picture's road map, drawn over the view from above (`scale` px per metre). */
+function drawRoadMap(g: CanvasRenderingContext2D, map: FreeRoamMap, pickups: FreeRoamMap['pickups'], scale: number, minX: number, minZ: number): void {
+  const px = (x: number) => (x - minX) * scale;
+  const pz = (z: number) => (z - minZ) * scale;
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  // Buildings and landmarks (not the trees).
+  g.fillStyle = 'rgba(70, 74, 88, 0.85)';
+  g.strokeStyle = 'rgba(30, 32, 40, 0.9)';
+  g.lineWidth = 1;
+  for (const o of map.obstacles) {
+    if (o.layer) continue;
+    g.fillRect(px(o.x - o.hw), pz(o.z - o.hd), o.hw * 2 * scale, o.hd * 2 * scale);
+    g.strokeRect(px(o.x - o.hw), pz(o.z - o.hd), o.hw * 2 * scale, o.hd * 2 * scale);
+  }
+  const line = (pts: [number, number][], width: number, color: string, dash: number[] = []) => {
+    g.beginPath();
+    pts.forEach(([x, z], i) => (i ? g.lineTo(px(x), pz(z)) : g.moveTo(px(x), pz(z))));
+    g.setLineDash(dash);
+    g.strokeStyle = color;
+    g.lineWidth = Math.max(1.5, width * scale);
+    g.stroke();
+    g.setLineDash([]);
+  };
+  for (const r of map.roads.filter((r) => r.kind === 'trail')) line(r.pts, r.width, '#b08a52', [10, 7]);
+  // Kerbs first, then the asphalt over them, so crossings join up cleanly.
+  for (const r of map.roads.filter((r) => r.kind !== 'trail')) line(r.pts, r.width + 5, r.kind === 'ring' ? '#f4f4f4' : '#d9d9de');
+  for (const r of map.roads.filter((r) => r.kind !== 'trail')) line(r.pts, r.width, r.kind === 'ring' ? '#2b2c33' : '#3c3d45');
+  // Nitro: blue bottles, gold super boosts.
+  for (const p of pickups) {
+    g.beginPath();
+    g.arc(px(p.x), pz(p.z), p.kind === 'super' ? 6 : 4.5, 0, Math.PI * 2);
+    g.fillStyle = p.kind === 'super' ? '#ffc42e' : '#3aa0ff';
+    g.fill();
+    g.lineWidth = 1.5;
+    g.strokeStyle = '#fff';
+    g.stroke();
+  }
 }
