@@ -1,13 +1,16 @@
 import type { TrackId } from '../../shared/api';
-import { ARASHIYAMA, HAKONE_PASS, HARUNA, IROHAZAKA, IZU_COAST, NISEKO, SAKURA_VALLEY } from './circuits';
+import { ARASHIYAMA, FREE_ROAM, HAKONE_PASS, HARUNA, IROHAZAKA, IZU_COAST, NISEKO, SAKURA_VALLEY } from './circuits';
 import { OSAKA_CIRCUIT, YOKOHAMA_CIRCUIT } from './cityCircuits';
 import type { TrackLayout } from './TrackPath';
 import { TOKYO_CIRCUIT } from './tokyoCircuit';
 
 export type TrackTheme = 'city' | 'mountain' | 'countryside';
 
+/** Everything the game can load: the ten circuits, and the free drive map. */
+export type WorldId = TrackId | 'freeroam';
+
 export interface TrackDef {
-  id: TrackId;
+  id: WorldId;
   name: string;
   /** Short name for tight UI spots. */
   short: string;
@@ -23,8 +26,13 @@ export interface TrackDef {
   layout: TrackLayout;
 }
 
+/** A race circuit. */
+export interface CircuitDef extends TrackDef {
+  id: TrackId;
+}
+
 /** Every circuit, in the order the track picker shows them. */
-export const TRACKS: Record<TrackId, TrackDef> = {
+export const TRACKS: Record<TrackId, CircuitDef> = {
   tokyo: {
     id: 'tokyo',
     name: 'Tokyo',
@@ -136,3 +144,23 @@ export const TRACKS: Record<TrackId, TrackDef> = {
     layout: IZU_COAST,
   },
 };
+
+/**
+ * Free drive: a big open map (unlocked by finishing career races) - a city with winding streets
+ * in a basin, a ring road round it with slip roads in from the avenues, mountains all round and
+ * dirt trails through the hills. Not a circuit: the ring road is just the road it's built on.
+ */
+export const FREE_ROAM_DEF: TrackDef = {
+  id: 'freeroam',
+  name: 'Free Drive',
+  short: 'Free Drive',
+  circuit: 'Free Drive',
+  blurb: 'Drive anywhere: the city, the ring road, the mountains and the dirt trails',
+  theme: 'countryside',
+  label: 'Free drive',
+  banner: 'FREE DRIVE',
+  layout: FREE_ROAM,
+};
+
+/** Every map by id. */
+export const WORLDS: Record<WorldId, TrackDef> = { ...TRACKS, freeroam: FREE_ROAM_DEF };

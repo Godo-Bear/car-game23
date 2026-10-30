@@ -23,6 +23,11 @@ export class Hud {
     this.root.classList.toggle('hidden', !visible);
   }
 
+  /** Free drive: no positions, laps or timing on screen. */
+  setFreeDrive(on: boolean): void {
+    this.root.classList.toggle('free', on);
+  }
+
   /** Big centred text, e.g. countdown numbers, "FINAL LAP", "WRONG WAY". */
   showMessage(text: string, seconds: number, style: '' | 'go' | 'warn' | 'gold' | 'small' | 'lights' = ''): void {
     this.message.textContent = text;

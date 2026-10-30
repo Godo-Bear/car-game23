@@ -19,6 +19,8 @@ export interface TrackVisualOptions {
   lamps: { x: number; z: number; index: number }[];
   /** Zebra crossings at these lap distances. */
   crossings: number[];
+  /** An open road (free drive): no guardrails. */
+  open?: boolean;
 }
 
 export interface TrackVisual {
@@ -136,11 +138,14 @@ export function buildTrackVisual(track: TrackPath, rng: () => number, opts: Trac
         // Guardrail (W-beam) on posts; the physics barrier is its inner face.
         const r = side * wall;
         const inward: V3 = [-side * s0.rx, 0, -side * s0.rz];
-        facing(rail, at(i, r, 0.45), at(i + 1, r, 0.45), at(i + 1, r, 0.85), at(i, r, 0.85), inward);
-        facing(rail, at(i, r, 0.45), at(i + 1, r, 0.45), at(i + 1, r, 0.85), at(i, r, 0.85), [-inward[0], 0, -inward[2]]);
-        if (i % 2 === 0) {
-          const pp = at(i, side * (wall + 0.15));
-          posts.box(pp[0], pp[1] - 0.4, pp[2], 0.12, 1.25, 0.12, s0.heading);
+        // (An open road - free drive - has no guardrails, so you can drive off it.)
+        if (!opts.open) {
+          facing(rail, at(i, r, 0.45), at(i + 1, r, 0.45), at(i + 1, r, 0.85), at(i, r, 0.85), inward);
+          facing(rail, at(i, r, 0.45), at(i + 1, r, 0.45), at(i + 1, r, 0.85), at(i, r, 0.85), [-inward[0], 0, -inward[2]]);
+          if (i % 2 === 0) {
+            const pp = at(i, side * (wall + 0.15));
+            posts.box(pp[0], pp[1] - 0.4, pp[2], 0.12, 1.25, 0.12, s0.heading);
+          }
         }
         // Road edge skirt so the terrain never shows a gap under the asphalt (a bridge's fascia).
         facing(deck, at(i, side * wall, -1.6), at(i + 1, side * wall, -1.6), at(i + 1, side * wall, 0), at(i, side * wall, 0), [side * s0.rx, 0, side * s0.rz]);

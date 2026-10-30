@@ -1,6 +1,8 @@
-import type { TrackId } from '../../shared/api';
+import * as THREE from 'three';
+import { smoothstep } from '../core/math';
+import type { WorldId } from '../track/tracks';
 import type { CityScene } from './City';
-import { mountainTerrain, type RuralScene, snowTerrain, valleyTerrain } from './Nature';
+import { fbm, mountainTerrain, type RuralScene, snowTerrain, valleyTerrain } from './Nature';
 
 /**
  * What surrounds each circuit: the city's waterfront, districts and landmarks, or the
@@ -11,7 +13,7 @@ export type Scene = ({ kind: 'city' } & CityScene) | ({ kind: 'rural' } & RuralS
 const MOUNTAIN_GRASS = { base: 0x2c4a1c, tip: 0x86a043, flowers: [0xf2efe4], height: 0.5 };
 const MEADOW_GRASS = { base: 0x3b6a20, tip: 0xa3c84e, flowers: [0xf4a6c8, 0xf6f2e8, 0xf1d24a], height: 0.6 };
 
-export const SCENES: Record<TrackId, Scene> = {
+export const SCENES: Record<WorldId, Scene> = {
   tokyo: {
     kind: 'city',
     bayZ: 762,
@@ -239,10 +241,111 @@ export const SCENES: Record<TrackId, Scene> = {
     particles: 'petals',
     grass: MEADOW_GRASS,
   },
+  freeroam: {
+    kind: 'rural',
+    theme: 'countryside',
+    // A flat city basin, mountains all round it.
+    terrain: {
+      ...valleyTerrain({ seed: 97, lake: { x: 99999, z: 99999, rx: 10, rz: 10 }, fujiAt: [-1500, -5600], hills: 0.4 }),
+      natural(x, z) {
+        const rc = Math.hypot(x, z);
+        const hills = fbm(x / 300, z / 300, 97) * 12 + fbm(x / 90, z / 90, 109) * 3;
+        const mountains = smoothstep(1350, 2700, rc) * (260 + fbm(x / 500, z / 500, 75) * 170);
+        return (hills + mountains) * smoothstep(1150, 1450, rc);
+      },
+      color(h, slope, x, z, d, out) {
+        const n = fbm(x / 120, z / 120, 77) * 0.5 + 0.5;
+        out.copy(new THREE.Color(0x4f7d2c)).lerp(new THREE.Color(0x87a844), n);
+        if (slope > 0.5) out.lerp(new THREE.Color(0x6d6a60), smoothstep(0.5, 0.95, slope));
+        if (h > 230) out.lerp(new THREE.Color(0xeef2f5), smoothstep(230, 300, h));
+        if (Math.hypot(x, z) < 1180) out.set(0x9a9890);
+        if (d < 9) out.lerp(new THREE.Color(0x7d8a52), smoothstep(9, 6, d) * 0.6);
+      },
+    },
+    vegetation: 'blossom',
+    props: ['pagoda', 'castle', 'bonsai', 'autumnTree', 'sign'],
+    signs: [
+      ['自由', 'FREE ROAM'],
+      ['山道', 'MOUNTAIN ROAD'],
+      ['市街地', 'CITY CENTRE'],
+      ['林道', 'DIRT TRAILS'],
+    ],
+    startTree: { id: 'bonsai', height: 17 },
+    villages: 6,
+    koinobori: true,
+    machines: [40, 3000, 7000, 11000],
+    particles: 'petals',
+    grass: MEADOW_GRASS,
+    density: 1.4,
+    cityRadius: 1180,
+    trails: [
+      [
+        [-1600, -200],
+        [-1900, -500],
+        [-2300, -400],
+        [-2600, -900],
+        [-2400, -1500],
+      ],
+      [
+        [700, -1900],
+        [500, -2300],
+        [100, -2500],
+        [-500, -2400],
+        [-1100, -1900],
+      ],
+      [
+        [2000, 200],
+        [2400, 0],
+        [2700, -400],
+        [2500, -900],
+        [1900, -1500],
+      ],
+      [
+        [1700, 1300],
+        [2200, 1500],
+        [2600, 1200],
+        [2700, 600],
+        [2000, 200],
+      ],
+      [
+        [-1800, 1400],
+        [-2300, 1700],
+        [-2700, 1200],
+        [-2500, 600],
+        [-2200, 600],
+      ],
+      [
+        [0, 1550],
+        [-200, 2000],
+        [300, 2400],
+        [900, 2200],
+        [1700, 1300],
+      ],
+    ],
+    city: {
+      bayZ: 99999,
+      tower: { x: 420, z: -380, height: 333 },
+      skytree: { x: -520, z: 650 },
+      castle: { x: -560, z: -480 },
+      ferrisWheel: { x: 700, z: 420, radius: 40 },
+      supertall: { x: 120, z: 160, height: 280 },
+      rail: { x: 99999, toZ: 0 },
+      crossings: [],
+      fujiAt: null,
+      skyline: [99999, 99999],
+      bright: true,
+      height(x, z, rng) {
+        const rc = Math.hypot(x, z);
+        if (rc < 450) return 60 + rng() ** 1.3 * 170;
+        if (rc < 800) return 25 + rng() ** 1.5 * 80;
+        return 9 + rng() ** 2 * 30;
+      },
+    },
+  },
 };
 
 /** Model files a map places (loaded before it is built). */
-export function sceneProps(id: TrackId): RuralScene['props'] {
+export function sceneProps(id: WorldId): RuralScene['props'] {
   const scene = SCENES[id];
   if (scene.kind === 'rural') return scene.props;
   return scene.castle ? ['castle'] : [];

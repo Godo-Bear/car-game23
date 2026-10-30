@@ -1,5 +1,18 @@
 import type { CarSetup, PlayerSettings, Purchase, TrackId } from '../../shared/api';
-import { bestResult, CAREER_EVENTS, careerEvent, eventUnlocked, MAX_STARS, nextEvent, STAR_BONUS, starTimes, totalStars } from '../../shared/career';
+import {
+  bestResult,
+  CAREER_EVENTS,
+  careerEvent,
+  eventsFinished,
+  eventUnlocked,
+  FREE_DRIVE_EVENTS,
+  freeDriveUnlocked,
+  MAX_STARS,
+  nextEvent,
+  STAR_BONUS,
+  starTimes,
+  totalStars,
+} from '../../shared/career';
 import { formatYen, PLAYER_CAR, raceReward, upgradesOf } from '../../shared/economy';
 import { formatDp } from '../../shared/items';
 import { dailyFor, dailyQuests, MEGA_QUESTS, megaToShow, msUntilReset, todayKey } from '../../shared/quests';
@@ -40,6 +53,8 @@ export interface ScreenHandlers {
   onTryOn(setup: CarSetup): void;
   onResume(): void;
   onRestart(): void;
+  /** Free drive (once unlocked). */
+  onFreeDrive(): void;
   onQuit(): void;
   /** Called whenever a modal opens/closes so the game can pause input. */
   onModalChange(open: boolean): void;
@@ -69,6 +84,8 @@ export class Screens {
   private selectedEvent = '';
   private mapPos: [number, number] = [0, 0];
   raceEvent: string | null = null;
+  /** In free drive (the pause menu has no restart). */
+  freeDrive = false;
   private authMode: AuthMode = 'login';
   private settingsReturnTo: 'none' | 'pause' = 'none';
   private readonly panel: SettingsPanel;
@@ -155,6 +172,7 @@ export class Screens {
 
   showPause(show: boolean): void {
     $('screen-pause').classList.toggle('hidden', !show);
+    $('btn-restart').classList.toggle('hidden', this.freeDrive);
     if (show) $('btn-resume').focus({ preventScroll: true });
   }
 
@@ -184,7 +202,14 @@ export class Screens {
     $('home-car').textContent = car.name;
     const levels = Object.values(upgradesOf(a.wallet, s.car)).reduce((sum, v) => sum + v, 0);
     $('home-car-lv').textContent = `LV ${levels}`;
-    $('home-wins').textContent = `${a.stats.wins} win${a.stats.wins === 1 ? '' : 's'}`;
+    // Free drive: locked until three career events have been finished.
+    const free = freeDriveUnlocked(a.wallet);
+    $('home-free').classList.toggle('locked', !free);
+    $('home-free-info').textContent = free
+      ? 'The open city map'
+      : `Finish ${FREE_DRIVE_EVENTS} career events · ${eventsFinished(a.wallet)}/${FREE_DRIVE_EVENTS}`;
+    $('home-free-badge').textContent = free ? '▶' : '🔒';
+    $('home-free').title = free ? 'Drive anywhere: the city, the ring road, the mountains and the dirt trails' : 'Unlocks after three career events';
     $('home-car-kind').textContent = car.kind;
     this.renderQuests();
     $('home-car-name').textContent = car.name;
@@ -620,7 +645,11 @@ export class Screens {
     $('btn-map-next').addEventListener('click', () => this.focusNext());
     $('home-quick').addEventListener('click', () => this.startEvent(nextEvent(this.account.wallet).id));
     $('home-garage').addEventListener('click', () => this.showPanel('garage'));
-    $('home-career').addEventListener('click', () => this.showPanel('profile'));
+    $('home-free').addEventListener('click', () => {
+      // Locked: the career map, to go and race for it.
+      if (freeDriveUnlocked(this.account.wallet)) this.handlers.onFreeDrive();
+      else this.showPanel('career');
+    });
     $('home-mega').addEventListener('click', () => this.showPanel('quests'));
     $('btn-garage-race').addEventListener('click', () => this.quickStart());
     $('btn-event-garage').addEventListener('click', () => this.showPanel('garage'));

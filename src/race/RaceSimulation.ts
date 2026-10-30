@@ -25,7 +25,20 @@ export interface RaceSettings {
   aiGrip: number;
   /** What each AI driver races, in grid order; anyone left over drives the player's car. */
   aiCars: AICar[];
+  /** Free drive: the player can leave the road and drive anywhere on this ground (the AI keep to the road). */
+  freeRoam?: FreeRoamGround;
 }
+
+/** The ground of a free drive map (see World.freeRoam). */
+export interface FreeRoamGround {
+  surfaceAt(x: number, z: number): number;
+  /** Solid boxes (buildings, landmarks): centre and half sizes. */
+  obstacles: { x: number; z: number; hw: number; hd: number }[];
+  bounds: { cx: number; cz: number; half: number };
+}
+
+/** A free-roaming car's footprint against buildings (m). */
+const FREE_CAR_RADIUS = 2.1;
 
 export interface AICar {
   spec: VehicleSpec;
@@ -132,6 +145,8 @@ export class RaceSimulation {
   time = 0;
   private traffic: TrafficCar[] = [];
   private pending: RaceEvent[] = [];
+  /** Free drive: obstacles bucketed on a grid (key -> boxes) for quick collision checks. */
+  private readonly obstacleGrid = new Map<number, FreeRoamGround['obstacles']>();
 
   constructor(layout: TrackLayout | TrackPath, settings: Partial<RaceSettings> = {}, line?: RacingLine) {
     this.track = layout instanceof TrackPath ? layout : new TrackPath(layout);
@@ -191,6 +206,16 @@ export class RaceSimulation {
       },
     }));
     this.pickups = placePickups(this.track);
+    for (const o of this.settings.freeRoam?.obstacles ?? []) {
+      for (let i = Math.floor((o.x - o.hw) / 32); i <= Math.floor((o.x + o.hw) / 32); i++) {
+        for (let j = Math.floor((o.z - o.hd) / 32); j <= Math.floor((o.z + o.hd) / 32); j++) {
+          const key = i * 65536 + j;
+          const list = this.obstacleGrid.get(key);
+          if (list) list.push(o);
+          else this.obstacleGrid.set(key, [o]);
+        }
+      }
+    }
     this.race = this.placeOnGrid();
   }
 
@@ -317,7 +342,10 @@ export class RaceSimulation {
     for (const car of this.cars) {
       const r = this.race.racers[car.id];
       let controls: VehicleControls;
-      if (car.isPlayer && !car.autopilot) {
+      const free = car.isPlayer && !car.autopilot && this.settings.freeRoam;
+      if (free) {
+        controls = playerInput;
+      } else if (car.isPlayer && !car.autopilot) {
         controls = this.barrierAssist(car, playerInput);
       } else {
         controls = car.ai.drive(car.physics, car.proj, this.traffic, dt);
@@ -330,7 +358,8 @@ export class RaceSimulation {
       const slope = car.proj.slope * Math.cos(car.physics.heading - car.proj.heading);
       car.physics.step(controls, dt, slope);
       if (car.isPlayer && !car.autopilot) {
-        this.driftGuide(car, dt);
+        // (Free drive has no road to guide a drift along.)
+        if (!free) this.driftGuide(car, dt);
         const kind = car.physics.boostEvent;
         if (kind) this.pending.push({ type: 'boost', racerId: car.id, kind });
       }
@@ -349,6 +378,10 @@ export class RaceSimulation {
     for (const car of this.cars) {
       const ph = car.physics;
       this.track.project(ph.x, ph.z, car.proj.index, car.proj);
+      if (car.isPlayer && !car.autopilot && this.settings.freeRoam) {
+        car.impact = Math.max(car.impact, this.freeGround(car, this.settings.freeRoam));
+        continue;
+      }
       const hit = collideWithWalls(ph, car.proj, this.track.wallOffset, car.wall);
       car.impact = Math.max(car.impact, hit);
       if (car.wall.active) this.track.project(ph.x, ph.z, car.proj.index, car.proj);
@@ -367,6 +400,82 @@ export class RaceSimulation {
       this.pending = [];
     }
     return events;
+  }
+
+  /**
+   * Free drive: the car sits on whatever is under it (the road, or the ground anywhere else), and
+   * bumps off buildings and the edge of the map. Returns the impact speed.
+   */
+  private freeGround(car: SimCar, ground: FreeRoamGround): number {
+    const ph = car.physics;
+    const pr = car.proj;
+    let impact = 0;
+    // Buildings: push the car out of any box it overlaps and take away the speed into it.
+    const r = FREE_CAR_RADIUS;
+    const seen = new Set<object>();
+    for (let i = Math.floor((ph.x - r) / 32); i <= Math.floor((ph.x + r) / 32); i++) {
+      for (let j = Math.floor((ph.z - r) / 32); j <= Math.floor((ph.z + r) / 32); j++) {
+        for (const o of this.obstacleGrid.get(i * 65536 + j) ?? []) {
+          if (seen.has(o)) continue;
+          seen.add(o);
+          const cx = clamp(ph.x, o.x - o.hw, o.x + o.hw);
+          const cz = clamp(ph.z, o.z - o.hd, o.z + o.hd);
+          let nx = ph.x - cx;
+          let nz = ph.z - cz;
+          let d = Math.hypot(nx, nz);
+          if (d >= r) continue;
+          if (d < 1e-6) {
+            // Centre inside the box: out through the nearest side.
+            const ex = o.hw - Math.abs(ph.x - o.x);
+            const ez = o.hd - Math.abs(ph.z - o.z);
+            [nx, nz] = ex < ez ? [Math.sign(ph.x - o.x) || 1, 0] : [0, Math.sign(ph.z - o.z) || 1];
+            d = -Math.min(ex, ez);
+          } else {
+            nx /= d;
+            nz /= d;
+          }
+          ph.x += nx * (r - d);
+          ph.z += nz * (r - d);
+          const into = ph.vx * nx + ph.vz * nz;
+          if (into < 0) {
+            ph.vx -= into * nx * 1.25;
+            ph.vz -= into * nz * 1.25;
+            impact = Math.max(impact, -into);
+          }
+        }
+      }
+    }
+    // The edge of the map.
+    const b = ground.bounds;
+    for (const [axis, vel, centre] of [
+      ['x', 'vx', b.cx],
+      ['z', 'vz', b.cz],
+    ] as const) {
+      const off = ph[axis] - centre;
+      if (Math.abs(off) > b.half) {
+        ph[axis] = centre + Math.sign(off) * b.half;
+        if (Math.sign(ph[vel]) === Math.sign(off)) {
+          impact = Math.max(impact, Math.abs(ph[vel]));
+          ph[vel] = 0;
+        }
+      }
+    }
+    if (impact > 0) this.track.project(ph.x, ph.z, pr.index, pr);
+    // On the road: its surface. Anywhere else: the ground (and the slope under the car, for the
+    // engine and the body's pitch). Off the road the car isn't "on" the track, so pickups and the
+    // AI's traffic planning leave it alone.
+    if (Math.abs(pr.lateral) > this.track.wallOffset + 0.5) {
+      const fx = Math.sin(ph.heading);
+      const fz = Math.cos(ph.heading);
+      const ahead = ground.surfaceAt(ph.x + fx * 1.5, ph.z + fz * 1.5);
+      const behind = ground.surfaceAt(ph.x - fx * 1.5, ph.z - fz * 1.5);
+      pr.y = ground.surfaceAt(ph.x, ph.z);
+      pr.slope = (ahead - behind) / 3;
+      pr.heading = ph.heading;
+      pr.lateral = 1000;
+    }
+    ph.y = pr.y;
+    return impact;
   }
 
   /** The player drives through a pickup: a blue bottle tops up the tank, a gold one is a super boost. */

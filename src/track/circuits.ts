@@ -177,3 +177,26 @@ export const IZU_COAST: TrackLayout = {
     { x: -650, z: 75, radius: 72, y: 5 },
   ],
 };
+
+/** The free drive map: a huge ring road round a city, mountains all round (see FREE_ROAM_DEF). */
+export const FREE_ROAM: TrackLayout = {
+  name: 'Free Roam',
+  width: 13,
+  wallMargin: 0.8,
+  sampleSpacing: 2,
+  start: { x: -900, z: 1480 },
+  vertices: [
+    { x: -1800, z: 1400, radius: 160, y: 2 },
+    { x: 0, z: 1550, radius: 260, y: 3 },
+    { x: 1700, z: 1300, radius: 200, y: 4 },
+    { x: 2000, z: 200, radius: 220, y: 8 },
+    { x: 1500, z: -700, radius: 120, y: 18 },
+    { x: 1900, z: -1500, radius: 110, y: 55 },
+    { x: 700, z: -1900, radius: 180, y: 90 },
+    { x: -300, z: -1300, radius: 140, y: 45 },
+    { x: -1100, z: -1900, radius: 120, y: 60 },
+    { x: -2000, z: -1200, radius: 200, y: 40 },
+    { x: -1600, z: -200, radius: 160, y: 14 },
+    { x: -2200, z: 600, radius: 170, y: 5 },
+  ],
+};

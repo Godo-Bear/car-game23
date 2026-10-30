@@ -48,6 +48,8 @@ export interface CityScene {
   /** Zebra crossings (with signals) across the circuit near these points. */
   crossings: [number, number][];
   fujiAt: [number, number] | null;
+  /** Free drive: buildings on every lot (not just by a circuit), some City Kit ones, pale roofs. */
+  bright?: boolean;
 }
 
 export function placeLamps(track: TrackPath): Lamp[] {
@@ -70,8 +72,18 @@ const WALL_COLORS = [0xd9d2c3, 0xc9c3b8, 0xe6e1d6, 0xb8b4ad, 0xcdbba0, 0xa9b4bd,
 const KIT_RANGE = 150;
 const STYLES: Style[] = ['office', 'residential', 'glass', 'old'];
 
+/** Ground plan of something solid a free-roaming car can hit (axis-aligned box, half sizes). */
+export interface Footprint {
+  x: number;
+  z: number;
+  hw: number;
+  hd: number;
+}
+
 export class City {
   readonly group = new THREE.Group();
+  /** Buildings and landmarks, for collisions in free drive. */
+  readonly footprints: Footprint[] = [];
   /** Neon signs close enough to the circuit to reflect in the wet road at night. */
   readonly streakLights: StreakLight[] = [];
   private readonly beacon: THREE.MeshBasicMaterial;
@@ -152,12 +164,15 @@ export class City {
     const cell = 32;
     let signIndex = 0;
     // Room around the landmarks.
-    const landmarks = [
+    const landmarks: { x: number; z: number; r: number }[] = [
       { ...scene.tower, r: 70 },
       ...(scene.supertall ? [{ ...scene.supertall, r: 45 }] : []),
       ...(scene.castle ? [{ ...scene.castle, r: 95 }] : []),
       ...(scene.ferrisWheel ? [{ ...scene.ferrisWheel, r: scene.ferrisWheel.radius + 20 }] : []),
     ];
+    // The landmarks' solid bases (Tokyo Tower's legs, the castle's walls...).
+    for (const l of landmarks) this.footprints.push({ x: l.x, z: l.z, hw: l.r * 0.42, hd: l.r * 0.42 });
+    if (scene.skytree) this.footprints.push({ x: scene.skytree.x, z: scene.skytree.z, hw: 16, hd: 16 });
     for (let gx = b.minX - 420; gx <= b.maxX + 420; gx += cell) {
       for (let gz = b.minZ - 420; gz <= scene.bayZ - 20; gz += cell) {
         const cx = gx + (rng() - 0.5) * 6;
@@ -177,7 +192,8 @@ export class City {
 
         let h = scene.height(cx, cz, rng);
         if (dist > 320) h *= 0.75;
-        if (kit && dist - r < KIT_RANGE && h < 140) {
+        this.footprints.push({ x: cx, z: cz, hw: w / 2, hd: d / 2 });
+        if (kit && (scene.bright ? rng() < 0.12 : dist - r < KIT_RANGE) && h < (scene.bright ? 120 : 140)) {
           // A City Kit building on the lot, its front to the circuit.
           h = placeKitBuilding(kit, rng, cx, cz, w, d, h, nx, nz, kitSolid, kitWindows);
         } else {
@@ -306,7 +322,7 @@ export class City {
       this.facadeMats.push(mat);
       this.group.add(new THREE.Mesh(builders[style].build(), mat));
     }
-    this.group.add(new THREE.Mesh(roofs.build(), new THREE.MeshLambertMaterial({ color: 0x24252b })));
+    this.group.add(new THREE.Mesh(roofs.build(), new THREE.MeshLambertMaterial({ color: scene.bright ? 0x8a8b8f : 0x24252b })));
     if (kitSolid.length) {
       const solid = new THREE.MeshLambertMaterial({ vertexColors: true });
       applyContactShading(solid);
@@ -347,7 +363,7 @@ export class City {
     });
 
     this.buildLamps(track, lamps);
-    this.buildGround();
+    if (!scene.bright) this.buildGround();
     this.buildTokyoTower();
     if (scene.skytree) this.buildSkytree(scene.skytree);
     if (scene.ferrisWheel) this.buildFerrisWheel(scene.ferrisWheel);

@@ -3,6 +3,14 @@
 A Forza-inspired 3D racing game set in Japan — city streets, a mountain pass and cherry-blossom
 countryside, by day, at sunset or at night — running in the browser and hosted on Cloudflare.
 
+- **Free drive (Forza-style):** unlocks once you've finished 3 career events (any position; the
+  *Free Drive* card on Home shows your progress, e.g. 2/3). Then drive anywhere on a big open
+  map: a city in a basin (winding streets, avenues, Tokyo Tower, the Skytree, a castle, a big wheel
+  and supertall towers), a ring road round it joined by slip roads from the avenues, mountains all
+  round and dirt trails through the hills. You can leave the road anywhere (the ground under the
+  car is followed everywhere); buildings and landmarks are solid and the edge of the map stops you.
+  A few cars cruise the ring road; nitro bottles sit along it. No laps or timing: *R* puts you
+  back on your wheels where you are, *Esc* for the menu (Resume / Settings / Quit to home).
 - **Touch screen support:** play on a phone or tablet with on-screen steering, pedals, drift and
   nitro buttons (see *Controls*).
 - **Core racing loop:** cinematic fly-in over the grid, F1-style start lights, lap counting, live

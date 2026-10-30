@@ -12,10 +12,10 @@ import { createRng } from '../core/math';
 import { type LocalSettings, SettingsStore } from '../core/Settings';
 import { neutralControls } from '../physics/VehiclePhysics';
 import { formatTime, type RaceEvent } from '../race/RaceManager';
-import { gridSlot, RaceSimulation } from '../race/RaceSimulation';
+import { type FreeRoamGround, gridSlot, RaceSimulation } from '../race/RaceSimulation';
 import { RenderPipeline } from '../render/RenderPipeline';
 import type { TrackPath } from '../track/TrackPath';
-import { TRACKS } from '../track/tracks';
+import { TRACKS, WORLDS, type WorldId } from '../track/tracks';
 import { GamepadMenu } from '../ui/GamepadMenu';
 import { Hud } from '../ui/Hud';
 import { Minimap } from '../ui/Minimap';
@@ -36,7 +36,7 @@ import { PerformanceMonitor } from './PerformanceMonitor';
 import { RaceFeedback } from './RaceFeedback';
 import { TrackLoader } from './TrackLoader';
 
-type State = 'home' | 'intro' | 'countdown' | 'racing' | 'finished';
+type State = 'home' | 'intro' | 'countdown' | 'racing' | 'finished' | 'freedrive';
 
 const LIGHT_INTERVAL = 0.8;
 /** The homescreen backdrop: cars racing over the Hakone pass on a sunny day. */
@@ -68,7 +68,7 @@ export class Game {
   private line!: RacingLine;
   private world: World | null = null;
   /** Built worlds are kept (except on Low quality) so going back to a circuit is instant. */
-  private readonly worlds = new Map<TrackId, World>();
+  private readonly worlds = new Map<WorldId, World>();
   private lighting!: Lighting;
   private timeOfDay: TimeOfDay = HOME_TIME;
   /** The player's real headlights (only lit after dark). */
@@ -126,6 +126,7 @@ export class Game {
         onTryOn: (setup) => this.onTryOn(setup),
         onResume: () => this.setPaused(false),
         onRestart: () => void this.startRace(this.screens.settings),
+        onFreeDrive: () => void this.startFreeDrive(),
         onQuit: () => void this.goHome(),
         onModalChange: (open) => {
           this.modalOpen = open;
@@ -166,7 +167,7 @@ export class Game {
   }
 
   private get inRace(): boolean {
-    return this.state === 'intro' || this.state === 'countdown' || this.state === 'racing';
+    return this.state === 'intro' || this.state === 'countdown' || this.state === 'racing' || this.state === 'freedrive';
   }
 
   // ---------------------------------------------------------------- settings
@@ -242,14 +243,14 @@ export class Game {
   // ---------------------------------------------------------------- tracks & lighting
 
   /** Build (or reuse) the circuit and swap in its scenery. */
-  private async loadTrack(id: TrackId): Promise<void> {
+  private async loadTrack(id: WorldId): Promise<void> {
     const line = this.loader.line(id);
     if (this.world?.def.id !== id) await this.swapWorld(id, line);
     this.line = await line;
   }
 
-  private async swapWorld(id: TrackId, line: Promise<RacingLine>): Promise<void> {
-    const def = TRACKS[id];
+  private async swapWorld(id: WorldId, line: Promise<RacingLine>): Promise<void> {
+    const def = WORLDS[id];
     this.world?.group.removeFromParent();
     let world = this.worlds.get(id);
     const track = this.loader.track(id);
@@ -297,7 +298,7 @@ export class Game {
     return { ...this.screens.settings, laps: 99, opponents: 5, difficulty: 'normal' };
   }
 
-  private createSimulation(settings: PlayerSettings, home = false): void {
+  private createSimulation(settings: PlayerSettings, home = false, freeRoam?: FreeRoamGround): void {
     const total = settings.opponents + 1;
     const car = CARS[settings.car];
     this.simCar = settings.car;
@@ -318,6 +319,7 @@ export class Game {
         carSpec: upgradedSpec(car.spec, upgradesOf(this.account.wallet, settings.car)),
         aiGrip: car.aiGrip,
         aiCars: field.map((f) => ({ spec: f.car.spec, aiGrip: f.car.aiGrip, power: f.power })),
+        freeRoam,
       },
       this.line,
     );
@@ -363,6 +365,8 @@ export class Game {
     this.state = 'home';
     this.paused = false;
     this.timeScale = 1;
+    this.hud.setFreeDrive(false);
+    this.feedback.freeDrive = false;
     this.cine.endIntro();
     showCinematic(null);
     this.hud.setVisible(false);
@@ -392,6 +396,8 @@ export class Game {
     this.audio.unlock();
     this.screens.hideAll();
     this.feedback.quiet();
+    this.hud.setFreeDrive(false);
+    this.feedback.freeDrive = false;
     const fresh = !this.worlds.has(settings.track);
     await Promise.all([this.loadTrack(settings.track), loadCarAssets()]);
     this.applyTimeOfDay(settings.timeOfDay);
@@ -424,6 +430,58 @@ export class Game {
     this.state = 'intro';
     this.hud.setVisible(false);
     this.busy = false;
+  }
+
+  /**
+   * Free drive: the open map - the city, the ring road, the mountains and the dirt trails - with
+   * a few cars cruising the ring road. No laps or timing; Esc for the menu.
+   */
+  private async startFreeDrive(): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
+    this.audio.unlock();
+    this.screens.hideAll();
+    this.feedback.quiet();
+    const fresh = !this.worlds.has('freeroam');
+    await Promise.all([this.loadTrack('freeroam'), loadCarAssets()]);
+    const map = this.world!.freeRoam!;
+    this.applyTimeOfDay('day');
+    // Traffic: the AI lap the ring road (they keep to it); you can go anywhere.
+    this.createSimulation({ ...this.screens.settings, laps: 99, opponents: 6, difficulty: 'easy' }, false, map);
+    for (const car of this.sim.cars) car.autopilot = !car.isPlayer;
+    this.sim.startRace();
+    this.placeAtSpawn();
+    if (fresh) await this.compile();
+    setLoading(null);
+    this.cam.mode = this.screens.settings.camera;
+    this.paused = false;
+    this.timeScale = 1;
+    this.accumulator = 0;
+    this.cam.snap();
+    this.cam.follow(this.playerModel, 0, 0);
+    this.hud.clearMessage();
+    this.hud.setFreeDrive(true);
+    this.feedback.freeDrive = true;
+    this.input.clearActions();
+    this.state = 'freedrive';
+    this.hud.setVisible(true);
+    this.hud.showMessage('FREE DRIVE', 2.5, 'gold');
+    this.busy = false;
+  }
+
+  /** Put the player at the free drive start (the middle of town). */
+  private placeAtSpawn(): void {
+    const map = this.world?.freeRoam;
+    if (!map) return;
+    const { x, z, heading } = map.spawn;
+    const car = this.sim.player;
+    car.physics.place(x, z, heading, map.surfaceAt(x, z));
+    this.sim.track.project(x, z, -1, car.proj);
+    car.prevX = x;
+    car.prevZ = z;
+    car.prevY = car.physics.y;
+    car.prevHeading = heading;
+    this.cam.snap();
   }
 
   /**
@@ -462,6 +520,7 @@ export class Game {
   private setPaused(paused: boolean, showMenu = true): void {
     if (this.state === 'home') return;
     this.paused = paused;
+    this.screens.freeDrive = this.state === 'freedrive';
     this.screens.showPause(paused && showMenu);
     if (paused) {
       this.feedback.quiet();
@@ -512,7 +571,7 @@ export class Game {
       if (this.state === 'countdown') this.updateCountdown(dt);
       this.accumulator += simDt;
       const step = RaceSimulation.STEP;
-      const input = this.state === 'countdown' || this.state === 'racing' ? controls : neutralControls();
+      const input = this.state === 'countdown' || this.state === 'racing' || this.state === 'freedrive' ? controls : neutralControls();
       while (this.accumulator >= step) {
         this.accumulator -= step;
         const events = this.sim.step(input);
@@ -525,7 +584,7 @@ export class Game {
     this.syncCarModels(alpha, simDt);
     this.effects.update(this.effectCars, simDt, this.cam.camera, this.pipeline.renderer.domElement.height);
     this.pickupView.update(this.sim.time, this.elapsed);
-    const blur = running && !home ? this.feedback.update(this.sim, this.state === 'racing', this.frameImpact, simDt) : 0;
+    const blur = running && !home ? this.feedback.update(this.sim, this.state === 'racing' || this.state === 'freedrive', this.frameImpact, simDt) : 0;
     if (running && !home && this.frameImpact > 3) this.input.rumble(this.frameImpact / 15);
     this.frameImpact = 0;
     const boosting = running && !home && this.sim.player.physics.nitroActive;
@@ -556,7 +615,7 @@ export class Game {
     this.lighting.update(this.elapsed, this.cam.camera);
     this.updateSunGlare();
 
-    if (this.state === 'countdown' || this.state === 'racing' || this.state === 'finished') {
+    if (this.state === 'countdown' || this.state === 'racing' || this.state === 'finished' || this.state === 'freedrive') {
       this.hud.update(this.sim, dt);
       this.minimap.draw(this.sim);
     }
@@ -615,6 +674,12 @@ export class Game {
       this.screens.settings = { ...this.screens.settings, camera: mode };
       void this.account.saveSettings({ camera: mode });
     }
+    if (input.consume('reset') && this.state === 'freedrive') {
+      // Back on your wheels where you are (stopped).
+      const p = this.sim.player.physics;
+      p.place(p.x, p.z, p.heading, p.y);
+      this.cam.snap();
+    }
     if (input.consume('reset') && this.state === 'racing') {
       this.sim.respawn(this.sim.player);
       this.cam.snap();
@@ -647,6 +712,8 @@ export class Game {
     const playerId = this.sim.player.id;
     for (const e of events) {
       if (e.racerId !== playerId) continue;
+      // Free drive has no laps: only pickups and boosts count.
+      if (this.state === 'freedrive' && e.type !== 'pickup' && e.type !== 'boost') continue;
       if (e.type === 'lap' && e.lap < this.sim.race.totalLaps) {
         this.hud.showMessage(`LAP ${e.lap}  ${formatTime(e.time)}`, 2.5, e.best && e.lap > 1 ? 'gold' : 'small');
       } else if (e.type === 'finalLap') {

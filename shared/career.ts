@@ -70,6 +70,19 @@ export function bestResult(wallet: Wallet, id: string): number | undefined {
   return wallet.events[id];
 }
 
+/** Career events needed (any finishing position) to unlock free drive. */
+export const FREE_DRIVE_EVENTS = 3;
+
+/** How many different career events have been raced to the finish. */
+export function eventsFinished(wallet: Wallet): number {
+  return CAREER_EVENT_IDS.filter((id) => wallet.events[id] !== undefined).length;
+}
+
+/** Free drive opens once you've finished three career events. */
+export function freeDriveUnlocked(wallet: Wallet): boolean {
+  return eventsFinished(wallet) >= FREE_DRIVE_EVENTS;
+}
+
 /** The first event is open; each later one opens with a podium on the one before. */
 export function eventUnlocked(wallet: Wallet, id: string): boolean {
   const i = CAREER_EVENT_IDS.indexOf(id);

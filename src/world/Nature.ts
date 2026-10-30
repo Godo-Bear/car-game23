@@ -73,6 +73,15 @@ export interface RuralScene {
   particles?: ParticleKind;
   /** Grass tufts (null: none, e.g. under snow). */
   grass: GrassStyle | null;
+  /** Vegetation multiplier (big maps). */
+  density?: number;
+  /** Off-road dirt trails (x, z polylines): bare ground you can drive in free drive. */
+  trails?: [number, number][][];
+  /** Free drive: a city in the middle of the map (no trees or villages inside this radius). */
+  cityRadius?: number;
+  city?: import('./City').CityScene;
+  /** Free drive: slip roads (x, y, z polylines) the ground is shaped to. */
+  connectors?: [number, number, number][][];
 }
 
 // ---------------------------------------------------------------- noise// ---------------------------------------------------------------- noise
@@ -108,6 +117,76 @@ export function fbm(x: number, z: number, seed = 1, octaves = 4): number {
     freq *= 2;
   }
   return sum;
+}
+
+// ---------------------------------------------------------------- polylines
+
+/** x, z and a height. */
+type Point3 = [number, number, number];
+
+/**
+ * Polylines (slip roads, dirt trails) cut into short pieces on a grid, for "how far is the
+ * nearest one, and how high is it there" queries at terrain-building speed.
+ */
+class SegmentIndex {
+  private readonly cell = 32;
+  private readonly buckets = new Map<number, [number, number, number, number, number, number][]>();
+
+  constructor(lines: Point3[][]) {
+    for (const P of lines) {
+      for (let i = 0; i + 1 < P.length; i++) {
+        const [ax, az, ay] = P[i];
+        const [bx, bz, by] = P[i + 1];
+        const pieces = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 16));
+        for (let k = 0; k < pieces; k++) {
+          const t0 = k / pieces;
+          const t1 = (k + 1) / pieces;
+          const seg: [number, number, number, number, number, number] = [
+            ax + (bx - ax) * t0,
+            az + (bz - az) * t0,
+            ay + (by - ay) * t0,
+            ax + (bx - ax) * t1,
+            az + (bz - az) * t1,
+            ay + (by - ay) * t1,
+          ];
+          const key = this.key(Math.floor((seg[0] + seg[3]) / 2 / this.cell), Math.floor((seg[1] + seg[4]) / 2 / this.cell));
+          const list = this.buckets.get(key);
+          if (list) list.push(seg);
+          else this.buckets.set(key, [seg]);
+        }
+      }
+    }
+  }
+
+  private key(i: number, j: number): number {
+    return i * 131072 + j;
+  }
+
+  /** Nearest piece within `reach` metres: its distance and height there. */
+  nearest(x: number, z: number, reach: number): { d: number; y: number } | null {
+    const r = Math.ceil((reach + 8) / this.cell);
+    const ci = Math.floor(x / this.cell);
+    const cj = Math.floor(z / this.cell);
+    let bestD = reach;
+    let bestY = 0;
+    let found = false;
+    for (let i = ci - r; i <= ci + r; i++) {
+      for (let j = cj - r; j <= cj + r; j++) {
+        for (const [ax, az, ay, bx, bz, by] of this.buckets.get(this.key(i, j)) ?? []) {
+          const dx = bx - ax;
+          const dz = bz - az;
+          const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+          const d = Math.hypot(x - ax - dx * t, z - az - dz * t);
+          if (d < bestD) {
+            bestD = d;
+            bestY = ay + (by - ay) * t;
+            found = true;
+          }
+        }
+      }
+    }
+    return found ? { d: bestD, y: bestY } : null;
+  }
 }
 
 // ---------------------------------------------------------------- road proximity field
@@ -224,6 +303,7 @@ export interface ThemeConfig {
 }
 
 const C = (hex: number) => new THREE.Color(hex);
+const DIRT = new THREE.Color(0x6e5232);
 
 interface TerrainOptions {
   seed: number;
@@ -340,7 +420,10 @@ export class NatureWorld {
   private readonly field: RoadField;
   private readonly corridor: number;
   /** Terrain extent; heights taper down to the far ground near its edge (no visible wall). */
-  private readonly extent: { cx: number; cz: number; half: number };
+  readonly extent: { cx: number; cz: number; half: number };
+  /** Free drive map: slip roads and dirt trails, indexed for quick distance queries. */
+  private slipIndex: SegmentIndex | null = null;
+  private trailIndex: SegmentIndex | null = null;
   private readonly particles: FallingParticles | null;
   private readonly lanternMat: THREE.MeshBasicMaterial | null = null;
   private readonly lanternGlow: THREE.PointsMaterial | null = null;
@@ -382,7 +465,11 @@ export class NatureWorld {
 
     this.buildTerrain();
     this.buildWater();
-    if (this.cfg.fujiAt) this.addFeature(new MountFuji(...this.cfg.fujiAt, () => SUN_DIRECTION));
+    if (this.cfg.fujiAt) {
+      const fuji = new MountFuji(...this.cfg.fujiAt, () => SUN_DIRECTION);
+      if (scene.cityRadius) fuji.group.scale.set(1.5, 1.9, 1.5);
+      this.addFeature(fuji);
+    }
     this.placeTokyoTower();
     this.placeModelLandmarks();
     this.buildDistantRidges(rng);
@@ -416,6 +503,7 @@ export class NatureWorld {
 
     if (theme === 'mountain') this.buildForest(rng, scene.vegetation);
     else this.buildBlossoms(rng, scene.vegetation);
+    if (scene.cityRadius) this.buildForest(rng, 'cedar');
     if (scene.torii) this.buildLakeTorii();
     if (scene.pagoda) this.buildPagoda();
     if (theme === 'mountain') {
@@ -566,6 +654,12 @@ export class NatureWorld {
   }
 
   private isBlocked(x: number, z: number): boolean {
+    if (this.scene.trails && this.trailDistance(x, z) < 7) return true;
+    if (this.scene.cityRadius && Math.hypot(x, z) < this.scene.cityRadius + 40) return true;
+    if (this.scene.connectors) {
+      const c = this.connectorAt(x, z);
+      if (c && c.d < 14) return true;
+    }
     if (this.railZ !== null && Math.abs(z - this.railZ) < 14) return true;
     return this.blocked.some((b) => (b.x - x) ** 2 + (b.z - z) ** 2 < b.r * b.r);
   }
@@ -703,6 +797,19 @@ export class NatureWorld {
     for (const m of this.treeMeshes) m.castShadow = grass === 2;
   }
 
+  /** Nearest slip road within 64 m (distance and its height there), or null. */
+  connectorAt(x: number, z: number): { d: number; y: number } | null {
+    this.slipIndex ??= new SegmentIndex((this.scene.connectors ?? []).map((P) => P.map(([px, py, pz]) => [px, pz, py] as Point3)));
+    const hit = this.slipIndex.nearest(x, z, 64);
+    return hit ? { d: hit.d, y: hit.y } : null;
+  }
+
+  /** Distance to the nearest dirt trail (Infinity beyond 32 m). */
+  trailDistance(x: number, z: number): number {
+    this.trailIndex ??= new SegmentIndex((this.scene.trails ?? []).map((P) => P.map(([px, pz]) => [px, pz, 0] as Point3)));
+    return this.trailIndex.nearest(x, z, 32)?.d ?? Infinity;
+  }
+
   /** Terrain height at a world position (road-conforming). */
   heightAt(x: number, z: number): number {
     const { d, y, field } = this.field.query(x, z);
@@ -716,6 +823,15 @@ export class NatureWorld {
     const L = this.cfg.lake;
     const e = ((x - L.x) / L.rx) ** 2 + ((z - L.z) / L.rz) ** 2;
     if (e < 1.6) h = lerp(h, this.cfg.waterLevel - 9, smoothstep(1.6, 0.75, e) * out);
+    if (this.scene.cityRadius) {
+      // Free drive: the city basin is flat (but the ring road keeps its own height).
+      const R = this.scene.cityRadius;
+      const flat = smoothstep(R + 260, R + 20, Math.hypot(x, z)) * smoothstep(corridor + 6, corridor + 60, d);
+      h = lerp(h, -0.02, flat);
+      // ...and the ground follows the slip roads, with gentle banks either side.
+      const c = this.connectorAt(x, z);
+      if (c) h = lerp(h, c.y - 0.25, smoothstep(40, 9, c.d));
+    }
     const { cx, cz, half } = this.extent;
     const edge = Math.max(Math.abs(x - cx), Math.abs(z - cz));
     return lerp(h, this.cfg.waterLevel - 6, smoothstep(half - 380, half, edge));
@@ -751,12 +867,17 @@ export class NatureWorld {
         const hz = heights[Math.min(j + 1, n) * verts + i] - heights[Math.max(j - 1, 0) * verts + i];
         const slope = Math.hypot(hx, hz) / (2 * res);
         this.cfg.color(heights[k], slope, pos[k * 3], pos[k * 3 + 2], dists[k], color);
+        const trail = this.trailDistance(pos[k * 3], pos[k * 3 + 2]);
+        if (trail < 9) color.lerp(DIRT, smoothstep(9, 4, trail));
         col.set([color.r, color.g, color.b], k * 3);
         // Where grass grows: not on rock, beaches, under water or high snow.
         const wet = smoothstep(this.cfg.waterLevel + this.cfg.sandLine - 0.4, this.cfg.waterLevel + this.cfg.sandLine + 0.6, heights[k]);
         const rock = 1 - smoothstep(...this.cfg.rockSlope, slope);
         const snow = 1 - smoothstep(140, 175, heights[k]);
-        field.set([heights[k], dists[k], wet * rock * snow * this.cfg.grassCover, 0], k * 4);
+        let town = this.scene.cityRadius ? smoothstep(this.scene.cityRadius + 10, this.scene.cityRadius + 60, Math.hypot(pos[k * 3], pos[k * 3 + 2])) : 1;
+        const slip = this.scene.connectors ? this.connectorAt(pos[k * 3], pos[k * 3 + 2]) : null;
+        if (slip) town *= smoothstep(9, 13, slip.d);
+        field.set([heights[k], dists[k], wet * rock * snow * this.cfg.grassCover * smoothstep(4, 8, trail) * town, 0], k * 4);
       }
     }
     const index = new Uint32Array(n * n * 6);
@@ -810,7 +931,7 @@ export class NatureWorld {
     const base = this.cfg.ridgeColor;
     for (let k = 0; k < 46; k++) {
       const a = (k / 46) * Math.PI * 2 + rng() * 0.1;
-      const r = 2100 + rng() * 900;
+      const r = Math.max(2100, this.extent.half + 400) + rng() * 900;
       const h = this.cfg.ridgeHeight + rng() * 300;
       color.setHex(base).offsetHSL(0, 0, (rng() - 0.5) * 0.08);
       builder.cylinder(cx + Math.cos(a) * r, -20, cz + Math.sin(a) * r, 520 + rng() * 380, 30, h, 7, color);
@@ -827,6 +948,7 @@ export class NatureWorld {
    */
   private scatter(count: number, pick: () => [number, number, number] | null, shape: TreeShape, rng: () => number): void {
     const placed: [number, number, number][] = [];
+    count = Math.round(count * (this.scene.density ?? 1));
     for (let tries = 0; tries < count * 4 && placed.length < count; tries++) {
       const p = pick();
       if (p) placed.push(p);

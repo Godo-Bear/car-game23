@@ -22,6 +22,8 @@ export class RaceFeedback {
   /** Wall-contact counts seen last frame, per car (a frame spans several physics steps). */
   private readonly lastContacts = new WeakMap<object, number>();
   private scrapeHold = 0;
+  /** Free drive: no wrong way (there's no right way). */
+  freeDrive = false;
 
   constructor(
     private readonly hud: Hud,
@@ -124,6 +126,6 @@ export class RaceFeedback {
     const along = p.vx * player.proj.tx + p.vz * player.proj.tz;
     if (along < -3) this.wrongWayTime += dt;
     else this.wrongWayTime = Math.max(0, this.wrongWayTime - dt * 2);
-    if (this.wrongWayTime > 1.2) this.hud.showMessage('WRONG WAY', 0.3, 'warn');
+    if (this.wrongWayTime > 1.2 && !this.freeDrive) this.hud.showMessage('WRONG WAY', 0.3, 'warn');
   }
 }

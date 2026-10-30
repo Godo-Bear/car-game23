@@ -1,12 +1,11 @@
 /// <reference lib="webworker" />
-import type { TrackId } from '../../shared/api';
 import { relaxRacingLine } from '../ai/RacingLine';
 import { TrackPath } from './TrackPath';
-import { TRACKS } from './tracks';
+import { WORLDS, type WorldId } from './tracks';
 
 /** Computes racing lines off the main thread so loading a circuit doesn't freeze the page. */
-self.onmessage = (e: MessageEvent<TrackId>) => {
+self.onmessage = (e: MessageEvent<WorldId>) => {
   const id = e.data;
-  const offsets = relaxRacingLine(new TrackPath(TRACKS[id].layout));
+  const offsets = relaxRacingLine(new TrackPath(WORLDS[id].layout));
   (self as unknown as DedicatedWorkerGlobalScope).postMessage({ id, offsets }, [offsets.buffer]);
 };

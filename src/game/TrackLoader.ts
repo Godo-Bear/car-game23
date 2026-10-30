@@ -1,7 +1,6 @@
-import type { TrackId } from '../../shared/api';
 import { RacingLine, relaxRacingLine } from '../ai/RacingLine';
 import { TrackPath } from '../track/TrackPath';
-import { TRACKS } from '../track/tracks';
+import { TRACKS, WORLDS, type WorldId } from '../track/tracks';
 
 const CACHE_KEY = 'tokyo-circuit.line.v1.';
 
@@ -12,15 +11,15 @@ const CACHE_KEY = 'tokyo-circuit.line.v1.';
  * device so later visits skip the work entirely.
  */
 export class TrackLoader {
-  private readonly tracks = new Map<TrackId, TrackPath>();
-  private readonly lines = new Map<TrackId, Promise<RacingLine>>();
-  private readonly waiting = new Map<TrackId, (offsets: Float32Array) => void>();
+  private readonly tracks = new Map<WorldId, TrackPath>();
+  private readonly lines = new Map<WorldId, Promise<RacingLine>>();
+  private readonly waiting = new Map<WorldId, (offsets: Float32Array) => void>();
   private worker: Worker | null = null;
 
   constructor() {
     try {
       this.worker = new Worker(new URL('../track/racingLine.worker.ts', import.meta.url), { type: 'module' });
-      this.worker.onmessage = (e: MessageEvent<{ id: TrackId; offsets: Float32Array }>) => {
+      this.worker.onmessage = (e: MessageEvent<{ id: WorldId; offsets: Float32Array }>) => {
         this.waiting.get(e.data.id)?.(e.data.offsets);
         this.waiting.delete(e.data.id);
       };
@@ -30,16 +29,16 @@ export class TrackLoader {
     }
   }
 
-  track(id: TrackId): TrackPath {
+  track(id: WorldId): TrackPath {
     let track = this.tracks.get(id);
     if (!track) {
-      track = new TrackPath(TRACKS[id].layout);
+      track = new TrackPath(WORLDS[id].layout);
       this.tracks.set(id, track);
     }
     return track;
   }
 
-  line(id: TrackId): Promise<RacingLine> {
+  line(id: WorldId): Promise<RacingLine> {
     let line = this.lines.get(id);
     if (!line) {
       const track = this.track(id);
@@ -65,7 +64,7 @@ export class TrackLoader {
 
   /** Queue the other circuits so switching to them later is quick. */
   prefetchAll(): void {
-    for (const id of Object.keys(TRACKS) as TrackId[]) void this.line(id);
+    for (const id of Object.keys(TRACKS) as WorldId[]) void this.line(id);
   }
 
   /** The worker failed to start (e.g. blocked by policy): finish outstanding work here. */

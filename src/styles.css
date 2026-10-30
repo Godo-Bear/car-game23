@@ -2369,7 +2369,7 @@ ul.quest-list {
     z-index: 1;
   }
 }
-/* Short landscape phones: the garage/profile shortcuts are in the bottom bar anyway. */
+/* Short landscape phones: a slimmer bottom bar, compact cards. */
 @media (max-height: 480px) {
   :root {
     --nav-h: 52px;
@@ -2405,8 +2405,15 @@ ul.quest-list {
     height: 34px;
     bottom: 8px;
   }
+  /* (Free drive stays reachable; the garage is in the bottom bar anyway.) */
   .home-row {
+    grid-template-columns: 1fr;
+  }
+  .home-card.mini.garage {
     display: none;
+  }
+  .home-card.mini {
+    min-height: 0;
   }
   .home-card.quick {
     min-height: 0;
@@ -2515,4 +2522,21 @@ html.gamepad .pad-focus:focus {
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
+}
+
+/* ---------- Free drive ---------- */
+.home-card.free-drive {
+  background: linear-gradient(120deg, rgba(10, 90, 120, 0.92), rgba(30, 160, 200, 0.5));
+}
+.home-card.free-drive.locked {
+  background: linear-gradient(120deg, rgba(40, 40, 60, 0.92), rgba(70, 70, 95, 0.6));
+}
+.home-card.free-drive.locked b {
+  opacity: 0.75;
+}
+/* No positions, laps or timing on screen in free drive. */
+.hud.free .hud-top-left,
+.hud.free .standings,
+.hud.free .hud-top-right {
+  display: none;
 }
