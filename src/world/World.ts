@@ -223,7 +223,7 @@ interface Street {
   lines: boolean;
 }
 
-function streetNetwork(R: number, rng: () => number) {
+export function streetNetwork(R: number, rng: () => number) {
   const streets: Street[] = [];
   const CELL = 40;
   const grid = new Map<number, [number, number, number, number, number, number][]>();

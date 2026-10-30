@@ -27,6 +27,7 @@ import { loadCarAsset, loadCarAssets, onCarAssetLoaded } from '../vehicles/impor
 import { PickupView } from '../vehicles/PickupView';
 import { Sparks } from '../vehicles/Sparks';
 import { type EffectsCar, TireEffects } from '../vehicles/TireEffects';
+import { FREE_DRIVE_MAP, FREE_DRIVE_SPOTS } from '../world/freeDrive';
 import { Lighting } from '../world/Lighting';
 import { loadProps, loadScenery } from '../world/sceneryModels';
 import { sceneProps } from '../world/scenes';
@@ -126,7 +127,7 @@ export class Game {
         onTryOn: (setup) => this.onTryOn(setup),
         onResume: () => this.setPaused(false),
         onRestart: () => void this.startRace(this.screens.settings),
-        onFreeDrive: () => void this.startFreeDrive(),
+        onFreeDrive: (spot, tod) => void this.startFreeDrive(spot, tod),
         onQuit: () => void this.goHome(),
         onModalChange: (open) => {
           this.modalOpen = open;
@@ -436,7 +437,7 @@ export class Game {
    * Free drive: the open map - the city, the ring road, the mountains and the dirt trails - with
    * a few cars cruising the ring road. No laps or timing; Esc for the menu.
    */
-  private async startFreeDrive(): Promise<void> {
+  private async startFreeDrive(spotId = 'centre', tod: TimeOfDay = 'day'): Promise<void> {
     if (this.busy) return;
     this.busy = true;
     this.audio.unlock();
@@ -445,12 +446,12 @@ export class Game {
     const fresh = !this.worlds.has('freeroam');
     await Promise.all([this.loadTrack('freeroam'), loadCarAssets()]);
     const map = this.world!.freeRoam!;
-    this.applyTimeOfDay('day');
+    this.applyTimeOfDay(tod);
     // Traffic: the AI lap the ring road (they keep to it); you can go anywhere.
     this.createSimulation({ ...this.screens.settings, laps: 99, opponents: 6, difficulty: 'easy' }, false, map);
     for (const car of this.sim.cars) car.autopilot = !car.isPlayer;
     this.sim.startRace();
-    this.placeAtSpawn();
+    this.placeAtSpawn(FREE_DRIVE_SPOTS.find((s) => s.id === spotId) ?? map.spawn);
     if (fresh) await this.compile();
     setLoading(null);
     this.cam.mode = this.screens.settings.camera;
@@ -469,11 +470,11 @@ export class Game {
     this.busy = false;
   }
 
-  /** Put the player at the free drive start (the middle of town). */
-  private placeAtSpawn(): void {
+  /** Put the player at a free drive starting place. */
+  private placeAtSpawn(at: { x: number; z: number; heading: number }): void {
     const map = this.world?.freeRoam;
     if (!map) return;
-    const { x, z, heading } = map.spawn;
+    const { x, z, heading } = at;
     const car = this.sim.player;
     car.physics.place(x, z, heading, map.surfaceAt(x, z));
     this.sim.track.project(x, z, -1, car.proj);
@@ -482,6 +483,36 @@ export class Game {
     car.prevY = car.physics.y;
     car.prevHeading = heading;
     this.cam.snap();
+  }
+
+  /**
+   * Render the free drive map picture (`node scripts/render-freedrive-map.mjs` saves it as
+   * public/freedrive/map.jpg): the whole map from straight above, north up, in daylight, covering
+   * FREE_DRIVE_MAP (so the starting-place pins line up). Size the page 16:9 first.
+   */
+  async captureFreeDriveMap(): Promise<string> {
+    this.busy = true;
+    this.screens.hideAll();
+    await this.loadTrack('freeroam');
+    this.applyTimeOfDay('day');
+    for (const m of this.carModels) m.root.visible = false;
+    this.pickupView.group.visible = false;
+    const { minX, minZ, width, height } = FREE_DRIVE_MAP;
+    const cam = new THREE.OrthographicCamera(-width / 2, width / 2, height / 2, -height / 2, 10, 6000);
+    cam.position.set(minX + width / 2, 3000, minZ + height / 2);
+    cam.up.set(0, 0, -1);
+    cam.lookAt(minX + width / 2, 0, minZ + height / 2);
+    const fog = this.scene.fog;
+    this.scene.fog = null;
+    this.world!.update(this.elapsed, 0, cam);
+    await this.compile();
+    const renderer = this.pipeline.renderer;
+    renderer.setRenderTarget(null);
+    renderer.render(this.scene, cam);
+    const data = renderer.domElement.toDataURL('image/jpeg', 0.85);
+    this.scene.fog = fog;
+    this.pickupView.group.visible = true;
+    return data;
   }
 
   /**

@@ -5,6 +5,7 @@ import { neutralControls, type VehicleControls } from '../src/physics/VehiclePhy
 import { type FreeRoamGround, RaceSimulation } from '../src/race/RaceSimulation';
 import { TrackPath } from '../src/track/TrackPath';
 import { FREE_ROAM_DEF } from '../src/track/tracks';
+import { FREE_DRIVE_SPOTS, mapFraction } from '../src/world/freeDrive';
 
 const drive = (o: Partial<VehicleControls>): VehicleControls => ({ ...neutralControls(), ...o });
 
@@ -62,5 +63,21 @@ describe('free drive', () => {
     car.physics.place(2990, 0, Math.PI / 2, 0);
     for (let t = 0; t < 3; t += RaceSimulation.STEP) sim.step(drive({ throttle: 1 }));
     expect(car.physics.x).toBeLessThanOrEqual(3000);
+  });
+
+  it('has starting places that all show on the map picture, with unique ids', () => {
+    expect(new Set(FREE_DRIVE_SPOTS.map((s) => s.id)).size).toBe(FREE_DRIVE_SPOTS.length);
+    for (const s of FREE_DRIVE_SPOTS) {
+      const [fx, fy] = mapFraction(s.x, s.z);
+      expect(fx).toBeGreaterThan(0.02);
+      expect(fx).toBeLessThan(0.98);
+      expect(fy).toBeGreaterThan(0.02);
+      expect(fy).toBeLessThan(0.98);
+    }
+    // The ring road spot really is on the ring road.
+    const track = new TrackPath(FREE_ROAM_DEF.layout);
+    const ring = FREE_DRIVE_SPOTS.find((s) => s.id === 'ring')!;
+    const p = track.project(ring.x, ring.z, -1, { index: 0, lateral: 0, distance: 0, y: 0, heading: 0, slope: 0, tx: 0, tz: 1, rx: -1, rz: 0 });
+    expect(Math.abs(p.lateral)).toBeLessThan(2);
   });
 });

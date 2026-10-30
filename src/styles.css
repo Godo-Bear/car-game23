@@ -2540,3 +2540,112 @@ html.gamepad .pad-focus:focus {
 .hud.free .hud-top-right {
   display: none;
 }
+
+/* ---------- Play: career or free drive ---------- */
+.mode-cards {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(10px, 2vh, 18px);
+  width: min(460px, 100%);
+}
+.mode-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 4px;
+  min-height: clamp(130px, 26vh, 220px);
+  padding: 18px 20px;
+  text-align: left;
+  border: 1px solid rgba(220, 160, 255, 0.35);
+  border-radius: 8px;
+  clip-path: polygon(0 0, calc(100% - 22px) 0, 100% 22px, 100% 100%, 0 100%);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.mode-card.career {
+  background:
+    linear-gradient(100deg, rgba(60, 14, 70, 0.92) 30%, rgba(60, 14, 70, 0.3)),
+    url(/career/map.jpg) center / cover;
+}
+.mode-card.free {
+  background:
+    linear-gradient(100deg, rgba(6, 60, 80, 0.92) 30%, rgba(6, 60, 80, 0.25)),
+    url(/freedrive/map.jpg) center / cover;
+}
+.mode-card.free.locked {
+  filter: grayscale(0.8);
+}
+.mode-card .tag {
+  padding: 2px 8px;
+  background: var(--gold);
+  color: #241400;
+  font-size: 11px;
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 0.06em;
+}
+.mode-card b {
+  font-size: clamp(26px, 4.4vh, 38px);
+  font-weight: 900;
+  font-style: italic;
+  text-transform: uppercase;
+}
+.mode-card small {
+  max-width: calc(100% - 70px);
+  font-size: 13px;
+  font-weight: 700;
+  opacity: 0.9;
+}
+.mode-card .go {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  display: grid;
+  place-items: center;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), #ff7a3d);
+  font-size: 18px;
+}
+.mode-card.free.locked .go {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* ---------- Free drive: pick where to start on the map ---------- */
+.hub[data-panel='freedrive'] {
+  background: linear-gradient(90deg, rgba(8, 10, 18, 0.55) 0%, rgba(8, 10, 18, 0) 34%);
+}
+.hub[data-panel='freedrive'] .hub-foot {
+  display: none;
+}
+.map-frame.free-frame {
+  background-image: url(/freedrive/map.jpg);
+}
+.pin.spot .pin-icon {
+  background: linear-gradient(180deg, #7ff0ff, #1a9dff);
+  color: #00243a;
+}
+.pin.spot .pin-icon::after {
+  border-top-color: #1a9dff;
+}
+.pin.spot .pin-label {
+  opacity: 1;
+}
+.pin.spot.selected .pin-icon {
+  background: linear-gradient(180deg, #d9ff8a, #5ccf2e);
+  color: #10300a;
+}
+.pin.spot.selected .pin-icon::after {
+  border-top-color: #5ccf2e;
+}
+.pin.spot.selected .pin-label {
+  background: #5ccf2e;
+  color: #0c2408;
+}
+.back-link {
+  display: block;
+  margin: -4px 0 6px -4px;
+  font-weight: 800;
+}

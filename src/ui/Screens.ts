@@ -1,4 +1,4 @@
-import type { CarSetup, PlayerSettings, Purchase, TrackId } from '../../shared/api';
+import type { CarSetup, PlayerSettings, Purchase, TimeOfDay, TrackId } from '../../shared/api';
 import {
   bestResult,
   CAREER_EVENTS,
@@ -23,6 +23,7 @@ import { formatTime, type RacerState } from '../race/RaceManager';
 import { TrackPath } from '../track/TrackPath';
 import { TRACKS } from '../track/tracks';
 import { CARS, carSetup } from '../vehicles/cars';
+import { FREE_DRIVE_SPOTS, mapFraction } from '../world/freeDrive';
 import { AdminPanel } from './AdminPanel';
 import { GarageScreen } from './GarageScreen';
 import { SettingsPanel, type SettingsTab } from './SettingsPanel';
@@ -42,7 +43,8 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   garage: {},
 };
 
-export type HubPanel = 'home' | 'career' | 'garage' | 'shop' | 'quests' | 'profile';
+/** 'modes' is the Play tab's choice between the career map and free drive. */
+export type HubPanel = 'home' | 'modes' | 'career' | 'freedrive' | 'garage' | 'shop' | 'quests' | 'profile';
 
 export interface ScreenHandlers {
   onRace(settings: PlayerSettings): void;
@@ -53,8 +55,8 @@ export interface ScreenHandlers {
   onTryOn(setup: CarSetup): void;
   onResume(): void;
   onRestart(): void;
-  /** Free drive (once unlocked). */
-  onFreeDrive(): void;
+  /** Free drive (once unlocked), from a starting place, at a time of day. */
+  onFreeDrive(spot: string, timeOfDay: TimeOfDay): void;
   onQuit(): void;
   /** Called whenever a modal opens/closes so the game can pause input. */
   onModalChange(open: boolean): void;
@@ -82,7 +84,11 @@ export class Screens {
   panelName: HubPanel = 'home';
   /** Career event picked on the map, and the one being raced (sent with the result). */
   private selectedEvent = '';
-  private mapPos: [number, number] = [0, 0];
+  private readonly careerMap = new MapView('.career-panel');
+  private readonly freeMap = new MapView('.freedrive-panel');
+  /** Free drive: the starting place picked on its map, and the time of day. */
+  private freeSpot = FREE_DRIVE_SPOTS[0].id;
+  private freeTime: TimeOfDay = 'day';
   raceEvent: string | null = null;
   /** In free drive (the pause menu has no restart). */
   freeDrive = false;
@@ -115,7 +121,7 @@ export class Screens {
       (setup) => this.handlers.onTryOn(setup),
     );
     this.buildPins();
-    this.wireMapDrag();
+    this.buildSpotPins();
     this.wire();
     this.admin = new AdminPanel(account);
     // Money, cars and upgrades change with purchases, race results and the admin tools.
@@ -147,9 +153,11 @@ export class Screens {
   showPanel(panel: HubPanel): void {
     this.panelName = panel;
     $('screen-home').dataset.panel = panel;
+    // The career map and free drive belong to the Play tab.
+    const tab = panel === 'career' || panel === 'freedrive' ? 'modes' : panel;
     document.querySelectorAll<HTMLElement>('.hub-nav [data-panel]').forEach((b) => {
-      b.classList.toggle('active', b.dataset.panel === panel);
-      b.setAttribute('aria-selected', String(b.dataset.panel === panel));
+      b.classList.toggle('active', b.dataset.panel === tab);
+      b.setAttribute('aria-selected', String(b.dataset.panel === tab));
     });
     document.querySelectorAll<HTMLElement>('.hub-panel').forEach((p) => p.classList.toggle('hidden', p.dataset.panel !== panel));
     if (panel === 'garage') this.garage.render();
@@ -159,6 +167,13 @@ export class Screens {
       this.focusNext();
     }
     if (panel === 'home') $('home-quick').focus({ preventScroll: true });
+    if (panel === 'modes') this.renderModes();
+    if (panel === 'freedrive') {
+      this.renderFree();
+      const spot = FREE_DRIVE_SPOTS.find((s) => s.id === this.freeSpot)!;
+      requestAnimationFrame(() => this.freeMap.pan(mapFraction(spot.x, spot.z)));
+      $('btn-free-start').focus({ preventScroll: true });
+    }
     if (panel === 'profile') this.admin.onProfileOpen();
     this.handlers.onHubPanel(panel);
     // After the turntable is set up, so the shop's first car replaces yours on it.
@@ -284,8 +299,65 @@ export class Screens {
   /** Esc on the homescreen: back to Home. Returns false if there was nothing to go back from. */
   back(): boolean {
     if (!this.homeVisible || this.panelName === 'home') return false;
-    this.showPanel('home');
+    // From a map back to the Play choice; from anywhere else, Home.
+    this.showPanel(this.panelName === 'career' || this.panelName === 'freedrive' ? 'modes' : 'home');
     return true;
+  }
+
+  /** Play: the career and free drive cards (free drive locked until three events are done). */
+  private renderModes(): void {
+    const w = this.account.wallet;
+    const done = CAREER_EVENTS.filter((e) => (bestResult(w, e.id) ?? 99) <= 3).length;
+    $('mode-career-info').textContent = `${CAREER_EVENTS.length} events across Japan · ${done}/${CAREER_EVENTS.length} podiums · ★ ${totalStars(w)}`;
+    const free = freeDriveUnlocked(w);
+    $('mode-free').classList.toggle('locked', !free);
+    $('mode-free-info').textContent = free
+      ? 'The open map: the city, the ring road, mountains and dirt trails'
+      : `🔒 Finish ${FREE_DRIVE_EVENTS} career events to unlock · ${eventsFinished(w)}/${FREE_DRIVE_EVENTS}`;
+    $('mode-free-go').textContent = free ? '▶' : '🔒';
+  }
+
+  /** Free drive: one pin per starting place on the map. */
+  private buildSpotPins(): void {
+    $('free-frame').replaceChildren(
+      ...FREE_DRIVE_SPOTS.map((spot) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'pin spot';
+        b.dataset.spot = spot.id;
+        const [fx, fy] = mapFraction(spot.x, spot.z);
+        b.style.left = `${fx * 100}%`;
+        b.style.top = `${fy * 100}%`;
+        b.innerHTML = `<span class="pin-icon"><span class="pin-num">${SPOT_ICON}</span></span><span class="pin-label">${escapeHtml(spot.name)}</span>`;
+        b.addEventListener('click', () => {
+          this.freeSpot = spot.id;
+          this.renderFree();
+        });
+        return b;
+      }),
+    );
+  }
+
+  private renderFree(): void {
+    const spot = FREE_DRIVE_SPOTS.find((s) => s.id === this.freeSpot) ?? FREE_DRIVE_SPOTS[0];
+    document.querySelectorAll<HTMLElement>('#free-frame .pin').forEach((b) => b.classList.toggle('selected', b.dataset.spot === spot.id));
+    $('fd-name').textContent = spot.name;
+    $('fd-blurb').textContent = spot.blurb;
+    $('fd-car').textContent = CARS[this.settings.car].name;
+    $('fd-time')
+      .querySelectorAll<HTMLButtonElement>('button')
+      .forEach((b) => b.classList.toggle('active', b.dataset.value === this.freeTime));
+    const open = freeDriveUnlocked(this.account.wallet);
+    const start = $<HTMLButtonElement>('btn-free-start');
+    start.disabled = !open;
+    start.textContent = open ? 'START FREE DRIVE ▶' : '🔒 LOCKED';
+    $('fd-locked').textContent = open
+      ? ''
+      : `Finish ${FREE_DRIVE_EVENTS} career events to unlock free drive (${eventsFinished(this.account.wallet)}/${FREE_DRIVE_EVENTS} so far).`;
+  }
+
+  private startFreeDrive(): void {
+    if (freeDriveUnlocked(this.account.wallet)) this.handlers.onFreeDrive(this.freeSpot, this.freeTime);
   }
 
   /** Settings from the account (or guest profile) merged over defaults. */
@@ -409,75 +481,12 @@ export class Screens {
     $('btn-logout').classList.toggle('hidden', !a.signedIn);
   }
 
-  /**
-   * Size and place the map picture: at least 1.3x the screen so there is something to drag,
-   * centred on `focus` (a pin, as fractions of the picture) in the part of the screen beside
-   * the event card, and never leaving a gap at the edges.
-   */
-  private panMap(focus?: [number, number], dx = 0, dy = 0): void {
-    const view = document.querySelector<HTMLElement>('.career-map')!;
-    const frame = $('map-frame');
-    const vw = view.clientWidth;
-    const vh = view.clientHeight;
-    if (!vw || !vh) return;
-    const w = Math.max(vw * 1.3, vh * 1.3 * (16 / 9));
-    const h = (w * 9) / 16;
-    frame.style.width = `${w}px`;
-    if (focus) {
-      const card = document.querySelector<HTMLElement>('.event-card');
-      const left = vw > 760 && card ? card.getBoundingClientRect().right : 0;
-      this.mapPos = [left + (vw - left) / 2 - focus[0] * w, vh / 2 - focus[1] * h];
-    }
-    // The picture may slide out from under the card and the top bar, so no pin stays hidden.
-    const card = document.querySelector<HTMLElement>('.event-card');
-    const maxX = vw > 760 && card ? card.getBoundingClientRect().right : 0;
-    const x = Math.min(maxX, Math.max(vw - w, this.mapPos[0] + dx));
-    const y = Math.min(90, Math.max(vh - h, this.mapPos[1] + dy));
-    this.mapPos = [x, y];
-    frame.style.transform = `translate(${x}px, ${y}px)`;
-  }
-
   /** Pick the next event and bring its pin into view beside the event card. */
   private focusNext(): void {
     const e = nextEvent(this.account.wallet);
     this.selectedEvent = e.id;
     this.renderCareer();
-    requestAnimationFrame(() => this.panMap(e.pin));
-  }
-
-  /** Drag the map with the mouse or a finger (a short tap still picks a pin). */
-  private wireMapDrag(): void {
-    const view = document.querySelector<HTMLElement>('.career-map')!;
-    let start: [number, number] | null = null;
-    let moved = false;
-    view.addEventListener('pointerdown', (e) => {
-      start = [e.clientX, e.clientY];
-      moved = false;
-    });
-    window.addEventListener('pointermove', (e) => {
-      if (!start) return;
-      const dx = e.clientX - start[0];
-      const dy = e.clientY - start[1];
-      if (!moved && Math.hypot(dx, dy) < 6) return;
-      moved = true;
-      view.classList.add('dragging');
-      this.panMap(undefined, dx, dy);
-      start = [e.clientX, e.clientY];
-    });
-    window.addEventListener('pointerup', () => {
-      start = null;
-      view.classList.remove('dragging');
-    });
-    // A drag shouldn't also count as clicking the pin it started on.
-    view.addEventListener(
-      'click',
-      (e) => {
-        if (moved) e.stopPropagation();
-        moved = false;
-      },
-      true,
-    );
-    window.addEventListener('resize', () => this.panMap());
+    requestAnimationFrame(() => this.careerMap.pan(e.pin));
   }
 
   /** One pin per career event on the city map. */
@@ -578,8 +587,12 @@ export class Screens {
     this.handlers.onRace(this.settings);
   }
 
-  /** Enter / quick buttons: the selected event on the career map, otherwise the next one. */
+  /** Enter / quick buttons: free drive from its map, the selected event on the career map, otherwise the next event. */
   quickStart(): void {
+    if (this.panelName === 'freedrive') {
+      this.startFreeDrive();
+      return;
+    }
     const wallet = this.account.wallet;
     const pick = this.panelName === 'career' && this.selectedEvent && eventUnlocked(wallet, this.selectedEvent) ? this.selectedEvent : nextEvent(wallet).id;
     this.startEvent(pick);
@@ -645,11 +658,18 @@ export class Screens {
     $('btn-map-next').addEventListener('click', () => this.focusNext());
     $('home-quick').addEventListener('click', () => this.startEvent(nextEvent(this.account.wallet).id));
     $('home-garage').addEventListener('click', () => this.showPanel('garage'));
-    $('home-free').addEventListener('click', () => {
-      // Locked: the career map, to go and race for it.
-      if (freeDriveUnlocked(this.account.wallet)) this.handlers.onFreeDrive();
-      else this.showPanel('career');
+    // Free drive: pick where to start on its map (locked: the career map, to go and race for it).
+    $('home-free').addEventListener('click', () => this.showPanel(freeDriveUnlocked(this.account.wallet) ? 'freedrive' : 'career'));
+    $('mode-career').addEventListener('click', () => this.showPanel('career'));
+    $('mode-free').addEventListener('click', () => this.showPanel('freedrive'));
+    $('btn-free-start').addEventListener('click', () => this.startFreeDrive());
+    $('fd-time').addEventListener('click', (e) => {
+      const v = (e.target as HTMLElement).closest('button')?.dataset.value as TimeOfDay | undefined;
+      if (!v) return;
+      this.freeTime = v;
+      this.renderFree();
     });
+    document.querySelectorAll<HTMLElement>('[data-back]').forEach((b) => b.addEventListener('click', () => this.back()));
     $('home-mega').addEventListener('click', () => this.showPanel('quests'));
     $('btn-garage-race').addEventListener('click', () => this.quickStart());
     $('btn-event-garage').addEventListener('click', () => this.showPanel('garage'));
@@ -789,6 +809,10 @@ function courseMap(id: TrackId): string {
   </svg>`;
 }
 
+/** A free drive starting place: a little car. */
+const SPOT_ICON =
+  '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M5.5 10.5 7.4 6A2 2 0 0 1 9.2 5h5.6a2 2 0 0 1 1.8 1l1.9 4.5H19a2 2 0 0 1 2 2V17h-1.5a2.5 2.5 0 0 1-5 0h-5a2.5 2.5 0 0 1-5 0H3v-4.5a2 2 0 0 1 2-2h.5Zm2.2 0h8.6l-1.4-3.4a.5.5 0 0 0-.5-.3H9.6a.5.5 0 0 0-.5.3z" fill="currentColor"/></svg>';
+
 const PADLOCK =
   '<svg class="lock" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V7a5 5 0 0 1 10 0v3h1a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V11a1 1 0 0 1 1-1h1Zm2 0h6V7a3 3 0 0 0-6 0v3Zm3 4a1.5 1.5 0 0 0-.8 2.8V19h1.6v-2.2A1.5 1.5 0 0 0 12 14Z" fill="currentColor"/></svg>';
 
@@ -824,4 +848,74 @@ function questRow(q: QuestRowData): HTMLLIElement {
     );
   }
   return li;
+}
+
+/**
+ * A big map picture you drag around (the career map, the free drive map): at least 1.3x the
+ * screen so there is something to drag, centred on a pin (as fractions of the picture) in the part
+ * of the screen beside the panel's card, and never leaving a gap at the edges. A short tap still
+ * picks a pin.
+ */
+class MapView {
+  private pos: [number, number] = [0, 0];
+  private readonly view: HTMLElement;
+  private readonly frame: HTMLElement;
+  private readonly card: HTMLElement | null;
+
+  constructor(panel: string) {
+    this.view = document.querySelector<HTMLElement>(`${panel} .career-map`)!;
+    this.frame = document.querySelector<HTMLElement>(`${panel} .map-frame`)!;
+    this.card = document.querySelector<HTMLElement>(`${panel} .event-card`);
+    this.wireDrag();
+  }
+
+  pan(focus?: [number, number], dx = 0, dy = 0): void {
+    const vw = this.view.clientWidth;
+    const vh = this.view.clientHeight;
+    if (!vw || !vh) return;
+    const w = Math.max(vw * 1.3, vh * 1.3 * (16 / 9));
+    const h = (w * 9) / 16;
+    this.frame.style.width = `${w}px`;
+    // The picture may slide out from under the card and the top bar, so no pin stays hidden.
+    const left = vw > 760 && this.card ? this.card.getBoundingClientRect().right : 0;
+    if (focus) this.pos = [left + (vw - left) / 2 - focus[0] * w, vh / 2 - focus[1] * h];
+    const x = Math.min(left, Math.max(vw - w, this.pos[0] + dx));
+    const y = Math.min(90, Math.max(vh - h, this.pos[1] + dy));
+    this.pos = [x, y];
+    this.frame.style.transform = `translate(${x}px, ${y}px)`;
+  }
+
+  private wireDrag(): void {
+    const view = this.view;
+    let start: [number, number] | null = null;
+    let moved = false;
+    view.addEventListener('pointerdown', (e) => {
+      start = [e.clientX, e.clientY];
+      moved = false;
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (!start) return;
+      const dx = e.clientX - start[0];
+      const dy = e.clientY - start[1];
+      if (!moved && Math.hypot(dx, dy) < 6) return;
+      moved = true;
+      view.classList.add('dragging');
+      this.pan(undefined, dx, dy);
+      start = [e.clientX, e.clientY];
+    });
+    window.addEventListener('pointerup', () => {
+      start = null;
+      view.classList.remove('dragging');
+    });
+    // A drag shouldn't also count as clicking the pin it started on.
+    view.addEventListener(
+      'click',
+      (e) => {
+        if (moved) e.stopPropagation();
+        moved = false;
+      },
+      true,
+    );
+    window.addEventListener('resize', () => this.pan());
+  }
 }

@@ -126,12 +126,51 @@
         </div>
       </div>
 
+      <!-- Play: choose career or free drive -->
+      <div class="hub-panel hidden modes-panel" data-panel="modes">
+        <div class="mode-cards">
+          <button type="button" id="mode-career" class="mode-card career">
+            <span class="tag">CAREER</span>
+            <b>Career</b>
+            <small id="mode-career-info">20 events across Japan</small>
+            <span class="go" aria-hidden="true">▶</span>
+          </button>
+          <button type="button" id="mode-free" class="mode-card free">
+            <span class="tag">OPEN WORLD</span>
+            <b>Free Drive</b>
+            <small id="mode-free-info">Drive anywhere on the open map</small>
+            <span class="go" id="mode-free-go" aria-hidden="true">▶</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Free drive: the open map from above; pick where to start -->
+      <div class="hub-panel hidden freedrive-panel" data-panel="freedrive">
+        <div class="career-map" aria-hidden="false">
+          <div id="free-frame" class="map-frame free-frame"></div>
+        </div>
+        <div class="panel event-card">
+          <button type="button" class="link-btn back-link" data-back>‹ Back</button>
+          <small class="ev-num">FREE DRIVE · CHOOSE WHERE TO START</small>
+          <h2 id="fd-name">City Centre</h2>
+          <p id="fd-blurb" class="muted small-text"></p>
+          <div class="setting">
+            <span>Time</span>
+            <div class="seg" id="fd-time"><button type="button" data-value="day">☀ Day</button><button type="button" data-value="sunset">🌇 Sunset</button><button type="button" data-value="night">🌙 Night</button></div>
+          </div>
+          <div class="event-car"><span class="muted">Car</span> <b id="fd-car">Kaze GT</b></div>
+          <button type="button" id="btn-free-start" class="primary race-btn">START FREE DRIVE ▶</button>
+          <p id="fd-locked" class="muted small-text ev-locked"></p>
+        </div>
+      </div>
+
       <!-- Career: the city map with an event pinned on it for every race -->
       <div class="hub-panel hidden career-panel" data-panel="career">
         <div class="career-map" aria-hidden="false">
           <div id="map-frame" class="map-frame"></div>
         </div>
         <div class="panel event-card">
+          <button type="button" class="link-btn back-link" data-back>‹ Back</button>
           <small id="ev-num" class="ev-num">EVENT 1 / 20</small>
           <h2 id="ev-name">Event</h2>
           <p id="ev-track" class="muted small-text"></p>
@@ -351,8 +390,8 @@
         <button type="button" role="tab" data-panel="home">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1v-8.5Z" fill="currentColor"/></svg>Home
         </button>
-        <button type="button" role="tab" data-panel="career">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h2v18H5zM8 4h12l-2.5 4L20 12H8z" fill="currentColor"/></svg>Career
+        <button type="button" role="tab" data-panel="modes">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h2v18H5zM8 4h12l-2.5 4L20 12H8z" fill="currentColor"/></svg>Play
         </button>
         <button type="button" role="tab" data-panel="garage">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 10.5 7.4 6A2 2 0 0 1 9.2 5h5.6a2 2 0 0 1 1.8 1l1.9 4.5H19a2 2 0 0 1 2 2V17h-1.5a2.5 2.5 0 0 1-5 0h-5a2.5 2.5 0 0 1-5 0H3v-4.5a2 2 0 0 1 2-2h.5Zm2.2 0h8.6l-1.4-3.4a.5.5 0 0 0-.5-.3H9.6a.5.5 0 0 0-.5.3z" fill="currentColor"/></svg>Garage
