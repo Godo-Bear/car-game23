@@ -10,8 +10,9 @@ countryside, by day, at sunset or at night — running in the browser and hosted
   and a day / sunset / night choice. *Back* returns to the choice.
 - **Free drive (Forza-style):** unlocks once you've finished 3 career events (any position; the
   *Free Drive* cards on Home and Play show your progress, e.g. 2/3). Then drive anywhere on a big
-  open map: a city in a basin (winding streets, avenues, Tokyo Tower, the Skytree, a castle, a big wheel
-  and supertall towers), a ring road round it joined by slip roads from the avenues, mountains all
+  open map: a city in a basin (avenues meeting at a central roundabout, three ring roads,
+  and between them a gently curving grid of streets, each district at its own angle, every street
+  joined to the rest; Tokyo Tower, the Skytree, a castle, a big wheel and supertall towers), a ring road round it joined by slip roads from the avenues, mountains all
   round and dirt trails through the hills. You can leave the road anywhere: the car sits on the
   ground exactly as it's drawn (pitching and rolling with it, and flying off crests), rock faces
   are too steep to climb, and buildings, landmarks, houses, tree trunks and the edge of the map are

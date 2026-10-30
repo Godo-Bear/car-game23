@@ -245,7 +245,22 @@ function townPickups(streets: Street[], connectors: [number, number, number][][]
 
 /** The nearest point on any road to (x, z), heading along the road. */
 function roadNear(roads: FreeRoad[], x: number, z: number): { x: number; z: number; heading: number } {
-  let best = { x, z, heading: 0 };
+  // A proper road, unless you picked a spot right on a dirt trail (they climb steep hillsides).
+  const paved = nearestOn(
+    roads.filter((r) => r.kind !== 'trail'),
+    x,
+    z,
+  );
+  const trail = nearestOn(
+    roads.filter((r) => r.kind === 'trail'),
+    x,
+    z,
+  );
+  return trail.d < 40 && trail.d < paved.d ? trail : paved;
+}
+
+function nearestOn(roads: FreeRoad[], x: number, z: number): { x: number; z: number; heading: number; d: number } {
+  let best = { x, z, heading: 0, d: Infinity };
   let bestD = Infinity;
   for (const road of roads) {
     const P = road.pts;
@@ -260,7 +275,7 @@ function roadNear(roads: FreeRoad[], x: number, z: number): { x: number; z: numb
       const d = (x - px) ** 2 + (z - pz) ** 2;
       if (d < bestD) {
         bestD = d;
-        best = { x: px, z: pz, heading: Math.atan2(dx, dz) };
+        best = { x: px, z: pz, heading: Math.atan2(dx, dz), d: Math.sqrt(d) };
       }
     }
   }
@@ -439,14 +454,14 @@ export function streetNetwork(R: number, rng: () => number, reserved: { x: numbe
     }
   };
   /** Is (x, z) within r of the edge of any street (other than `skip`)? */
-  const near = (x: number, z: number, r: number, skip = -1) => {
+  const near = (x: number, z: number, r: number, skip = -1, only = -1) => {
     const reach = Math.ceil((r + 20) / CELL);
     const ci = Math.floor(x / CELL);
     const cj = Math.floor(z / CELL);
     for (let i = ci - reach; i <= ci + reach; i++)
       for (let j = cj - reach; j <= cj + reach; j++)
         for (const [ax, az, bx, bz, w, id] of grid.get(key(i, j)) ?? []) {
-          if (id === skip) continue;
+          if (id === skip || (only >= 0 && id !== only)) continue;
           const dx = bx - ax;
           const dz = bz - az;
           const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
@@ -471,58 +486,121 @@ export function streetNetwork(R: number, rng: () => number, reserved: { x: numbe
     }
     add({ pts: skirt(pts), width: 16, lines: true });
   }
-  // Wobbly ring roads.
-  for (const [r, w] of [
+  // A roundabout where the avenues meet in the middle of town.
+  add({
+    pts: Array.from({ length: 64 }, (_, i): [number, number] => [Math.cos((i / 63) * Math.PI * 2) * 38, Math.sin((i / 63) * Math.PI * 2) * 38]),
+    width: 14,
+    lines: true,
+  });
+  // Wobbly ring roads (their radius at any angle is known, so the local streets can meet them).
+  const RINGS: [number, number][] = [
     [330, 14],
     [720, 14],
     [1050, 12],
-  ]) {
-    const ph = rng() * 6;
+  ];
+  const phases: number[] = [];
+  const ringAt = (k: number, a: number) => RINGS[k][0] * (1 + 0.08 * Math.sin(3 * a + phases[k]) + 0.05 * Math.sin(5 * a + phases[k] * 2));
+  RINGS.forEach(([, w], k) => {
+    phases.push(rng() * 6);
     const pts: [number, number][] = [];
     for (let a = 0; a <= Math.PI * 2 + 0.01; a += 0.015) {
-      const rr = r * (1 + 0.08 * Math.sin(3 * a + ph) + 0.05 * Math.sin(5 * a + ph * 2));
+      const rr = ringAt(k, a);
       pts.push([Math.cos(a) * rr, Math.sin(a) * rr]);
     }
     add({ pts: skirt(pts), width: w, lines: true });
-  }
-  // Winding side streets: they leave a bigger street at an angle, wander, and stop when they meet
-  // another street or reach the edge of town.
-  for (let n = 0; n < 120; n++) {
-    const from = streets[Math.floor(rng() * streets.length)];
-    const i = 1 + Math.floor(rng() * (from.pts.length - 2));
-    const [px, pz] = from.pts[i];
-    const tx = from.pts[i + 1][0] - from.pts[i - 1][0];
-    const tz = from.pts[i + 1][1] - from.pts[i - 1][1];
-    // Leave the bigger street in a smooth curve: start nearly along it, then swing away.
-    const side = rng() < 0.5 ? 1 : -1;
-    const along = Math.atan2(tz, tx) + (rng() < 0.5 ? 0 : Math.PI);
-    const target = along + side * (Math.PI / 2 + (rng() - 0.5) * 0.8) * (rng() < 0.5 ? 1 : 0.6);
-    let heading = along + side * 0.35;
-    let x = px + Math.cos(along + (side * Math.PI) / 2) * (from.width / 2 - 1);
-    let z = pz + Math.sin(along + (side * Math.PI) / 2) * (from.width / 2 - 1);
-    const id = streets.length;
-    const pts: [number, number][] = [[px, pz]];
-    const length = 90 + rng() * 300;
-    let turn = (rng() - 0.5) * 0.02;
-    let ok = true;
-    for (let s = 0; s < length; s += 6) {
-      if (rng() < 0.04) turn = (rng() - 0.5) * 0.06;
-      // Ease round onto the new heading over the first ~40 m.
-      if (s < 48) heading += (target - heading) * 0.16;
-      heading += turn + (rng() - 0.5) * 0.03;
-      x += Math.cos(heading) * 6;
-      z += Math.sin(heading) * 6;
-      pts.push([x, z]);
-      if (Math.hypot(x, z) > R - 12 || inLandmark(x, z, 8)) break;
-      // Joined another street: end here (a junction).
-      if (s > 48 && near(x, z, 2, id)) break;
-      // Too close alongside another street without meeting it: drop this one.
-      if (s > 30 && s <= 48 && near(x, z, 9, id)) {
-        ok = false;
-        break;
+  });
+  const arterials = streets.length;
+  /** Inside the band between ring k - 1 and ring k (the middle of town for k = 0)? */
+  const inBand = (k: number, x: number, z: number) => {
+    const a = Math.atan2(z, x);
+    const r = Math.hypot(x, z);
+    return r < ringAt(k, a) && (k === 0 || r > ringAt(k - 1, a));
+  };
+  /** Near (within `r` of the edge of) one of the avenues or ring roads? */
+  const nearArterial = (x: number, z: number, r: number) => {
+    for (let id = 0; id < arterials; id++) if (near(x, z, r, -1, id)) return true;
+    return false;
+  };
+
+  // Local streets: in each band between the ring roads, a gently curving grid (each band at its
+  // own angle, like the districts of a real city). Every street runs from ring road to ring road,
+  // crossing the avenues on the way, so they all join up: no dead ends.
+  RINGS.forEach((_, k) => {
+    const spacing = k === 0 ? 120 : 165;
+    const angle = rng() * Math.PI;
+    const outer = RINGS[k][0] * 1.15;
+    for (const turn of [0, Math.PI / 2]) {
+      const dx = Math.cos(angle + turn);
+      const dz = Math.sin(angle + turn);
+      const shift = rng() * spacing;
+      for (let c = -outer + shift; c < outer; c += spacing) {
+        // A long, slow curve along the line (different on each).
+        const bend = 10 + rng() * 14;
+        const wave = 260 + rng() * 260;
+        const ph = rng() * 6;
+        const at = (t: number): [number, number] => {
+          const off = c + Math.sin(t / wave + ph) * bend;
+          return [-dz * off + dx * t, dx * off + dz * t];
+        };
+        let run: [number, number][] = [];
+        let prev: [number, number] | null = null;
+        let prevIn = false;
+        let close = 0;
+        const finish = () => {
+          if (run.length > 1) addLocal(run);
+          run = [];
+        };
+        for (let t = -outer; t <= outer; t += 6) {
+          const p = at(t);
+          const inside = inBand(k, p[0], p[1]);
+          if (inside && !prevIn && prev) run.push(edgePoint(k, prev, p, true));
+          if (inside) {
+            // Running alongside an avenue for a while (not just crossing it): no street there.
+            close = nearArterial(p[0], p[1], 4) ? close + 1 : 0;
+            if (close > 10) finish();
+            else run.push(p);
+          }
+          if (!inside && prevIn && prev) {
+            run.push(edgePoint(k, prev, p, false));
+            finish();
+          }
+          prev = p;
+          prevIn = inside;
+        }
+        finish();
       }
     }
-    if (ok && pts.length > 6) add({ pts, width: 12, lines: true });
+  });
+
+  /** Where the line from `a` to `b` crosses the edge of band k (the ring road's centre line). */
+  function edgePoint(k: number, a: [number, number], b: [number, number], entering: boolean): [number, number] {
+    let lo = a;
+    let hi = b;
+    for (let i = 0; i < 12; i++) {
+      const m: [number, number] = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2];
+      if (inBand(k, m[0], m[1]) === entering) hi = m;
+      else lo = m;
+    }
+    return hi;
+  }
+
+  /** Add a local street, unless it's a sliver hugging a ring road or too short to matter. */
+  function addLocal(run: [number, number][]): void {
+    const length = run.reduce((sum, p, i) => (i ? sum + Math.hypot(p[0] - run[i - 1][0], p[1] - run[i - 1][1]) : 0), 0);
+    if (length < 60) return;
+    // Every point within 30 m of a ring road: it's squeezed between the ring and the band edge.
+    if (run.every(([x, z]) => nearArterial(x, z, 30))) return;
+    if (run.some(([x, z]) => inLandmark(x, z, 6))) {
+      // Round the landmark, smoothly.
+      skirt(run);
+      for (let pass = 0; pass < 4; pass++) {
+        for (let i = 1; i + 1 < run.length; i++) {
+          run[i] = [(run[i - 1][0] + run[i][0] * 2 + run[i + 1][0]) / 4, (run[i - 1][1] + run[i][1] * 2 + run[i + 1][1]) / 4];
+        }
+        skirt(run);
+      }
+    }
+    add({ pts: run, width: 12, lines: true });
   }
 
   // Ribbons: asphalt, pavements (broken at junctions) and centre dashes.
