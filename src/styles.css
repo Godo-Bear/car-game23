@@ -2712,3 +2712,39 @@ html.gamepad .pad-focus:focus {
   filter: drop-shadow(0 0 4px #000);
   pointer-events: none;
 }
+
+/* Loading screen: the emblem's car drifts round and round its circuit, trailing smoke. */
+.loading-mark {
+  width: 3.4em;
+  height: 3.4em;
+}
+.loading-mark .drift-orbit {
+  transform-box: view-box;
+  transform-origin: 60px 58px;
+  animation: drift-orbit 2.2s linear infinite;
+}
+/* The tail swings a little in and out, like a drift being held. */
+.loading-mark .drift-wiggle {
+  transform-box: view-box;
+  transform-origin: 81.1px 97.7px;
+  animation: drift-wiggle 0.55s ease-in-out infinite alternate;
+}
+@keyframes drift-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes drift-wiggle {
+  from {
+    transform: rotate(-5deg);
+  }
+  to {
+    transform: rotate(4deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-mark .drift-orbit,
+  .loading-mark .drift-wiggle {
+    animation-duration: 8s;
+  }
+}
