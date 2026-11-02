@@ -529,7 +529,8 @@ export class Game {
         const [x, z] = s.pts[Math.floor(s.pts.length / 2)];
         return { x, y: 0.07, z, kind: 'super' as const };
       });
-      ground = { ...map, pickups: [...map.pickups, ...bonus] };
+      // (The streets are closed for the race: no traffic.)
+      ground = { ...map, traffic: undefined, pickups: [...map.pickups, ...bonus] };
       gates = def.data.gates;
       pads = coursePads(this.track);
     }
@@ -755,6 +756,8 @@ export class Game {
     // The far ridges ring the map: from above they'd be blobs over its edges.
     const ridges = this.world!.group.getObjectByName('ridges');
     if (ridges) ridges.visible = false;
+    this.world!.freeRoam!.traffic.group.visible = false;
+    this.world!.freeRoam!.people.group.visible = false;
     this.world!.update(this.elapsed, 0, cam);
     await this.compile();
     const renderer = this.pipeline.renderer;
@@ -882,6 +885,18 @@ export class Game {
       this.carModels.map((m) => m.root),
     );
     this.courseDecor?.update(this.elapsed);
+    // The city's traffic and people, out in free drive only.
+    const city = this.world?.freeRoam;
+    if (city) {
+      const on = this.state === 'freedrive';
+      city.traffic.group.visible = on;
+      city.people.group.visible = on;
+      if (on && running) {
+        const p = this.sim.player.physics;
+        city.traffic.update(simDt, p, this.elapsed);
+        city.people.update(simDt, this.elapsed, { x: p.x, z: p.z, speed: p.speed });
+      }
+    }
     if (this.state === 'freedrive' && running) {
       this.freePlay.update(this.sim, this.feedback.driftPoints, simDt, this.elapsed);
       this.hud.setFreeInfo(this.freePlay.summary());
@@ -1212,9 +1227,25 @@ function drawRoadMap(g: CanvasRenderingContext2D, map: FreeRoamMap, pickups: Fre
   g.strokeStyle = 'rgba(30, 32, 40, 0.9)';
   g.lineWidth = 1;
   for (const o of map.obstacles) {
-    if (o.layer) continue;
-    g.fillRect(px(o.x - o.hw), pz(o.z - o.hd), o.hw * 2 * scale, o.hd * 2 * scale);
-    g.strokeRect(px(o.x - o.hw), pz(o.z - o.hd), o.hw * 2 * scale, o.hd * 2 * scale);
+    if (o.layer || o.hw < 1.5) continue;
+    // Turned to face its street (the box's local x is (cos, -sin) on the ground).
+    const c = Math.cos(o.angle ?? 0);
+    const s = Math.sin(o.angle ?? 0);
+    g.beginPath();
+    [
+      [-1, -1],
+      [1, -1],
+      [1, 1],
+      [-1, 1],
+    ].forEach(([a, b], i) => {
+      const x = o.x + a * o.hw * c + b * o.hd * s;
+      const z = o.z - a * o.hw * s + b * o.hd * c;
+      if (i) g.lineTo(px(x), pz(z));
+      else g.moveTo(px(x), pz(z));
+    });
+    g.closePath();
+    g.fill();
+    g.stroke();
   }
   const line = (pts: [number, number][], width: number, color: string, dash: number[] = []) => {
     g.beginPath();

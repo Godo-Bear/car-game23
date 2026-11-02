@@ -9,11 +9,15 @@ import type { TrackPath } from '../track/TrackPath';
 import type { TrackDef } from '../track/tracks';
 import { type FreeActivities, placeActivities, type Ramp, rampHeight } from './activities';
 import { City, type CityScene, type Footprint, placeLamps } from './City';
+import { CityPeople } from './CityPeople';
+import { CityTraffic } from './CityTraffic';
 import { windTime } from './foliage';
 import { GeometryBuilder } from './GeometryBuilder';
 import { type Feature, MountFuji, powerLines, Railway, trafficSignals, vendingMachines } from './japan';
 import { SUN_DIRECTION } from './Lighting';
 import { NatureWorld } from './Nature';
+import { StreetCity } from './StreetCity';
+import { StreetFurniture } from './StreetFurniture';
 import { SCENES } from './scenes';
 import { ReflectionStreaks, roadWetness } from './surfaces';
 import { padTexture } from './textures';
@@ -52,6 +56,9 @@ export interface FreeRoamMap {
   roadNear(x: number, z: number): { x: number; z: number; heading: number };
   /** Things to do: race markers, speed traps, ramps, drift zones, lucky cats, boost pads, item boxes. */
   activities: FreeActivities;
+  /** The city's traffic (solid) and people (free drive only: the streets are closed for races). */
+  traffic: CityTraffic;
+  people: CityPeople;
   /** `look` metres on along the road under (x, z), going in direction (dx, dz); null off the roads. */
   roadAhead(x: number, z: number, dx: number, dz: number, look: number): { x: number; z: number } | null;
 }
@@ -144,10 +151,21 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
   if (connectors.length) group.add(connectorMesh(connectors));
   let city: City | null = null;
   let freeRoam: FreeRoamMap | undefined;
+  let streetCity: StreetCity | null = null;
+  let furniture: StreetFurniture | null = null;
+  let traffic: CityTraffic | null = null;
+  let people: CityPeople | null = null;
   if (streets && scene.city && scene.cityRadius) {
     const R = scene.cityRadius;
-    city = new City(track, [], rng, scene.city, (x, z, r) => Math.hypot(x, z) > R - 8 - r || streets.near(x, z, r + 3));
-    group.add(city.group, streets.mesh);
+    // The landmarks (Tokyo Tower, the Skytree, the castle, the big wheel, the supertall); every
+    // other building, the parks and the paving come from the street plan (StreetCity).
+    city = new City(track, [], rng, { ...scene.city, noLots: true });
+    streetCity = new StreetCity(streets.streets, R, landmarkGrounds(scene.city), createRng(1907));
+    furniture = new StreetFurniture(streets.streets, createRng(2024));
+    // Life on the streets (free drive only): traffic and people, more of both on higher detail.
+    traffic = new CityTraffic(streets.streets, furniture.junctions, Math.round(28 + 34 * detail), createRng(31));
+    people = new CityPeople(streets.streets, Math.round(90 + 170 * detail), createRng(47));
+    group.add(city.group, streetCity.group, furniture.group, traffic.group, people.group, streets.mesh);
     // Start on the first avenue, a little way out from the centre, heading out of town.
     const avenue = streets.spokes[0].pts;
     const [sx, sz] = avenue[6];
@@ -159,7 +177,7 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
       ...(scene.trails ?? []).map((P): FreeRoad => ({ kind: 'trail', pts: P, width: 8 })),
     ];
     const index = new RoadIndex(roads);
-    const obstacles = [...city.footprints, ...nature.solids, ...nature.trees];
+    const obstacles = [...city.footprints, ...streetCity.footprints, ...furniture.footprints, ...nature.solids, ...nature.trees];
     const ground = (x: number, z: number) => {
       // Slip roads are laid a little above the ground shaped to them; streets sit on the flat
       // basin; everywhere else, the ground exactly as it's drawn.
@@ -189,6 +207,8 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
       },
       obstacles,
       activities,
+      traffic,
+      people,
       spawn: { x: sx, z: sz, heading: Math.atan2(nx - sx, nz - sz) },
       bounds: { ...nature.extent, half: nature.extent.half - 260 },
       roads,
@@ -205,6 +225,9 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
     setTimeOfDay(tod) {
       nature.setTimeOfDay(tod);
       city?.setTimeOfDay(tod);
+      streetCity?.setTimeOfDay(tod);
+      furniture?.setTimeOfDay(tod);
+      traffic?.setTimeOfDay(tod);
       trackVisual.setTimeOfDay(tod);
       roadWetness.value = 0;
     },
@@ -214,6 +237,8 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
       windTime.value = time;
       nature.update(time, dt, camera);
       city?.update(time);
+      streetCity?.update(time);
+      furniture?.update(time);
     },
     dispose: () => disposeTree(group),
   };
@@ -223,9 +248,16 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
 function obstacleLookup(obstacles: Footprint[]): (x: number, z: number, r: number) => boolean {
   const C = 40;
   const grid = new Map<number, Footprint[]>();
+  // (Turned boxes by their bounding boxes: close enough for placing things.)
+  const extent = (o: Footprint) => {
+    const c = Math.abs(Math.cos(o.angle ?? 0));
+    const s = Math.abs(Math.sin(o.angle ?? 0));
+    return [c * o.hw + s * o.hd, s * o.hw + c * o.hd];
+  };
   for (const o of obstacles) {
-    for (let i = Math.floor((o.x - o.hw) / C); i <= Math.floor((o.x + o.hw) / C); i++) {
-      for (let j = Math.floor((o.z - o.hd) / C); j <= Math.floor((o.z + o.hd) / C); j++) {
+    const [ex, ez] = extent(o);
+    for (let i = Math.floor((o.x - ex) / C); i <= Math.floor((o.x + ex) / C); i++) {
+      for (let j = Math.floor((o.z - ez) / C); j <= Math.floor((o.z + ez) / C); j++) {
         const key = i * 65536 + j;
         const list = grid.get(key);
         if (list) list.push(o);
@@ -237,7 +269,8 @@ function obstacleLookup(obstacles: Footprint[]): (x: number, z: number, r: numbe
     for (let i = Math.floor((x - r) / C); i <= Math.floor((x + r) / C); i++) {
       for (let j = Math.floor((z - r) / C); j <= Math.floor((z + r) / C); j++) {
         for (const o of grid.get(i * 65536 + j) ?? []) {
-          if (Math.abs(x - o.x) < o.hw + r && Math.abs(z - o.z) < o.hd + r) return true;
+          const [ex, ez] = extent(o);
+          if (Math.abs(x - o.x) < ex + r && Math.abs(z - o.z) < ez + r) return true;
         }
       }
     }

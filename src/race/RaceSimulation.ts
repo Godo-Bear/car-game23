@@ -45,11 +45,13 @@ export interface RaceSettings {
 export interface FreeRoamGround {
   surfaceAt(x: number, z: number): number;
   /**
-   * Solid boxes (buildings, landmarks, trees): centre and half sizes. A tree drawn as instance
+   * Solid boxes (buildings, landmarks, trees): centre, half sizes and turn (see Footprint). A tree drawn as instance
    * `index` of `layer` isn't there once the detail level has thinned it out (index >= count).
    */
-  obstacles: { x: number; z: number; hw: number; hd: number; layer?: { count: number }; index?: number }[];
+  obstacles: { x: number; z: number; hw: number; hd: number; angle?: number; layer?: { count: number }; index?: number }[];
   bounds: { cx: number; cz: number; half: number };
+  /** The city's traffic: moving boxes the player can hit (a hard knock stops that car a moment). */
+  traffic?: { boxes: { x: number; z: number; hw: number; hd: number; angle: number }[]; bump(i: number): void };
   /** Nitro bottles off the ring road (in town). */
   pickups?: { x: number; y: number; z: number; kind: PickupKind }[];
   /**
@@ -280,8 +282,13 @@ export class RaceSimulation {
       ...(this.settings.freeRoam?.pickups ?? []).map((p, i): Pickup => ({ ...p, distance: i * 37, lateral: 0, backAt: 0, free: true })),
     ];
     for (const o of this.settings.freeRoam?.obstacles ?? []) {
-      for (let i = Math.floor((o.x - o.hw) / 32); i <= Math.floor((o.x + o.hw) / 32); i++) {
-        for (let j = Math.floor((o.z - o.hd) / 32); j <= Math.floor((o.z + o.hd) / 32); j++) {
+      // (A turned box covers more of the grid.)
+      const c = Math.abs(Math.cos(o.angle ?? 0));
+      const sn = Math.abs(Math.sin(o.angle ?? 0));
+      const ex = c * o.hw + sn * o.hd;
+      const ez = sn * o.hw + c * o.hd;
+      for (let i = Math.floor((o.x - ex) / 32); i <= Math.floor((o.x + ex) / 32); i++) {
+        for (let j = Math.floor((o.z - ez) / 32); j <= Math.floor((o.z + ez) / 32); j++) {
           const key = i * 65536 + j;
           const list = this.obstacleGrid.get(key);
           if (list) list.push(o);
@@ -502,40 +509,59 @@ export class RaceSimulation {
     const ph = car.physics;
     const pr = car.proj;
     let impact = 0;
-    // Buildings: push the car out of any box it overlaps and take away the speed into it.
+    // Buildings (and the city's traffic): push the car out of any box it overlaps and take away
+    // the speed into it. Returns how hard it hit.
     const r = FREE_CAR_RADIUS;
+    const pushOut = (o: { x: number; z: number; hw: number; hd: number; angle?: number }): number => {
+      // In the box's own frame (it may be turned to face its street): u along its local x, v along z.
+      const c = Math.cos(o.angle ?? 0);
+      const sn = Math.sin(o.angle ?? 0);
+      const dx = ph.x - o.x;
+      const dz = ph.z - o.z;
+      const u = dx * c - dz * sn;
+      const v = dx * sn + dz * c;
+      let nu = u - clamp(u, -o.hw, o.hw);
+      let nv = v - clamp(v, -o.hd, o.hd);
+      let d = Math.hypot(nu, nv);
+      if (d >= r) return -1;
+      if (d < 1e-6) {
+        // Centre inside the box: out through the nearest side.
+        const eu = o.hw - Math.abs(u);
+        const ev = o.hd - Math.abs(v);
+        [nu, nv] = eu < ev ? [Math.sign(u) || 1, 0] : [0, Math.sign(v) || 1];
+        d = -Math.min(eu, ev);
+      } else {
+        nu /= d;
+        nv /= d;
+      }
+      // Back to the world: local x is (c, -sn), local z is (sn, c).
+      const nx = nu * c + nv * sn;
+      const nz = -nu * sn + nv * c;
+      ph.x += nx * (r - d);
+      ph.z += nz * (r - d);
+      const into = ph.vx * nx + ph.vz * nz;
+      if (into >= 0) return 0;
+      ph.vx -= into * nx * 1.25;
+      ph.vz -= into * nz * 1.25;
+      impact = Math.max(impact, -into);
+      return -into;
+    };
     const seen = new Set<object>();
     for (let i = Math.floor((ph.x - r) / 32); i <= Math.floor((ph.x + r) / 32); i++) {
       for (let j = Math.floor((ph.z - r) / 32); j <= Math.floor((ph.z + r) / 32); j++) {
         for (const o of this.obstacleGrid.get(i * 65536 + j) ?? []) {
           if (seen.has(o) || (o.layer && o.index! >= o.layer.count)) continue;
           seen.add(o);
-          const cx = clamp(ph.x, o.x - o.hw, o.x + o.hw);
-          const cz = clamp(ph.z, o.z - o.hd, o.z + o.hd);
-          let nx = ph.x - cx;
-          let nz = ph.z - cz;
-          let d = Math.hypot(nx, nz);
-          if (d >= r) continue;
-          if (d < 1e-6) {
-            // Centre inside the box: out through the nearest side.
-            const ex = o.hw - Math.abs(ph.x - o.x);
-            const ez = o.hd - Math.abs(ph.z - o.z);
-            [nx, nz] = ex < ez ? [Math.sign(ph.x - o.x) || 1, 0] : [0, Math.sign(ph.z - o.z) || 1];
-            d = -Math.min(ex, ez);
-          } else {
-            nx /= d;
-            nz /= d;
-          }
-          ph.x += nx * (r - d);
-          ph.z += nz * (r - d);
-          const into = ph.vx * nx + ph.vz * nz;
-          if (into < 0) {
-            ph.vx -= into * nx * 1.25;
-            ph.vz -= into * nz * 1.25;
-            impact = Math.max(impact, -into);
-          }
+          pushOut(o);
         }
       }
+    }
+    if (ground.traffic) {
+      ground.traffic.boxes.forEach((o, i) => {
+        if ((o.x - ph.x) ** 2 + (o.z - ph.z) ** 2 > 36) return;
+        // A real knock stops that car for a moment.
+        if (pushOut(o) > 2) ground.traffic!.bump(i);
+      });
     }
     // The edge of the map.
     const b = ground.bounds;

@@ -50,6 +50,8 @@ export interface CityScene {
   fujiAt: [number, number] | null;
   /** Free drive: buildings on every lot (not just by a circuit), some City Kit ones, pale roofs. */
   bright?: boolean;
+  /** Only the landmarks (the free drive city's buildings come from StreetCity). */
+  noLots?: boolean;
 }
 
 export function placeLamps(track: TrackPath): Lamp[] {
@@ -78,6 +80,8 @@ export interface Footprint {
   z: number;
   hw: number;
   hd: number;
+  /** Turned about the vertical (as GeometryBuilder.box turns a box): hw is then along its local x. */
+  angle?: number;
   /** A tree drawn as instance `index` of `layer`: gone (thinned out by the detail level) at or past its count. */
   layer?: { count: number };
   index?: number;
@@ -178,7 +182,7 @@ export class City {
     if (scene.skytree) this.footprints.push({ x: scene.skytree.x, z: scene.skytree.z, hw: 16, hd: 16 });
     // The supertall's 60 m tower (turned a little).
     if (scene.supertall) this.footprints.push({ x: scene.supertall.x, z: scene.supertall.z, hw: 37, hd: 37 });
-    for (let gx = b.minX - 420; gx <= b.maxX + 420; gx += cell) {
+    for (let gx = b.minX - 420; gx <= b.maxX + 420 && !scene.noLots; gx += cell) {
       for (let gz = b.minZ - 420; gz <= scene.bayZ - 20; gz += cell) {
         const cx = gx + (rng() - 0.5) * 6;
         const cz = gz + (rng() - 0.5) * 6;
