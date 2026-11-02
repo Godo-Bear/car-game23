@@ -2,7 +2,8 @@
  * The free drive city's plan, worked out from its streets (no 3D here, so it can be tested on
  * its own): parks in the middle of the bigger blocks, then building lots lining every street,
  * facing it, district by district - tall towers downtown, narrow shop buildings in the
- * shopping districts, flats and little houses further out, warehouses at the edge of town.
+ * shopping districts, mid-rise flats further out (a few little houses behind them), mid-rise
+ * blocks and warehouses at the edge of town.
  * Lots go in layers back from the street, never overlapping each other, a street or its
  * pavement, a park or a landmark's ground.
  */
@@ -56,7 +57,7 @@ export function districtAt(x: number, z: number): District {
 const SPEC: Record<District, { w: [number, number]; d: [number, number]; gap: [number, number]; layers: number }> = {
   downtown: { w: [22, 38], d: [20, 34], gap: [3, 8], layers: 3 },
   commercial: { w: [9, 18], d: [13, 24], gap: [0.4, 1.8], layers: 3 },
-  residential: { w: [12, 26], d: [10, 18], gap: [1.5, 4], layers: 2 },
+  residential: { w: [14, 28], d: [12, 22], gap: [1.5, 4], layers: 2 },
   outer: { w: [22, 44], d: [18, 32], gap: [3, 8], layers: 1 },
 };
 
@@ -64,6 +65,22 @@ const SPEC: Record<District, { w: [number, number]; d: [number, number]; gap: [n
 const SEG = 7;
 
 /** Distances from street centre lines, on a grid of their segments. */
+/**
+ * How a street is laid out across its width (metres from the middle): the main roads (14 m and
+ * up) have two lanes each way between a yellow double centre line and the edge lines; the side
+ * streets one lane each way and a wide shoulder (路側帯) outside the edge lines.
+ */
+export function streetLayout(width: number): { edge: number; middle: number; laneLine: number | null; lanes: number[] } {
+  const hw = width / 2;
+  const major = width >= 14;
+  /** The edge line's inner side, and the outer side of the centre marking. */
+  const edge = major ? hw - 0.75 : hw - 1.5;
+  const middle = major ? 0.3 : 0.075;
+  if (!major) return { edge, middle, laneLine: null, lanes: [(middle + edge) / 2] };
+  const laneLine = (middle + edge) / 2;
+  return { edge, middle, laneLine, lanes: [(middle + laneLine - 0.075) / 2, (laneLine + 0.075 + edge) / 2] };
+}
+
 export class StreetField {
   private readonly grid = new Map<number, number[]>();
   private readonly segs: number[] = [];
@@ -118,8 +135,8 @@ export class StreetField {
     return best;
   }
 
-  /** Is (x, z) at least `room` metres from every street's edge (but street `skip`)? (Stops at the first that's closer.) */
-  clear(x: number, z: number, room: number, skip = -1): boolean {
+  /** Is (x, z) at least `room` metres from every street's edge (but streets `skip` and `skip2`)? (Stops at the first that's closer.) */
+  clear(x: number, z: number, room: number, skip = -1, skip2 = -1): boolean {
     const C = StreetField.C;
     const reach = Math.ceil((room + 10) / C);
     const ci = Math.floor(x / C);
@@ -135,7 +152,7 @@ export class StreetField {
           const dx = this.segs[o + 2] - ax;
           const dz = this.segs[o + 3] - az;
           const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
-          if (this.segs[o + 5] === skip) continue;
+          if (this.segs[o + 5] === skip || this.segs[o + 5] === skip2) continue;
           const lim = room + this.segs[o + 4];
           const ex = x - ax - dx * t;
           const ez = z - az - dz * t;
@@ -292,7 +309,8 @@ export function planCity(
             s += 12;
             continue;
           }
-          const house = district === 'residential' && layer < 2 && rng() < 0.5;
+          // (A few little traditional houses, tucked in behind the blocks on the street.)
+          const house = district === 'residential' && layer === 1 && rng() < 0.15;
           let w = house ? 10.5 + rng() * 2 : rand(spec.w);
           let d = house ? 9.5 : rand(spec.d);
           // Further back, behind the lots along the street.
@@ -344,12 +362,13 @@ function heightFor(l: Lot, rng: () => number): number {
       const core = 1.25 - (r / 330) * 0.55;
       return Math.round((38 + rng() ** 1.4 * 170) * core);
     }
+    // Further out the buildings come down to a medium height: still proper blocks, not huts.
     case 'commercial':
-      return Math.round(9 + rng() ** 1.5 * 44);
+      return Math.round(18 + rng() ** 1.3 * 52);
     case 'residential':
-      return Math.round(9 + rng() * 22);
+      return Math.round(20 + rng() * 36);
     default:
-      return rng() < 0.75 ? Math.round(7 + rng() * 7) : Math.round(10 + rng() * 9);
+      return rng() < 0.25 ? Math.round(12 + rng() * 8) : Math.round(22 + rng() * 26);
   }
 }
 

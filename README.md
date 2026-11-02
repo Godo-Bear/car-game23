@@ -37,14 +37,36 @@ countryside, by day, at sunset or at night — running in the browser and hosted
   *Free Drive* cards on Home and Play show your progress, e.g. 2/3). Then drive anywhere on a big
   open map: a city in a basin (avenues meeting at a central roundabout, three ring roads,
   and between them a gently curving grid of streets, each district at its own angle, every street
-  joined to the rest, marked like Japanese roads: yellow double centre lines on the big roads,
-  dashed centre lines on the side streets, edge lines, zebra crossings at every junction and
-  kerbed pavements; Tokyo Tower, the Skytree, a castle, a big wheel and supertall towers), a ring road round it joined by slip roads from the avenues, mountains all
-  round and dirt trails through the hills. You can leave the road anywhere: the car sits on the
+  joined to the rest; Tokyo Tower, the Skytree, a castle, a big wheel and supertall towers), a ring road round it joined by slip roads from the avenues, mountains all
+  round and dirt trails through the hills.
+  **The city** (`src/world/cityPlan.ts` plans it, `StreetCity.ts` builds it): every building
+  faces its street, sized by district - glass and office towers downtown (the tallest in the
+  middle, some with podiums, crowns, helipads and big video screens), shopping streets with lit
+  shopfronts and vertical neon signs, then mid-rise flats and offices further out (still proper
+  8-15 storey blocks, with a few little traditional houses tucked behind them) and mid-rise blocks
+  and warehouses at the edge of town. Parks with ponds, paths, stone lanterns and cherry trees
+  fill the biggest blocks; a plaza with a fountain sits in the roundabout. Street lamps (with
+  pools of light at night), avenue trees, traffic lights at the main junctions, utility poles and
+  wires down the side streets, blue direction signs and 止まれ signs line the streets
+  (`StreetFurniture.ts`); traffic drives on the left in proper lanes, turns at the junctions and
+  waits at red lights (`CityTraffic.ts`), and people walk the pavements and hop out of your way
+  (`CityPeople.ts`). Both live around you, wherever you drive.
+  **The streets** (`StreetMesh.ts`, textures in `streetTextures.ts`) are made like Japanese town
+  streets: asphalt with wheel tracks worn into every lane (plain at the junctions), cracks and
+  patches; kerbed, brick-paved pavements with a yellow tactile strip along the main roads, a
+  concrete gutter with drain grates, and rounded kerbs at every corner. The markings: a yellow
+  double centre line and dashed lane lines (solid in the last 30 m before the lights) on the main
+  roads, a dashed centre line and wide shoulders on the side streets, white edge lines, zebra
+  crossings, stop lines, lane arrows at the traffic lights, 止まれ where a side street meets a
+  bigger road, ◇ (crossing ahead), 50 / 40 speed limits, blue cycle arrows and manhole covers - a
+  little worn. White guard rails run along the main roads' pavements (with gaps at the corners
+  and driveways), with bus stops (shelter, bench, sign) and red post boxes on the corners. After
+  dark the streets are wet: glossy asphalt and puddles reflecting the lamps, shop windows and
+  neon. You can leave the road anywhere: the car sits on the
   ground exactly as it's drawn (pitching and rolling with it, and flying off crests), rock faces
   are too steep to climb, and buildings, landmarks, houses, tree trunks and the edge of the map are
-  solid. No building stands on a street (streets go round the landmarks). A few cars cruise the
-  ring road; nitro bottles (and gold super boosts) sit along the ring road, the avenues, the ring
+  solid (so are the guard rails, bus stops and post boxes; the traffic stops when you hit it). No
+  building stands on a street (streets go round the landmarks). Nitro bottles (and gold super boosts) sit along the ring road, the avenues, the ring
   streets and the slip roads, and the drift guide carries a drift round the bends of any road. The
   *Map* button (🗺, *Tab*, or D-pad up) opens the map: tap a starting-place pin, or anywhere, to
   teleport to the nearest road. *J* (B on a controller, ⤒ on screen) jumps.
@@ -269,6 +291,13 @@ runs at a fixed 120 Hz, and is covered by unit tests — including a headless 8-
 │   │   ├── World.ts            # Builds the scenery for a circuit
 │   │   ├── scenes.ts           # What surrounds each circuit (landmarks, lake, trees, signs...)
 │   │   ├── City.ts             # Procedural city: buildings, neon, lamps, landmarks
+│   │   ├── cityPlan.ts         # Free drive city plan: districts, street-facing lots, parks, lanes
+│   │   ├── StreetCity.ts       # Free drive city: buildings by district, shops, signs, parks, plaza
+│   │   ├── StreetMesh.ts       # Free drive streets: asphalt, pavements, corners, markings, rails
+│   │   ├── streetTextures.ts   # Asphalt, paving, worn paint and the road-marking atlas
+│   │   ├── StreetFurniture.ts  # Lamps, avenue trees, traffic lights, poles and wires, signs
+│   │   ├── CityTraffic.ts      # Cars on the free drive streets (lanes, turns, red lights)
+│   │   ├── CityPeople.ts       # People walking the pavements
 │   │   ├── Nature.ts           # Terrain, lakes, forests, cherry blossoms, petals, pagoda, Fuji
 │   │   ├── foliage.ts          # Tree shapes, wind sway, contact shadows
 │   │   ├── Grass.ts            # GPU grass field that travels with the camera

@@ -47,6 +47,22 @@ describe('the free drive city plan', () => {
     }
     const tallest = Math.max(...plan.lots.map((l) => l.h));
     expect(tallest).toBeGreaterThan(150);
-    expect(Math.max(...plan.lots.filter((l) => l.district === 'outer').map((l) => l.h))).toBeLessThan(25);
+    // Further out they're medium-sized: well below downtown, but proper blocks, not huts.
+    const median = (d: string) => {
+      const hs = plan.lots
+        .filter((l) => l.district === d && !l.house)
+        .map((l) => l.h)
+        .sort((a, b) => a - b);
+      return hs[hs.length >> 1];
+    };
+    console.log(
+      `median heights: downtown ${median('downtown')}, commercial ${median('commercial')}, residential ${median('residential')}, outer ${median('outer')}`,
+    );
+    for (const d of ['commercial', 'residential', 'outer']) {
+      expect(median(d)).toBeGreaterThanOrEqual(20);
+      expect(median(d)).toBeLessThan(median('downtown') * 0.6);
+    }
+    expect(Math.max(...plan.lots.filter((l) => l.district === 'outer').map((l) => l.h))).toBeLessThan(50);
+    expect(plan.lots.filter((l) => l.house).length).toBeLessThan(plan.lots.length * 0.05);
   });
 });

@@ -8,7 +8,7 @@ import { broadleaf, contactShadowMaterial, pine, sakura, swayMaterial, type Tree
 import { GeometryBuilder } from './GeometryBuilder';
 import { type Feature, type HouseSpot, japaneseHouses, type Spot, vendingMachines } from './japan';
 import { type BuildingTemplate, cityKit } from './sceneryModels';
-import { applyContactShading } from './surfaces';
+import { applyContactShading, type StreakLight } from './surfaces';
 import { billboardTexture, glowTexture, neonSignTexture, shopfrontTexture } from './textures';
 
 /**
@@ -25,9 +25,15 @@ import { billboardTexture, glowTexture, neonSignTexture, shopfrontTexture } from
  * trees (cherry blossom in some), ponds, benches, stone lanterns and a shrine gate. Under it
  * all, light concrete paving. Collisions use each building's footprint (turned to its street).
  */
+/** Reflections: shop windows (warm white) and the neon signs (one colour per sign texture). */
+const SHOP_GLOW = new THREE.Color(1, 0.9, 0.75).multiplyScalar(0.4);
+const NEON = [0xff3d8b, 0x36d6ff, 0xffb02e, 0x7dff6a, 0xff4a3d, 0xb46bff].map((c) => new THREE.Color(c).multiplyScalar(0.9));
+
 export class StreetCity {
   readonly group = new THREE.Group();
   readonly footprints: Footprint[] = [];
+  /** Neon signs and shop windows, for their reflections in the wet road at night. */
+  readonly streakLights: StreakLight[] = [];
   readonly parks: Park[];
   readonly lots: Lot[];
   private readonly features: Feature[] = [];
@@ -217,7 +223,13 @@ export class StreetCity {
       // The street front: shops at ground level, neon signs, billboards, vending machines.
       if (l.layer !== 0) continue;
       const shop = l.district === 'commercial' || l.district === 'downtown' || (l.district === 'residential' && rng() < 0.3);
-      if (shop) front.quad(shops, -l.w / 2 + 0.5, l.w / 2 - 0.5, 0.25, Math.min(3.8, l.h - 0.5), 0.07);
+      if (shop) {
+        front.quad(shops, -l.w / 2 + 0.5, l.w / 2 - 0.5, 0.25, Math.min(3.8, l.h - 0.5), 0.07);
+        if (rng() < 0.45) {
+          const at = front.spot(0, 1.2);
+          this.streakLights.push({ x: at.x, y: 0.12, z: at.z, color: SHOP_GLOW, width: Math.min(4, l.w * 0.5), length: 10 });
+        }
+      }
       if ((l.district === 'commercial' && rng() < 0.62) || (l.district === 'downtown' && rng() < 0.2)) {
         const along = (rng() < 0.5 ? -1 : 1) * (l.w / 2 - 1.2);
         const height = Math.min(9, l.h * 0.55);
@@ -225,6 +237,8 @@ export class StreetCity {
         const b = signs[sign++ % SIGNS];
         // Two back-to-back boards sticking out over the pavement, readable from both ways.
         front.blade(b, along, 0.2, 2.4, y0, y0 + height);
+        const at = front.spot(along, 1.3);
+        this.streakLights.push({ x: at.x, y: 0.12, z: at.z, color: NEON[(sign - 1) % NEON.length], width: 1.3, length: 22 });
       }
       if (l.district === 'commercial' && l.h < 40 && l.h > 10 && rng() < 0.12) {
         const bw = Math.min(14, l.w * 0.9);
@@ -721,7 +735,9 @@ function styleFor(l: Lot, rng: () => number): FacadeStyle {
     case 'residential':
       return r < 0.55 ? 'apartment' : r < 0.85 ? 'brick' : 'tile';
     default:
-      return r < 0.7 ? 'warehouse' : r < 0.85 ? 'tile' : 'apartment';
+      // Low sheds are warehouses; the taller blocks out here are flats and offices.
+      if (l.h <= 20) return r < 0.75 ? 'warehouse' : 'tile';
+      return r < 0.45 ? 'apartment' : r < 0.75 ? 'office' : r < 0.9 ? 'tile' : 'brick';
   }
 }
 

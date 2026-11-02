@@ -5,6 +5,7 @@ import type { SignalJunction } from './CityTraffic';
 import { type CityStreet, StreetField } from './cityPlan';
 import { broadleaf, contactShadowMaterial, swayMaterial } from './foliage';
 import { GeometryBuilder } from './GeometryBuilder';
+import type { StreakLight } from './surfaces';
 import { glowTexture } from './textures';
 
 /**
@@ -28,6 +29,8 @@ export class StreetFurniture {
   private readonly signals: { a: THREE.MeshBasicMaterial[]; b: THREE.MeshBasicMaterial[] };
   /** The junctions with traffic lights, and the two streets crossing at each (for the traffic). */
   readonly junctions: SignalJunction[];
+  /** The lamps, for their reflections in the wet road at night. */
+  readonly streakLights: StreakLight[] = [];
 
   constructor(streets: CityStreet[], rng: () => number) {
     this.group.name = 'street-furniture';
@@ -157,6 +160,11 @@ export class StreetFurniture {
       poolAt.push({ x: hx, z: hz, toward: l.toward });
     }
     for (const p of poles.filter((q) => q.lamp)) heads.push(p.x + Math.sin(p.toward) * 1.4, 6.4, p.z + Math.cos(p.toward) * 1.4);
+    const warm = new THREE.Color(1, 0.8, 0.55).multiplyScalar(0.55);
+    for (let i = 0; i < heads.length; i += 3) {
+      const big = heads[i + 1] > 8;
+      this.streakLights.push({ x: heads[i], y: 0.07, z: heads[i + 2], color: warm, width: big ? 1.7 : 1.1, length: big ? 26 : 16 });
+    }
     const glowGeo = new THREE.BufferGeometry();
     glowGeo.setAttribute('position', new THREE.Float32BufferAttribute(heads, 3));
     this.glow = new THREE.PointsMaterial({

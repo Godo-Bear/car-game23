@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { TimeOfDay } from '../../shared/api';
 import { damp, wrapAngle } from '../core/math';
-import { type CityStreet, StreetField } from './cityPlan';
+import { type CityStreet, StreetField, streetLayout } from './cityPlan';
 import { GeometryBuilder } from './GeometryBuilder';
 
 /**
@@ -34,6 +34,8 @@ interface Car {
   heading: number;
   /** Seconds before it may turn again (so it doesn't flip-flop at a junction). */
   turnWait: number;
+  /** Which lane on a two-lane road: 0 the inside (overtaking, turning right), 1 the outside. */
+  lane: number;
 }
 
 /** A junction with traffic lights: which streets cross there (road a, road b). */
@@ -88,7 +90,8 @@ export class CityTraffic {
       while (k < streets.length - 1 && pick > this.field.length(k)) pick -= this.field.length(k++);
       const type = Math.floor(this.rng() * TYPES.length);
       const cruise = (streets[k].width >= 14 ? 13 : 9) + this.rng() * 3;
-      const car: Car = { type, k, s: pick, dir: this.rng() < 0.5 ? 1 : -1, speed: cruise, cruise, stunned: 0, x: 0, z: 0, heading: 0, turnWait: 0 };
+      const lane = this.rng() < 0.6 ? 1 : 0;
+      const car: Car = { type, k, s: pick, dir: this.rng() < 0.5 ? 1 : -1, speed: cruise, cruise, stunned: 0, x: 0, z: 0, heading: 0, turnWait: 0, lane };
       const p = this.target(car);
       car.x = p.x;
       car.z = p.z;
@@ -99,12 +102,13 @@ export class CityTraffic {
     this.buildMeshes();
   }
 
-  /** Where a car should be: in the left lane of its street, facing its way along it. */
+  /** Where a car should be: in its lane on the left of its street, facing its way along it. */
   private target(c: Car): { x: number; z: number; heading: number } {
     const p = this.field.at(c.k, c.s);
     const fx = p.tx * c.dir;
     const fz = p.tz * c.dir;
-    const lane = Math.max(1.8, this.streets[c.k].width / 4);
+    const lanes = streetLayout(this.streets[c.k].width).lanes;
+    const lane = lanes[Math.min(c.lane, lanes.length - 1)];
     // Left of the way it's going is (fz, -fx).
     return { x: p.x + fz * lane, z: p.z - fx * lane, heading: Math.atan2(fx, fz) };
   }
@@ -171,12 +175,19 @@ export class CityTraffic {
       };
       let gap = ahead(player.x, player.z) - 3;
       for (const o of this.cars) if (o !== c) gap = Math.min(gap, ahead(o.x, o.z) - TYPES[o.type].len / 2 - TYPES[c.type].len / 2);
-      // A red light at the junction coming up (main roads only).
+      // A red light at the junction coming up (main roads only): wait at the stop line, which
+      // is painted 10.5 m back from the edge of the road crossing.
       for (const j of this.signals) {
         const road = j.a === c.k ? 'a' : j.b === c.k ? 'b' : null;
         if (!road || (road === 'a' ? greenA : greenB)) continue;
-        const d = ahead(j.x, j.z);
-        if (d > 9 && d < 60) gap = Math.min(gap, d - 11);
+        const other = this.streets[road === 'a' ? j.b : j.a];
+        const stopAt = (other ? other.width / 2 : 7) + 11;
+        // (The junction's middle is on the street's centre line, off to the side of the lane.)
+        const dx = j.x - c.x;
+        const dz = j.z - c.z;
+        const d = dx * fx + dz * fz;
+        if (Math.abs(dx * fz - dz * fx) > this.streets[c.k].width / 2 + 2) continue;
+        if (d > stopAt - 3 && d < stopAt + 50) gap = Math.min(gap, d - stopAt);
       }
       if (gap < 30) want = Math.min(want, Math.max(0, (gap - 2) * 0.9));
       c.speed = damp(c.speed, want, want < c.speed ? 4 : 1.2, dt);

@@ -18,6 +18,7 @@ import { SUN_DIRECTION } from './Lighting';
 import { NatureWorld } from './Nature';
 import { StreetCity } from './StreetCity';
 import { StreetFurniture } from './StreetFurniture';
+import { StreetMesh } from './StreetMesh';
 import { SCENES } from './scenes';
 import { ReflectionStreaks, roadWetness } from './surfaces';
 import { padTexture } from './textures';
@@ -155,6 +156,8 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
   let furniture: StreetFurniture | null = null;
   let traffic: CityTraffic | null = null;
   let people: CityPeople | null = null;
+  let streetMesh: StreetMesh | null = null;
+  let streaks: ReflectionStreaks | null = null;
   if (streets && scene.city && scene.cityRadius) {
     const R = scene.cityRadius;
     // The landmarks (Tokyo Tower, the Skytree, the castle, the big wheel, the supertall); every
@@ -165,7 +168,10 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
     // Life on the streets (free drive only): traffic and people, more of both on higher detail.
     traffic = new CityTraffic(streets.streets, furniture.junctions, Math.round(28 + 34 * detail), createRng(31));
     people = new CityPeople(streets.streets, Math.round(90 + 170 * detail), createRng(47));
-    group.add(city.group, streetCity.group, furniture.group, traffic.group, people.group, streets.mesh);
+    streetMesh = new StreetMesh(streets.streets, createRng(88), furniture.footprints);
+    // After dark the streets are wet from the evening's rain: the lamps and neon reflect in them.
+    streaks = new ReflectionStreaks([...furniture.streakLights, ...streetCity.streakLights]);
+    group.add(city.group, streetCity.group, furniture.group, traffic.group, people.group, streetMesh.group, streaks.mesh);
     // Start on the first avenue, a little way out from the centre, heading out of town.
     const avenue = streets.spokes[0].pts;
     const [sx, sz] = avenue[6];
@@ -177,7 +183,7 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
       ...(scene.trails ?? []).map((P): FreeRoad => ({ kind: 'trail', pts: P, width: 8 })),
     ];
     const index = new RoadIndex(roads);
-    const obstacles = [...city.footprints, ...streetCity.footprints, ...furniture.footprints, ...nature.solids, ...nature.trees];
+    const obstacles = [...city.footprints, ...streetCity.footprints, ...furniture.footprints, ...streetMesh.footprints, ...nature.solids, ...nature.trees];
     const ground = (x: number, z: number) => {
       // Slip roads are laid a little above the ground shaped to them; streets sit on the flat
       // basin; everywhere else, the ground exactly as it's drawn.
@@ -228,8 +234,10 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
       streetCity?.setTimeOfDay(tod);
       furniture?.setTimeOfDay(tod);
       traffic?.setTimeOfDay(tod);
+      streetMesh?.setTimeOfDay(tod);
       trackVisual.setTimeOfDay(tod);
-      roadWetness.value = 0;
+      roadWetness.value = streetMesh && tod === 'night' ? 0.85 : 0;
+      if (streaks) streaks.mesh.visible = tod === 'night';
     },
     setDetail: (d, g) => nature.setDetail(d, g),
     addRacingLine,
@@ -239,6 +247,7 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
       city?.update(time);
       streetCity?.update(time);
       furniture?.update(time);
+      streaks?.update(time);
     },
     dispose: () => disposeTree(group),
   };
@@ -824,86 +833,7 @@ export function streetNetwork(R: number, rng: () => number, reserved: { x: numbe
     add({ pts: run, width: 12, lines: true });
   }
 
-  // Ribbons, marked like Japanese roads:
-  // - avenues and ring roads (14 m and up): a yellow double centre line (no overtaking), dashed
-  //   lane lines on the avenues, solid white edge lines;
-  // - local streets: a dashed white centre line and edge lines;
-  // - at every junction the paint stops, with a zebra crossing on each road into it;
-  // - pavements with kerbs, broken at the junctions.
-  // The bigger roads sit a few millimetres higher, so where two cross the bigger one is drawn
-  // cleanly on top instead of flickering.
-  const asphalt = new GeometryBuilder();
-  const walk = new GeometryBuilder();
-  const paint = new GeometryBuilder();
-  const yellow = new GeometryBuilder();
-  streets.forEach((s, id) => {
-    const P = s.pts;
-    const major = s.width >= 14;
-    const avenue = s.width >= 16;
-    const normalAt = (i: number): [number, number] => {
-      const a = P[Math.max(0, i - 1)];
-      const b = P[Math.min(P.length - 1, i + 1)];
-      const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-      return [-(b[1] - a[1]) / l, (b[0] - a[0]) / l];
-    };
-    const y = avenue ? 0.08 : major ? 0.07 : 0.06;
-    const hw = s.width / 2;
-    // Which segments are in a junction (inside another street).
-    const junction = P.slice(1).map((b, i) => near((P[i][0] + b[0]) / 2, (P[i][1] + b[1]) / 2, 3, id));
-    for (let i = 0; i + 1 < P.length; i++) {
-      const [ax, az] = P[i];
-      const [bx, bz] = P[i + 1];
-      const [nax, naz] = normalAt(i);
-      const [nbx, nbz] = normalAt(i + 1);
-      const strip = (b: GeometryBuilder, o0: number, o1: number, yy: number) =>
-        b.quad([ax + nax * o1, yy, az + naz * o1], [bx + nbx * o1, yy, bz + nbz * o1], [bx + nbx * o0, yy, bz + nbz * o0], [ax + nax * o0, yy, az + naz * o0]);
-      strip(asphalt, -hw, hw, y);
-      if (junction[i]) continue;
-      const mx = (ax + bx) / 2;
-      const mz = (az + bz) / 2;
-      // Pavements and the kerb's face, where they don't run into another street.
-      for (const side of [-1, 1]) {
-        const sx = mx + ((nax + nbx) / 2) * side * (hw + 1.5);
-        const sz = mz + ((naz + nbz) / 2) * side * (hw + 1.5);
-        if (near(sx, sz, 1, id)) continue;
-        strip(walk, side > 0 ? hw : -hw - 2.4, side > 0 ? hw + 2.4 : -hw, 0.14);
-        const e = side * hw;
-        // (The pavement material is two-sided, so the kerb shows from the road either side.)
-        walk.quad([ax + nax * e, y, az + naz * e], [bx + nbx * e, y, bz + nbz * e], [bx + nbx * e, 0.14, bz + nbz * e], [ax + nax * e, 0.14, az + naz * e]);
-      }
-      const py = y + 0.015;
-      // Edge lines.
-      for (const side of [-1, 1]) strip(paint, side * (hw - 0.55), side * (hw - 0.4), py);
-      if (major) {
-        strip(yellow, -0.3, -0.15, py);
-        strip(yellow, 0.15, 0.3, py);
-        if (avenue && i % 2 === 0) for (const side of [-1, 1]) strip(paint, side * 3.9 - 0.075, side * 3.9 + 0.075, py);
-      } else if (i % 2 === 0) {
-        strip(paint, -0.075, 0.075, py);
-      }
-      // Into or out of a junction: a zebra crossing across the road at this end.
-      const into = junction[i + 1] === true;
-      const outOf = i > 0 && junction[i - 1] === true;
-      if (into || outOf) {
-        const [cx, cz] = into ? [bx, bz] : [ax, az];
-        const tl = Math.hypot(bx - ax, bz - az) || 1;
-        const tx = ((bx - ax) / tl) * (into ? -1 : 1);
-        const tz = ((bz - az) / tl) * (into ? -1 : 1);
-        const [nx, nz] = into ? [nbx, nbz] : [nax, naz];
-        // Stripes along the road, 0.45 m wide, from 1 to 4 m back from the junction.
-        for (let o = -hw + 1; o + 0.45 <= hw - 1; o += 0.9) {
-          const p = (along: number, off: number): [number, number, number] => [cx + tx * along + nx * off, py + 0.003, cz + tz * along + nz * off];
-          paint.quad(p(1, o), p(1, o + 0.45), p(4, o + 0.45), p(4, o));
-        }
-      }
-    }
-  });
-  const mesh = new THREE.Group();
-  mesh.add(new THREE.Mesh(asphalt.build(), new THREE.MeshStandardMaterial({ color: 0x45464b, roughness: 0.85 })));
-  mesh.add(new THREE.Mesh(walk.build(), new THREE.MeshStandardMaterial({ color: 0xa9a59c, roughness: 0.95, side: THREE.DoubleSide })));
-  mesh.add(new THREE.Mesh(paint.build(), new THREE.MeshStandardMaterial({ color: 0xe8e8e8, roughness: 0.6 })));
-  mesh.add(new THREE.Mesh(yellow.build(), new THREE.MeshStandardMaterial({ color: 0xe8b828, roughness: 0.6 })));
-  return { mesh, near: (x: number, z: number, r: number) => near(x, z, r), streets, spokes: streets.slice(0, SPOKES) };
+  return { near: (x: number, z: number, r: number) => near(x, z, r), streets, spokes: streets.slice(0, SPOKES) };
 }
 
 /** Free drive: smooth slip roads from the ends of the avenues onto the ring road. */
