@@ -124,7 +124,8 @@ export class RaceFeedback {
     }
 
     const along = p.vx * player.proj.tx + p.vz * player.proj.tz;
-    if (along < -3) this.wrongWayTime += dt;
+    // (Off a city course - down a side street - any way is fine.)
+    if (along < -3 && Math.abs(player.proj.lateral) < 100) this.wrongWayTime += dt;
     else this.wrongWayTime = Math.max(0, this.wrongWayTime - dt * 2);
     if (this.wrongWayTime > 1.2 && !this.freeDrive) this.hud.showMessage('WRONG WAY', 0.3, 'warn');
   }

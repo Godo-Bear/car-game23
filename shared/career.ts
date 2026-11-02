@@ -1,5 +1,6 @@
 import type { Difficulty, RaceRecord, TimeOfDay, TrackId, Wallet } from './api';
 import { raceReward } from './economy';
+import { settleGrandPrix } from './grandprix';
 
 /**
  * The career: a fixed run of events across every circuit, pinned on the city map. Each one sets
@@ -169,6 +170,9 @@ export interface Settled {
   newStars: number;
   /** Drift points banked. */
   dp: number;
+  /** Grand Prix: the trophy won with this (final) race, and its bonus (part of earned). */
+  trophy?: number;
+  trophyBonus?: number;
 }
 
 /**
@@ -197,13 +201,26 @@ export function settleRace(wallet: Wallet, r: RaceRecord): Settled | string {
     if (newStars) starMap = { ...starMap, [e.id]: stars };
     earned += bonus + newStars * STAR_BONUS;
   }
+  let trophies = wallet.trophies;
+  let trophy: number | undefined;
+  let trophyBonus = 0;
+  if (r.gp !== undefined) {
+    if (r.event !== undefined) return 'A race is a career event or a Grand Prix round, not both.';
+    const gp = settleGrandPrix(wallet, r, freeDriveUnlocked(wallet));
+    if (typeof gp === 'string') return gp;
+    trophies = gp.trophies;
+    trophy = gp.trophy;
+    trophyBonus = gp.bonus;
+    earned += trophyBonus;
+  }
   const dp = raceDriftPoints(r);
   return {
-    wallet: { ...wallet, credits: wallet.credits + earned, events, stars: starMap, dp: wallet.dp + dp, dpTotal: wallet.dpTotal + dp },
+    wallet: { ...wallet, credits: wallet.credits + earned, events, stars: starMap, dp: wallet.dp + dp, dpTotal: wallet.dpTotal + dp, trophies },
     earned,
     bonus,
     stars,
     newStars,
     dp,
+    ...(trophy !== undefined ? { trophy, trophyBonus } : {}),
   };
 }

@@ -229,6 +229,40 @@ export class AudioEngine {
     src.stop(t + 0.75);
   }
 
+  /** Items: the roulette landing (0), throwing or dropping one (1), being hit (2), a blocked hit (3). */
+  item(kind: 0 | 1 | 2 | 3): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const tone = (f: number, at: number, len: number, type: OscillatorType, vol: number, glide?: number) => {
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.setValueAtTime(f, t + at);
+      if (glide) o.frequency.exponentialRampToValueAtTime(glide, t + at + len);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.setValueAtTime(vol, t + at);
+      g.gain.exponentialRampToValueAtTime(0.001, t + at + len);
+      o.connect(g).connect(this.fxBus);
+      o.start(t + at);
+      o.stop(t + at + len + 0.02);
+    };
+    if (kind === 0) {
+      // A bright little fanfare.
+      [784, 988, 1175, 1568].forEach((f, i) => tone(f, i * 0.05, 0.16, 'square', 0.07));
+    } else if (kind === 1) {
+      tone(900, 0, 0.18, 'sawtooth', 0.08, 300);
+    } else if (kind === 2) {
+      // A wobbling, falling whine and a thud.
+      tone(700, 0, 0.7, 'triangle', 0.18, 120);
+      this.impact(8);
+    } else {
+      // A clear "ting".
+      tone(1760, 0, 0.35, 'sine', 0.2);
+      tone(2637, 0.02, 0.3, 'sine', 0.1);
+    }
+  }
+
   beep(high: boolean): void {
     const ctx = this.ctx;
     if (!ctx) return;

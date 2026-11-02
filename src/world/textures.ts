@@ -311,3 +311,28 @@ export function glowTexture(): THREE.Texture {
   g.fillRect(0, 0, 64, 64);
   return toTexture(c);
 }
+
+/** A boost pad: glowing orange chevrons on a dark plate. */
+export function padTexture(): THREE.Texture {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 96;
+  const g = c.getContext('2d')!;
+  g.fillStyle = 'rgba(20, 10, 0, 0.7)';
+  g.fillRect(0, 0, 64, 96);
+  g.fillStyle = '#ff9a1f';
+  for (const y of [8, 38, 68]) {
+    g.beginPath();
+    g.moveTo(4, y + 20);
+    g.lineTo(32, y);
+    g.lineTo(60, y + 20);
+    g.lineTo(60, y + 30);
+    g.lineTo(32, y + 10);
+    g.lineTo(4, y + 30);
+    g.closePath();
+    g.fill();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}

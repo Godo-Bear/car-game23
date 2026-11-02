@@ -1,5 +1,5 @@
 /** Shared helpers for the account API handlers in server/api. */
-import type { CareerStats, ProfileResponse, RaceRecord, TrackId, Wallet } from '../shared/api';
+import type { CareerStats, CourseId, ProfileResponse, RaceRecord, Wallet } from '../shared/api';
 import { cleanWallet } from '../shared/wallet';
 
 export interface Env {
@@ -208,7 +208,7 @@ export async function loadProfile(db: D1Database, user: UserRow): Promise<Profil
       )
       .bind(user.id)
       .all<{
-        track: TrackId;
+        track: CourseId;
         position: number;
         field_size: number;
         laps: number;
@@ -220,9 +220,9 @@ export async function loadProfile(db: D1Database, user: UserRow): Promise<Profil
     db
       .prepare('SELECT track, MIN(best_lap) AS best FROM race_results WHERE user_id = ? AND best_lap IS NOT NULL GROUP BY track')
       .bind(user.id)
-      .all<{ track: TrackId; best: number }>(),
+      .all<{ track: CourseId; best: number }>(),
   ]);
-  const bestLaps: Partial<Record<TrackId, number>> = {};
+  const bestLaps: Partial<Record<CourseId, number>> = {};
   for (const row of best.results) bestLaps[row.track] = row.best;
   const stats: CareerStats = {
     races: statsRow?.races ?? 0,

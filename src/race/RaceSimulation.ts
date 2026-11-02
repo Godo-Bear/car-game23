@@ -1,10 +1,12 @@
 import type { Difficulty } from '../../shared/api';
 import { AIDriver, type AIProfile, type TrafficCar } from '../ai/AIDriver';
 import { RacingLine } from '../ai/RacingLine';
-import { clamp, createRng, smoothstep, wrapAngle } from '../core/math';
+import { clamp, createRng, mod, smoothstep, wrapAngle } from '../core/math';
 import { collideCars, collideWithWalls, type WallContact } from '../physics/Collisions';
 import { neutralControls, SPORTS_CAR, type VehicleControls, VehiclePhysics, type VehicleSpec } from '../physics/VehiclePhysics';
+import { inSpan } from '../track/span';
 import { createProjection, type TrackLayout, TrackPath, type TrackProjection } from '../track/TrackPath';
+import { type ItemBox, ItemSystem } from './Items';
 import { NITRO_PICKUP, PICKUP_RESPAWN, type Pickup, type PickupKind, pickupAt, pickupNear, placePickups, SUPER_SECONDS } from './Pickups';
 import { type RaceEvent, RaceManager } from './RaceManager';
 
@@ -27,6 +29,18 @@ export interface RaceSettings {
   aiCars: AICar[];
   /** Free drive: the player can leave the road and drive anywhere on this ground (the AI keep to the road). */
   freeRoam?: FreeRoamGround;
+  /** Item boxes and items (kart-racing style; see Items.ts). */
+  items?: boolean;
+  /** Extra item boxes off the course (free drive's town). */
+  itemBoxes?: ItemBox[];
+  /**
+   * City courses (with freeRoam): checkpoint gates round the lap. The player may leave the course
+   * - down a side street, say - and progress waits where they left it until they're back on it;
+   * coming back past a gate they skipped puts them back where they left (see courseProgress).
+   */
+  gates?: number[];
+  /** Boost pads on the road: drive over one for a short, strong boost (any car). */
+  boostPads?: { x: number; z: number; heading: number }[];
 }
 
 /** The ground of a free drive map (see World.freeRoam). */
@@ -46,6 +60,14 @@ export interface FreeRoamGround {
    */
   roadAhead?(x: number, z: number, dx: number, dz: number, look: number): { x: number; z: number } | null;
 }
+
+/** Boost pads: how close to the middle (m), how long the boost lasts, and the gap before the next. */
+const PAD_REACH = 2.6;
+export const PAD_BOOST = 0.9;
+const PAD_COOLDOWN = 0.7;
+
+/** City courses: seconds off the course before you're put back on it. */
+const OFF_COURSE_LIMIT = 25;
 
 /** A free-roaming car's footprint against buildings (m). */
 const FREE_CAR_RADIUS = 2.1;
@@ -181,6 +203,15 @@ export class RaceSimulation {
   readonly pickups: Pickup[];
   /** Seconds since the start (for pickups coming back). */
   time = 0;
+  /** Item boxes and the items in play, when the race has them. */
+  readonly items: ItemSystem | null;
+  /** City courses: seconds the player has been off the course (0 when on it). */
+  offCourseTime = 0;
+  /** City courses: where the player left the course (lap distance and when), while they're off it. */
+  private leftCourse: { distance: number; time: number } | null = null;
+  private lastOnCourse = 0;
+  /** Seconds before each car can take another boost pad. */
+  private readonly padWait: number[] = [];
   private traffic: TrafficCar[] = [];
   private pending: RaceEvent[] = [];
   /** Free drive: obstacles bucketed on a grid (key -> boxes) for quick collision checks. */
@@ -260,6 +291,7 @@ export class RaceSimulation {
         }
       }
     }
+    this.items = s.items ? new ItemSystem(this.track, this.cars.length, s.seed, s.itemBoxes) : null;
     this.race = this.placeOnGrid();
   }
 
@@ -287,6 +319,10 @@ export class RaceSimulation {
     this.phase = 'grid';
     this.time = 0;
     for (const p of this.pickups) p.backAt = 0;
+    this.items?.reset();
+    this.leftCourse = null;
+    this.offCourseTime = 0;
+    this.lastOnCourse = this.player.proj.distance;
     return new RaceManager(this.track.length, this.settings.laps, this.cars, startDistances);
   }
 
@@ -409,6 +445,7 @@ export class RaceSimulation {
           controls.throttle = Math.min(controls.throttle, car.physics.forwardSpeed > 22 ? 0 : 0.5);
         }
       }
+      if (this.items) controls = this.items.controls(car, controls);
       car.controls = controls;
       const slope = car.proj.slope * Math.cos(car.physics.heading - car.proj.heading);
       car.physics.step(controls, dt, slope);
@@ -445,11 +482,13 @@ export class RaceSimulation {
     }
     this.time += dt;
     this.collectPickups();
+    if (this.settings.boostPads) this.boostPads(this.settings.boostPads, dt);
+    if (this.items) this.pending.push(...this.items.update(dt, this.time, this.cars, this.positions()));
 
-    const events = this.race.update(
-      dt,
-      this.cars.map((c) => c.proj.distance),
-    );
+    const distances = this.cars.map((c) => c.proj.distance);
+    const player = this.player;
+    if (this.settings.gates && this.settings.freeRoam && !player.autopilot) distances[player.id] = this.courseProgress(player);
+    const events = this.race.update(dt, distances);
     if (this.pending.length) {
       events.push(...this.pending);
       this.pending = [];
@@ -597,6 +636,36 @@ export class RaceSimulation {
     return true;
   }
 
+  /** Any car driving over a boost pad gets a short, strong boost. */
+  private boostPads(pads: NonNullable<RaceSettings['boostPads']>, dt: number): void {
+    for (const car of this.cars) {
+      const wait = (this.padWait[car.id] ?? 0) - dt;
+      this.padWait[car.id] = wait;
+      if (wait > 0) continue;
+      const p = car.physics;
+      for (const pad of pads) {
+        if ((pad.x - p.x) ** 2 + (pad.z - p.z) ** 2 > PAD_REACH * PAD_REACH) continue;
+        p.itemBoost(PAD_BOOST);
+        this.padWait[car.id] = PAD_COOLDOWN;
+        if (car.isPlayer && !car.autopilot) this.pending.push({ type: 'pad', racerId: car.id });
+        break;
+      }
+    }
+  }
+
+  /** Race position (1-based) of each car, by car id. */
+  positions(): number[] {
+    return this.race.racers.map((r) => r.position);
+  }
+
+  /** Use the item a car holds (the player's item button). Returns whether it did anything. */
+  useItem(car: SimCar): boolean {
+    if (!this.items || this.phase !== 'racing') return false;
+    const used = this.items.use(car, this.cars, this.positions());
+    if (used) this.pending.push(...this.items.flush());
+    return used;
+  }
+
   /** The player drives through a pickup: a blue bottle tops up the tank, a gold one is a super boost. */
   private collectPickups(): void {
     const car = this.player;
@@ -611,10 +680,54 @@ export class RaceSimulation {
     this.pending.push({ type: 'pickup', racerId: car.id, kind: p.kind });
   }
 
-  /** Put a car back on the racing line (used by the player's reset key and for wedged AI cars). */
-  respawn(car: SimCar): void {
+  /**
+   * City courses: the player's progress round the lap. Off the course it waits where they left;
+   * back on it, it jumps to where they are - unless that skipped a checkpoint gate (a shortcut
+   * through somewhere that isn't one), in which case they're put back where they left. Lost for
+   * too long: back to the course too.
+   */
+  private courseProgress(car: SimCar): number {
+    const pr = car.proj;
+    const L = this.track.length;
+    // (Off the road, the free ground marks the car as far off the course.)
+    if (Math.abs(pr.lateral) > this.track.wallOffset + 1) {
+      this.leftCourse ??= { distance: this.lastOnCourse, time: this.time };
+      this.offCourseTime = this.time - this.leftCourse.time;
+      if (this.offCourseTime > OFF_COURSE_LIMIT) {
+        this.respawn(car);
+        return this.lastOnCourse;
+      }
+      return this.leftCourse.distance;
+    }
+    const left = this.leftCourse;
+    this.leftCourse = null;
+    this.offCourseTime = 0;
+    if (left) {
+      const jump = mod(pr.distance - left.distance, L);
+      const skipped = jump > 30 && jump < L / 2 && (this.settings.gates ?? []).some((g) => inSpan(g, left.distance + 1, pr.distance - 1, L));
+      if (skipped) {
+        this.pending.push({ type: 'checkpoint', racerId: car.id });
+        this.respawn(car, left.distance);
+        return this.lastOnCourse;
+      }
+    }
+    this.lastOnCourse = pr.distance;
+    return pr.distance;
+  }
+
+  /**
+   * Put a car back on the racing line (used by the player's reset key and for wedged AI cars),
+   * a little behind where it is - or at lap distance `at`. On a city course, a player who's off
+   * the course goes back to where they left it.
+   */
+  respawn(car: SimCar, at?: number): void {
     const back = 12;
-    const d = car.proj.distance - back;
+    if (at === undefined && car.isPlayer && this.leftCourse) at = this.leftCourse.distance + back;
+    if (car.isPlayer && this.settings.gates) {
+      this.leftCourse = null;
+      this.offCourseTime = 0;
+    }
+    const d = (at ?? car.proj.distance) - back;
     let best = this.line.offsets[this.track.indexAtDistance(d)];
     // Avoid dropping onto another car.
     for (const lateral of [best, -3.5, 3.5, 0, -5, 5]) {
@@ -632,6 +745,11 @@ export class RaceSimulation {
     this.track.project(p.x, p.z, -1, car.proj, p.y);
     car.ai.reset();
     car.stuckTime = 0;
+    car.vy = 0;
+    car.grounded = true;
+    car.groundRoll = 0;
+    if (car.isPlayer) this.lastOnCourse = car.proj.distance;
+    this.items?.clearEffects(car.id);
     this.savePrev(car);
   }
 

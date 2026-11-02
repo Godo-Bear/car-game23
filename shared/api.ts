@@ -4,6 +4,10 @@ import type { DailyProgress } from './quests';
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
 export type TrackId = 'tokyo' | 'osaka' | 'yokohama' | 'hakone' | 'irohazaka' | 'haruna' | 'niseko' | 'sakura' | 'arashiyama' | 'izu';
+/** Street circuits through the free drive city (raced in the City Cup and from free drive). */
+export type CityCourseId = 'city-ring' | 'city-tower' | 'city-wheel' | 'city-castle';
+/** Anywhere a race can be run. */
+export type CourseId = TrackId | CityCourseId;
 export type TimeOfDay = 'day' | 'sunset' | 'night';
 export type CameraModeSetting = 'chase' | 'far' | 'hood';
 export type CarId = 'starter' | 'hatch' | 'gt' | 'drift' | 'rally' | 'super';
@@ -34,13 +38,13 @@ export interface CareerStats {
   /** Best lap on any circuit in seconds (kept for older clients). */
   bestLap: number | null;
   /** Best lap per circuit, in seconds. */
-  bestLaps: Partial<Record<TrackId, number>>;
+  bestLaps: Partial<Record<CourseId, number>>;
   totalLaps: number;
 }
 
 export interface RaceRecord {
   /** Circuit raced (older results without it were all on the Tokyo circuit). */
-  track: TrackId;
+  track: CourseId;
   position: number;
   fieldSize: number;
   laps: number;
@@ -53,6 +57,11 @@ export interface RaceRecord {
   event?: string;
   /** Drift points scored (paid into the wallet's DP; capped by the race time). */
   driftPoints?: number;
+  /**
+   * A Grand Prix race (shared/grandprix.ts): the cup and round (0-based); on the last round,
+   * your place overall in the cup.
+   */
+  gp?: { cup: string; round: number; place?: number };
 }
 
 export interface PlayerSettings {
@@ -89,6 +98,8 @@ export interface Wallet {
   dpTotal: number;
   /** Shop cosmetics bought (shared/items.ts). */
   items: string[];
+  /** Grand Prix trophies: best overall place (1..3) per cup and class, keyed `cup:difficulty`. */
+  trophies: Record<string, number>;
 }
 
 export type UpgradePart = 'engine' | 'gearbox' | 'aero' | 'tyres' | 'suspension' | 'brakes' | 'diff' | 'nitro';
@@ -126,6 +137,8 @@ export const PASSWORD_MAX = 128;
 export const DIFFICULTIES: Difficulty[] = ['easy', 'normal', 'hard'];
 export const CAMERA_MODES: CameraModeSetting[] = ['chase', 'far', 'hood'];
 export const TRACK_IDS: TrackId[] = ['tokyo', 'osaka', 'yokohama', 'hakone', 'irohazaka', 'haruna', 'niseko', 'sakura', 'arashiyama', 'izu'];
+export const CITY_COURSE_IDS: CityCourseId[] = ['city-ring', 'city-tower', 'city-wheel', 'city-castle'];
+export const COURSE_IDS: CourseId[] = [...TRACK_IDS, ...CITY_COURSE_IDS];
 export const TIMES_OF_DAY: TimeOfDay[] = ['day', 'sunset', 'night'];
 /** Cheapest to dearest (the shop's order). */
 export const CAR_IDS: CarId[] = ['starter', 'hatch', 'gt', 'drift', 'rally', 'super'];

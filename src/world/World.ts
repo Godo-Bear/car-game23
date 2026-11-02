@@ -7,6 +7,7 @@ import { gridSlot } from '../race/RaceSimulation';
 import { BARRIER_THICKNESS, buildRubberLine, buildTrackVisual, SIDEWALK_WIDTH, type TrackVisual } from '../track/TrackMesh';
 import type { TrackPath } from '../track/TrackPath';
 import type { TrackDef } from '../track/tracks';
+import { type FreeActivities, placeActivities, type Ramp, rampHeight } from './activities';
 import { City, type CityScene, type Footprint, placeLamps } from './City';
 import { windTime } from './foliage';
 import { GeometryBuilder } from './GeometryBuilder';
@@ -15,6 +16,7 @@ import { SUN_DIRECTION } from './Lighting';
 import { NatureWorld } from './Nature';
 import { SCENES } from './scenes';
 import { ReflectionStreaks, roadWetness } from './surfaces';
+import { padTexture } from './textures';
 
 /** Everything static around a circuit: the track furniture plus the city or countryside. */
 export interface World {
@@ -48,6 +50,8 @@ export interface FreeRoamMap {
   pickups: { x: number; y: number; z: number; kind: PickupKind }[];
   /** The nearest place on a road to (x, z), heading along it. */
   roadNear(x: number, z: number): { x: number; z: number; heading: number };
+  /** Things to do: race markers, speed traps, ramps, drift zones, lucky cats, boost pads, item boxes. */
+  activities: FreeActivities;
   /** `look` metres on along the road under (x, z), going in direction (dx, dz); null off the roads. */
   roadAhead(x: number, z: number, dx: number, dz: number, look: number): { x: number; z: number } | null;
 }
@@ -133,7 +137,7 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
   const trackVisual = buildTrackVisual(track, rng, { theme: def.theme, banner: def.banner, gridSlots: open ? [] : gridSlots, lamps: [], crossings: [], open });
   // Free drive: a city with an organic street network in the middle of the map, its avenues
   // joined to the ring road by smooth slip roads (the ground is shaped to them).
-  const streets = scene.kind === 'rural' && scene.cityRadius && scene.city ? streetNetwork(scene.cityRadius, createRng(77), landmarkGrounds(scene.city)) : null;
+  const streets = scene.kind === 'rural' && scene.cityRadius && scene.city ? cityStreets(scene.cityRadius, scene.city) : null;
   const connectors = streets ? connectorRoads(streets.spokes, track) : [];
   const nature = new NatureWorld({ ...scene, connectors }, track, rng, detail, grass);
   group.add(trackVisual.group, nature.group);
@@ -155,15 +159,36 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
       ...(scene.trails ?? []).map((P): FreeRoad => ({ kind: 'trail', pts: P, width: 8 })),
     ];
     const index = new RoadIndex(roads);
+    const obstacles = [...city.footprints, ...nature.solids, ...nature.trees];
+    const ground = (x: number, z: number) => {
+      // Slip roads are laid a little above the ground shaped to them; streets sit on the flat
+      // basin; everywhere else, the ground exactly as it's drawn.
+      const c = nature.connectorAt(x, z);
+      if (c && c.d < 7.5) return c.y + 0.06;
+      return Math.max(nature.meshHeightAt(x, z), Math.hypot(x, z) < R ? 0.06 : -Infinity);
+    };
+    const solid = obstacleLookup(obstacles);
+    const activities = placeActivities({
+      roads,
+      ring: track,
+      surfaceAt: ground,
+      clear: (x, z, r) => !solid(x, z, r),
+      landmarks: landmarkGrounds(scene.city),
+      bounds: { ...nature.extent, half: nature.extent.half - 400 },
+    });
+    group.add(activityMeshes(activities, ground));
     freeRoam = {
       surfaceAt(x, z) {
-        // Slip roads are laid a little above the ground shaped to them; streets sit on the flat
-        // basin; everywhere else, the ground exactly as it's drawn.
-        const c = nature.connectorAt(x, z);
-        if (c && c.d < 7.5) return c.y + 0.06;
-        return Math.max(nature.meshHeightAt(x, z), Math.hypot(x, z) < R ? 0.06 : -Infinity);
+        // (And the jump ramps on top.)
+        let h = ground(x, z);
+        for (const r of activities.ramps) {
+          const up = rampHeight(r, x, z);
+          if (up > 0) h = Math.max(h, ground(r.x, r.z) + up);
+        }
+        return h;
       },
-      obstacles: [...city.footprints, ...nature.solids, ...nature.trees],
+      obstacles,
+      activities,
       spawn: { x: sx, z: sz, heading: Math.atan2(nx - sx, nz - sz) },
       bounds: { ...nature.extent, half: nature.extent.half - 260 },
       roads,
@@ -192,6 +217,168 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
     },
     dispose: () => disposeTree(group),
   };
+}
+
+/** Is anything solid within `r` of (x, z)? (A grid over the obstacles, for placing things.) */
+function obstacleLookup(obstacles: Footprint[]): (x: number, z: number, r: number) => boolean {
+  const C = 40;
+  const grid = new Map<number, Footprint[]>();
+  for (const o of obstacles) {
+    for (let i = Math.floor((o.x - o.hw) / C); i <= Math.floor((o.x + o.hw) / C); i++) {
+      for (let j = Math.floor((o.z - o.hd) / C); j <= Math.floor((o.z + o.hd) / C); j++) {
+        const key = i * 65536 + j;
+        const list = grid.get(key);
+        if (list) list.push(o);
+        else grid.set(key, [o]);
+      }
+    }
+  }
+  return (x, z, r) => {
+    for (let i = Math.floor((x - r) / C); i <= Math.floor((x + r) / C); i++) {
+      for (let j = Math.floor((z - r) / C); j <= Math.floor((z + r) / C); j++) {
+        for (const o of grid.get(i * 65536 + j) ?? []) {
+          if (Math.abs(x - o.x) < o.hw + r && Math.abs(z - o.z) < o.hd + r) return true;
+        }
+      }
+    }
+    return false;
+  };
+}
+
+/** The ramps, speed trap cameras and drift zone rings (the race markers and cats are drawn live). */
+function activityMeshes(a: FreeActivities, ground: (x: number, z: number) => number): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'activities';
+  const stripes = rampTexture();
+  const rampMat = new THREE.MeshStandardMaterial({ map: stripes, roughness: 0.6 });
+  const sideMat = new THREE.MeshStandardMaterial({ color: 0x3a3a44, roughness: 0.8 });
+  for (const r of a.ramps) g.add(rampMesh(r, ground(r.x, r.z), rampMat, sideMat));
+  const pole = new THREE.MeshStandardMaterial({ color: 0x8a8f99, metalness: 0.6, roughness: 0.4 });
+  const cam = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.4 });
+  const lens = new THREE.MeshBasicMaterial({ color: new THREE.Color(2, 0.2, 0.2) });
+  for (const t of a.traps) {
+    // A camera on a pole at the roadside, looking along the road.
+    const side = 9;
+    const x = t.x + Math.cos(t.heading) * side;
+    const z = t.z - Math.sin(t.heading) * side;
+    const y = ground(x, z);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.25, 6, 0.25), pole);
+    post.position.set(x, y + 3, z);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.2, 0.2), pole);
+    arm.position.set(x - Math.cos(t.heading) * 1.7, y + 5.9, z + Math.sin(t.heading) * 1.7);
+    arm.rotation.y = t.heading;
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.6, 1.3), cam);
+    box.position.set(x - Math.cos(t.heading) * 3.3, y + 5.5, z + Math.sin(t.heading) * 3.3);
+    box.rotation.y = t.heading;
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), lens);
+    eye.position.set(box.position.x - Math.sin(t.heading) * 0.68, box.position.y, box.position.z - Math.cos(t.heading) * 0.68);
+    g.add(post, arm, box, eye);
+  }
+  const zoneMat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(0.9, 0.3, 1.4),
+    transparent: true,
+    opacity: 0.35,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  for (const z of a.zones) {
+    // A dashed purple ring painted round the zone.
+    const segments = Math.round(z.r / 4);
+    for (let k = 0; k < segments; k++) {
+      const a0 = (k / segments) * Math.PI * 2;
+      const dash = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.7), zoneMat);
+      const x = z.x + Math.cos(a0) * z.r;
+      const zz = z.z + Math.sin(a0) * z.r;
+      dash.rotation.set(-Math.PI / 2, 0, -a0 + Math.PI / 2);
+      dash.position.set(x, ground(x, zz) + 0.12, zz);
+      g.add(dash);
+    }
+  }
+  const padMat = new THREE.MeshBasicMaterial({ map: padTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 });
+  for (const p of a.pads) {
+    const pad = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 4.4), padMat);
+    pad.rotation.set(-Math.PI / 2, 0, p.heading + Math.PI);
+    pad.position.set(p.x, ground(p.x, p.z) + 0.1, p.z);
+    g.add(pad);
+  }
+  g.traverse((o) => {
+    o.userData.noAO = true;
+  });
+  return g;
+}
+
+/** A wedge ramp: a striped slope up to a sheer drop. */
+function rampMesh(r: Ramp, y: number, top: THREE.Material, side: THREE.Material): THREE.Mesh {
+  const L = r.length;
+  const W = r.width / 2;
+  const H = r.height;
+  // In the ramp's own frame: x across, z along (0 at the foot), y up.
+  const v = [
+    [-W, 0, 0],
+    [W, 0, 0],
+    [W, H, L],
+    [-W, H, L],
+    [-W, 0, L],
+    [W, 0, L],
+  ];
+  // (Wound to face outward.)
+  const tris = [
+    [0, 2, 1, 0, 3, 2], // slope
+    [4, 5, 2, 4, 2, 3], // back face (the drop)
+    [0, 4, 3], // sides
+    [1, 2, 5],
+  ];
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const groups: [number, number, number][] = [];
+  let start = 0;
+  tris.forEach((t, k) => {
+    for (const i of t) {
+      pos.push(...v[i]);
+      uv.push(v[i][0] / (2 * W) + 0.5, v[i][2] / L);
+    }
+    groups.push([start, t.length, k === 0 ? 0 : 1]);
+    start += t.length;
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  for (const [s, c, m] of groups) geo.addGroup(s, c, m);
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, [top, side]);
+  mesh.position.set(r.x - Math.sin(r.heading) * (L / 2), y, r.z - Math.cos(r.heading) * (L / 2));
+  mesh.rotation.y = r.heading;
+  mesh.castShadow = true;
+  return mesh;
+}
+
+function rampTexture(): THREE.Texture {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 128;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#f2c200';
+  g.fillRect(0, 0, 64, 128);
+  g.fillStyle = '#1a1a1a';
+  for (let y = -64; y < 128; y += 32) {
+    g.beginPath();
+    g.moveTo(0, y + 16);
+    g.lineTo(32, y);
+    g.lineTo(64, y + 16);
+    g.lineTo(64, y + 28);
+    g.lineTo(32, y + 12);
+    g.lineTo(0, y + 28);
+    g.closePath();
+    g.fill();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** The free drive city's streets (the same every time: the city courses are traced along them). */
+export function cityStreets(radius: number, city: CityScene) {
+  return streetNetwork(radius, createRng(77), landmarkGrounds(city));
 }
 
 /** The ground the free drive city's landmarks stand on (streets go round them). */
@@ -477,8 +664,9 @@ export function streetNetwork(R: number, rng: () => number, reserved: { x: numbe
   // Curved avenues from the centre to the edge of town.
   const SPOKES = 7;
   for (let k = 0; k < SPOKES; k++) {
-    const a0 = (k / SPOKES) * Math.PI * 2 + (rng() - 0.5) * 0.5;
-    const bend = (rng() - 0.5) * 1.1;
+    // Evenly spread round the compass (a little off), each with a gentle curve.
+    const a0 = (k / SPOKES) * Math.PI * 2 + (rng() - 0.5) * 0.2;
+    const bend = (rng() - 0.5) * 0.6;
     const pts: [number, number][] = [];
     for (let t = 0.03; t <= 1.001; t += 0.015) {
       const a = a0 + bend * Math.sin(t * Math.PI * 0.85);

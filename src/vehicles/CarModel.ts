@@ -741,6 +741,7 @@ export class CarModel {
   private roll = 0;
   private pitch = 0;
   private groundPitch = 0;
+  private shrink = 1;
   private groundRoll = 0;
   private visualSteer = 0;
 
@@ -932,10 +933,14 @@ export class CarModel {
    * Sync the visual with the simulation. `alpha` (0..1) interpolates between the previous and
    * current physics step so motion is smooth at any display refresh rate.
    */
-  update(car: SimCar, alpha: number, dt: number): void {
+  update(car: SimCar, alpha: number, dt: number, items?: { spinAngle: number; stun: number }): void {
     const p = car.physics;
     this.root.position.set(lerp(car.prevX, p.x, alpha), lerp(car.prevY, p.y, alpha), lerp(car.prevZ, p.z, alpha));
-    this.root.rotation.y = car.prevHeading + wrapAngle(p.heading - car.prevHeading) * alpha;
+    // (A car spinning out after an item hit is drawn turning round on the spot.)
+    this.root.rotation.y = car.prevHeading + wrapAngle(p.heading - car.prevHeading) * alpha + (items?.spinAngle ?? 0);
+    // Stunned by a Thunder Drum: shrunk for a moment.
+    this.shrink = damp(this.shrink, items && items.stun > 0 ? 0.62 : 1, 10, dt);
+    this.root.scale.setScalar(this.shrink);
     // Sit on the ground's slope (eased a little, so the car doesn't twitch over every fold in it).
     const slopeAlongCar = car.proj.slope * Math.cos(p.heading - car.proj.heading);
     this.groundPitch = damp(this.groundPitch, -Math.atan(slopeAlongCar), 14, dt);

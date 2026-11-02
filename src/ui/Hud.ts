@@ -1,5 +1,7 @@
+import { ITEM_IDS, ITEM_NAMES } from '../race/Items';
 import { formatTime } from '../race/RaceManager';
 import type { RaceSimulation } from '../race/RaceSimulation';
+import { itemSvg } from './itemIcons';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -16,6 +18,10 @@ export class Hud {
   private readonly cache = new Map<string, string>();
   private messageTimer = 0;
   private standingsKey = '';
+  private itemKey = '';
+  private readonly itemSlot = $('hud-item');
+  private readonly flash = $('hud-flash');
+  private flashTimer = 0;
 
   constructor(private readonly colors: string[]) {}
 
@@ -26,6 +32,11 @@ export class Hud {
   /** Free drive: no positions, laps or timing on screen. */
   setFreeDrive(on: boolean): void {
     this.root.classList.toggle('free', on);
+  }
+
+  /** Free drive: your progress (lucky cats, stars) in the corner. */
+  setFreeInfo(text: string): void {
+    this.set('hud-free-info', text);
   }
 
   /** Big centred text, e.g. countdown numbers, "FINAL LAP", "WRONG WAY". */
@@ -45,6 +56,12 @@ export class Hud {
     this.boostTimer = kind === 'pickup' ? 1.1 : 1.8;
   }
 
+  /** A full-screen flash (a Thunder Drum strikes, or you're hit). */
+  showFlash(kind: 'thunder' | 'hit'): void {
+    this.flash.className = `hud-flash show ${kind}`;
+    this.flashTimer = kind === 'thunder' ? 0.5 : 0.25;
+  }
+
   clearMessage(): void {
     this.messageTimer = 0;
     this.message.className = 'hud-message';
@@ -61,6 +78,11 @@ export class Hud {
       this.messageTimer -= dt;
       if (this.messageTimer <= 0) this.message.className = 'hud-message';
     }
+    if (this.flashTimer > 0) {
+      this.flashTimer -= dt;
+      if (this.flashTimer <= 0) this.flash.className = 'hud-flash';
+    }
+    this.updateItem(sim);
     if (this.boostTimer > 0) {
       this.boostTimer -= dt;
       if (this.boostTimer <= 0) this.boost.className = 'hud-boost';
@@ -117,5 +139,24 @@ export class Hud {
         }),
       );
     }
+  }
+
+  /** The item slot: empty, the roulette spinning, or the item ready to use. */
+  private updateItem(sim: RaceSimulation): void {
+    const items = sim.items;
+    this.root.classList.toggle('items', !!items);
+    if (!items) return;
+    const s = items.state[sim.player.id];
+    const rolling = s.held !== null && s.rolling > 0;
+    // While rolling, flick through the items.
+    const shown = rolling ? ITEM_IDS[Math.floor(s.rolling * 14) % ITEM_IDS.length] : s.held;
+    const key = `${shown}|${rolling}|${s.uses}`;
+    if (key === this.itemKey) return;
+    this.itemKey = key;
+    this.itemSlot.classList.toggle('rolling', rolling);
+    this.itemSlot.classList.toggle('ready', !!s.held && !rolling);
+    $('hud-item-icon').innerHTML = shown ? itemSvg(shown) : '';
+    $('hud-item-uses').textContent = s.held && !rolling && s.uses > 1 ? `×${s.uses}` : '';
+    $('hud-item-name').textContent = s.held && !rolling ? ITEM_NAMES[s.held] : '';
   }
 }

@@ -1,6 +1,7 @@
-import { CAR_IDS, type CarId, TRACK_IDS, type Upgrades, type Wallet } from './api';
+import { CAR_IDS, type CarId, COURSE_IDS, DIFFICULTIES, type Upgrades, type Wallet } from './api';
 import { CAREER_EVENT_IDS, MAX_STARS } from './career';
 import { MAX_UPGRADE, newWallet, PLAYER_CAR, STARTING_CREDITS, UPGRADE_PARTS } from './economy';
+import { CUPS, trophyKey } from './grandprix';
 import { ITEM_IDS } from './items';
 import { DAILY_POOL, freshDaily, QUEST_IDS } from './quests';
 
@@ -69,13 +70,22 @@ export function cleanWallet(raw: unknown): Wallet {
     mountain: count(d.mountain),
     hard: count(d.hard),
     drift: Number.isInteger(d.drift) && (d.drift as number) >= 0 ? Math.min(d.drift as number, 1e7) : 0,
-    tracks: ids(d.tracks, TRACK_IDS),
+    tracks: ids(d.tracks, COURSE_IDS),
     claimed: ids(
       d.claimed,
       DAILY_POOL.map((x) => x.id),
     ),
   };
-  return { credits, owned, upgrades, events, quests, daily, stars, dp, dpTotal, items };
+  // Grand Prix trophies (known cups and classes, places 1..3).
+  const trophies: Wallet['trophies'] = {};
+  const rawTrophies = r.trophies && typeof r.trophies === 'object' ? (r.trophies as Record<string, unknown>) : {};
+  for (const c of CUPS) {
+    for (const d of DIFFICULTIES) {
+      const place = rawTrophies[trophyKey(c.id, d)];
+      if (Number.isInteger(place) && (place as number) >= 1 && (place as number) <= 3) trophies[trophyKey(c.id, d)] = place as number;
+    }
+  }
+  return { credits, owned, upgrades, events, quests, daily, stars, dp, dpTotal, items, trophies };
 }
 
 /** True if a guest wallet holds anything worth moving to an account. */
@@ -86,6 +96,7 @@ export function hasGuestProgress(guest: Wallet): boolean {
     guest.items.length > 0 ||
     Object.values(guest.upgrades).some((u) => Object.values(u ?? {}).some((v) => v > 0)) ||
     Object.keys(guest.events).length > 0 ||
+    Object.keys(guest.trophies).length > 0 ||
     guest.quests.length > 0
   );
 }
@@ -106,6 +117,8 @@ export function mergeWallets(account: Wallet, guestRaw: unknown): Wallet {
   for (const [id, pos] of Object.entries(g.events)) events[id] = Math.min(events[id] ?? 99, pos);
   const stars = { ...a.stars };
   for (const [id, n] of Object.entries(g.stars)) stars[id] = Math.max(stars[id] ?? 0, n);
+  const trophies = { ...a.trophies };
+  for (const [id, place] of Object.entries(g.trophies)) trophies[id] = Math.min(trophies[id] ?? 99, place);
   return cleanWallet({
     ...a,
     credits: a.credits + Math.max(0, g.credits - STARTING_CREDITS),
@@ -115,6 +128,7 @@ export function mergeWallets(account: Wallet, guestRaw: unknown): Wallet {
     upgrades: { [PLAYER_CAR]: best(a.upgrades[PLAYER_CAR], g.upgrades[PLAYER_CAR]) },
     events,
     stars,
+    trophies,
     quests: [...new Set([...a.quests, ...g.quests])],
   });
 }

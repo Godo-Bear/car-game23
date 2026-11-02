@@ -1,4 +1,4 @@
-import type { CarSetup, PlayerSettings, Purchase, TimeOfDay, TrackId } from '../../shared/api';
+import type { CarSetup, Difficulty, PlayerSettings, Purchase, TimeOfDay, TrackId } from '../../shared/api';
 import {
   bestResult,
   CAREER_EVENTS,
@@ -21,11 +21,12 @@ import type { Input } from '../core/Input';
 import type { SettingsStore } from '../core/Settings';
 import { formatTime, type RacerState } from '../race/RaceManager';
 import { TrackPath } from '../track/TrackPath';
-import { TRACKS } from '../track/tracks';
+import { courseInfo, TRACKS } from '../track/tracks';
 import { CARS, carSetup } from '../vehicles/cars';
 import { FREE_DRIVE_SPOTS, mapFraction } from '../world/freeDrive';
 import { AdminPanel } from './AdminPanel';
 import { GarageScreen } from './GarageScreen';
+import { GrandPrixScreen } from './GrandPrixScreen';
 import { SettingsPanel, type SettingsTab } from './SettingsPanel';
 import { ShopScreen } from './ShopScreen';
 
@@ -44,7 +45,7 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
 };
 
 /** 'modes' is the Play tab's choice between the career map and free drive. */
-export type HubPanel = 'home' | 'modes' | 'career' | 'freedrive' | 'garage' | 'shop' | 'quests' | 'profile';
+export type HubPanel = 'home' | 'modes' | 'career' | 'freedrive' | 'grandprix' | 'garage' | 'shop' | 'quests' | 'profile';
 
 export interface ScreenHandlers {
   onRace(settings: PlayerSettings): void;
@@ -57,6 +58,10 @@ export interface ScreenHandlers {
   onRestart(): void;
   /** Free drive (once unlocked), from a starting place, at a time of day. */
   onFreeDrive(spot: string, timeOfDay: TimeOfDay): void;
+  /** Grand Prix: start a cup; on to the next race (or the trophy); back to free drive after a city race. */
+  onGrandPrix(cupId: string, difficulty: Difficulty): void;
+  onGpNext(): void;
+  onFreeBack(): void;
   onQuit(): void;
   /** Called whenever a modal opens/closes so the game can pause input. */
   onModalChange(open: boolean): void;
@@ -92,6 +97,8 @@ export class Screens {
   raceEvent: string | null = null;
   /** In free drive (the pause menu has no restart). */
   freeDrive = false;
+  /** The Grand Prix screens. */
+  readonly gp: GrandPrixScreen;
   private authMode: AuthMode = 'login';
   private settingsReturnTo: 'none' | 'pause' = 'none';
   private readonly panel: SettingsPanel;
@@ -120,6 +127,18 @@ export class Screens {
       () => carSetup(this.settings.car, this.settings.garage),
       (setup) => this.handlers.onTryOn(setup),
     );
+    this.gp = new GrandPrixScreen(account, {
+      onStart: (cupId, difficulty) => this.handlers.onGrandPrix(cupId, difficulty),
+      onNext: () => this.handlers.onGpNext(),
+      onMenu: () => {
+        this.panelName = 'grandprix';
+        this.handlers.onQuit();
+      },
+      onHome: () => {
+        this.panelName = 'home';
+        this.handlers.onQuit();
+      },
+    });
     this.buildPins();
     this.buildSpotPins();
     this.wire();
@@ -153,8 +172,8 @@ export class Screens {
   showPanel(panel: HubPanel): void {
     this.panelName = panel;
     $('screen-home').dataset.panel = panel;
-    // The career map and free drive belong to the Play tab.
-    const tab = panel === 'career' || panel === 'freedrive' ? 'modes' : panel;
+    // The career map, the Grand Prix and free drive belong to the Play tab.
+    const tab = panel === 'career' || panel === 'freedrive' || panel === 'grandprix' ? 'modes' : panel;
     document.querySelectorAll<HTMLElement>('.hub-nav [data-panel]').forEach((b) => {
       b.classList.toggle('active', b.dataset.panel === tab);
       b.setAttribute('aria-selected', String(b.dataset.panel === tab));
@@ -168,6 +187,10 @@ export class Screens {
     }
     if (panel === 'home') $('home-quick').focus({ preventScroll: true });
     if (panel === 'modes') this.renderModes();
+    if (panel === 'grandprix') {
+      this.gp.render();
+      $('btn-gp-start').focus({ preventScroll: true });
+    }
     if (panel === 'freedrive') {
       this.renderFree();
       const spot = FREE_DRIVE_SPOTS.find((s) => s.id === this.freeSpot)!;
@@ -300,7 +323,7 @@ export class Screens {
   back(): boolean {
     if (!this.homeVisible || this.panelName === 'home') return false;
     // From a map back to the Play choice; from anywhere else, Home.
-    this.showPanel(this.panelName === 'career' || this.panelName === 'freedrive' ? 'modes' : 'home');
+    this.showPanel(this.panelName === 'career' || this.panelName === 'freedrive' || this.panelName === 'grandprix' ? 'modes' : 'home');
     return true;
   }
 
@@ -315,6 +338,7 @@ export class Screens {
       ? 'The open map: the city, the ring road, mountains and dirt trails'
       : `🔒 Finish ${FREE_DRIVE_EVENTS} career events to unlock · ${eventsFinished(w)}/${FREE_DRIVE_EVENTS}`;
     $('mode-free-go').textContent = free ? '▶' : '🔒';
+    $('mode-gp-info').textContent = this.gp.summary();
   }
 
   /** Free drive: one pin per starting place on the map. */
@@ -402,6 +426,15 @@ export class Screens {
     if (!$('screen-results').classList.contains('hidden')) this.renderResultsTable(data);
   }
 
+  /** After a city race from free drive: the way back to it instead of the career map. */
+  showFreeBack(on: boolean): void {
+    $('btn-free-back').classList.toggle('hidden', !on);
+    if (on) {
+      $('btn-results-map').classList.add('hidden');
+      $('btn-free-back').focus({ preventScroll: true });
+    }
+  }
+
   setResultsSaved(text: string): void {
     $('results-saved').textContent = text;
   }
@@ -468,7 +501,7 @@ export class Screens {
         ? a.recent.map((r) => {
             const li = document.createElement('li');
             const left = document.createElement('span');
-            left.textContent = `${TRACKS[r.track ?? 'tokyo'].short} · P${r.position}/${r.fieldSize} · ${r.laps} lap${r.laps > 1 ? 's' : ''} · ${r.difficulty}`;
+            left.textContent = `${courseInfo(r.track ?? 'tokyo').short} · P${r.position}/${r.fieldSize} · ${r.laps} lap${r.laps > 1 ? 's' : ''} · ${r.difficulty}`;
             const right = document.createElement('span');
             right.textContent = r.bestLap === null ? '--' : formatTime(r.bestLap);
             li.append(left, right);
@@ -662,6 +695,8 @@ export class Screens {
     $('home-free').addEventListener('click', () => this.showPanel(freeDriveUnlocked(this.account.wallet) ? 'freedrive' : 'career'));
     $('mode-career').addEventListener('click', () => this.showPanel('career'));
     $('mode-free').addEventListener('click', () => this.showPanel('freedrive'));
+    $('mode-gp').addEventListener('click', () => this.showPanel('grandprix'));
+    $('btn-free-back').addEventListener('click', () => this.handlers.onFreeBack());
     $('btn-free-start').addEventListener('click', () => this.startFreeDrive());
     $('fd-time').addEventListener('click', (e) => {
       const v = (e.target as HTMLElement).closest('button')?.dataset.value as TimeOfDay | undefined;

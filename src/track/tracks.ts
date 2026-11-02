@@ -1,6 +1,7 @@
-import type { TrackId } from '../../shared/api';
+import type { CityCourseId, CourseId, TrackId } from '../../shared/api';
 import { ARASHIYAMA, FREE_ROAM, HAKONE_PASS, HARUNA, IROHAZAKA, IZU_COAST, NISEKO, SAKURA_VALLEY } from './circuits';
 import { OSAKA_CIRCUIT, YOKOHAMA_CIRCUIT } from './cityCircuits';
+import { CITY_COURSES, type CityCourseData } from './cityCourseData';
 import type { TrackLayout } from './TrackPath';
 import { TOKYO_CIRCUIT } from './tokyoCircuit';
 
@@ -164,3 +165,50 @@ export const FREE_ROAM_DEF: TrackDef = {
 
 /** Every map by id. */
 export const WORLDS: Record<WorldId, TrackDef> = { ...TRACKS, freeroam: FREE_ROAM_DEF };
+
+/** A street circuit through the free drive city, raced on the free drive map. */
+export interface CityCourseDef {
+  id: CityCourseId;
+  name: string;
+  short: string;
+  circuit: string;
+  blurb: string;
+  theme: TrackTheme;
+  /** Where it starts on the free drive map, as a landmark. */
+  near: string;
+  data: CityCourseData;
+}
+
+const cityCourse = (id: CityCourseId, name: string, near: string, blurb: string): CityCourseDef => ({
+  id,
+  name,
+  short: name,
+  circuit: `${name} Street Circuit`,
+  blurb,
+  theme: 'city',
+  near,
+  data: CITY_COURSES.find((c) => c.id === id)!,
+});
+
+export const CITY_COURSE_DEFS: Record<CityCourseId, CityCourseDef> = {
+  'city-ring': cityCourse('city-ring', 'Inner Ring', 'City Centre', 'Round and round the inner ring road, past the supertall towers'),
+  'city-tower': cityCourse('city-tower', 'Tower District', 'Tokyo Tower', 'Out along the avenues and back round the rings, under Tokyo Tower'),
+  'city-wheel': cityCourse('city-wheel', 'Big Wheel Run', 'Big Wheel', 'A long loop of the outer rings beside the Ferris wheel'),
+  'city-castle': cityCourse('city-castle', 'Castle Quarter', 'Castle Park', 'Wide avenues and the outer ring round the castle walls'),
+};
+
+/** Anything with a racing line: the maps, and the city courses. */
+export type LineId = WorldId | CityCourseId;
+
+export function isCityCourse(id: string): id is CityCourseId {
+  return id in CITY_COURSE_DEFS;
+}
+
+export function layoutOf(id: LineId): TrackLayout {
+  return isCityCourse(id) ? CITY_COURSE_DEFS[id].data.layout : WORLDS[id].layout;
+}
+
+/** Names and theme of any course. */
+export function courseInfo(id: CourseId): { name: string; short: string; circuit: string; theme: TrackTheme } {
+  return isCityCourse(id) ? CITY_COURSE_DEFS[id] : TRACKS[id];
+}

@@ -2748,3 +2748,282 @@ html.gamepad .pad-focus:focus {
     animation-duration: 8s;
   }
 }
+
+/* ---------- Items: the slot at the top of the screen ---------- */
+.hud-item {
+  display: none;
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  border: none;
+  background: none;
+  pointer-events: auto;
+}
+.hud.items .hud-item {
+  display: flex;
+}
+.hud-item:hover {
+  background: none;
+}
+.hud-item .slot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 66px;
+  height: 66px;
+  border-radius: 16px;
+  background: rgba(10, 8, 22, 0.72);
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+.hud-item .icon svg {
+  width: 50px;
+  height: 50px;
+  display: block;
+}
+.hud-item.rolling .slot {
+  border-color: #ffd34d;
+  animation: item-roll 0.18s linear infinite;
+}
+.hud-item.ready .slot {
+  border-color: #fff;
+  box-shadow:
+    0 0 0 3px rgba(255, 211, 77, 0.6),
+    0 6px 18px rgba(0, 0, 0, 0.4);
+  animation: item-ready 0.35s ease-out;
+}
+.hud-item .uses {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: #ff2d6f;
+  font-size: 13px;
+}
+.hud-item .uses:empty {
+  display: none;
+}
+.hud-item .name {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 3px #000;
+}
+.hud-item .key-hint {
+  font-size: 10px;
+  opacity: 0.75;
+}
+.hud.touch .hud-item .key-hint,
+.hud-item:not(.ready) .key-hint {
+  display: none;
+}
+@keyframes item-roll {
+  50% {
+    transform: scale(1.06);
+  }
+}
+@keyframes item-ready {
+  0% {
+    transform: scale(1.35);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+/* Thunder: a white-violet flash; a hit: a quick red one. */
+.hud-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+}
+.hud-flash.show.thunder {
+  background: radial-gradient(circle at 50% 30%, rgba(255, 255, 255, 0.85), rgba(160, 120, 255, 0.45));
+  animation: flash-out 0.5s ease-out forwards;
+}
+.hud-flash.show.hit {
+  background: radial-gradient(circle, transparent 45%, rgba(255, 40, 60, 0.45));
+  animation: flash-out 0.25s ease-out forwards;
+}
+@keyframes flash-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* ---------- Grand Prix ---------- */
+.mode-card.gp {
+  background: linear-gradient(100deg, rgba(90, 40, 0, 0.92) 30%, rgba(90, 40, 0, 0.3)), radial-gradient(circle at 80% 40%, #ffcc33 0, #ff7a2e 30%, #4a1f00 70%);
+}
+.gp-panel {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 12px 16px calc(var(--nav-h) + 16px);
+  overflow-y: auto;
+}
+.gp-card {
+  width: min(560px, 100%);
+}
+.gp-cups {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 14px;
+}
+.gp-cup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  border: 2px solid transparent;
+  background: rgba(255, 255, 255, 0.06);
+}
+.gp-cup.selected {
+  border-color: var(--cup);
+  background: rgba(255, 255, 255, 0.12);
+}
+.gp-cup.locked {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.gp-emblem {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--cup);
+  color: #1a1020;
+  font-size: 24px;
+  font-weight: 900;
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.2);
+}
+.gp-cup-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.gp-cup-text small {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 12px;
+}
+.gp-medals {
+  display: flex;
+  gap: 2px;
+  font-size: 18px;
+}
+.gp-medal.none {
+  width: 20px;
+  text-align: center;
+  color: var(--muted);
+}
+.results-gp h3 {
+  margin: 14px 0 6px;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+}
+.results-gp .swatch,
+.trophy-table .swatch {
+  display: inline-block;
+  width: 4px;
+  height: 12px;
+  margin-right: 8px;
+  border-radius: 2px;
+}
+.trophy-panel {
+  width: min(420px, 100%);
+  text-align: center;
+}
+.trophy-art svg {
+  width: 140px;
+  height: 140px;
+  filter: drop-shadow(0 6px 18px rgba(255, 200, 60, 0.45));
+  animation: trophy-in 0.7s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+.trophy-none {
+  font-size: 72px;
+}
+@keyframes trophy-in {
+  from {
+    transform: scale(0.3) rotate(-12deg);
+    opacity: 0;
+  }
+}
+.trophy-table {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  text-align: left;
+}
+.trophy-table li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+}
+.trophy-table li.me {
+  background: rgba(255, 45, 111, 0.22);
+}
+.trophy-table .pos {
+  width: 28px;
+}
+.trophy-table .name {
+  flex: 1;
+}
+
+/* Free drive: progress in the top-left corner. */
+.hud-free-info {
+  display: none;
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: rgba(10, 8, 22, 0.6);
+  font-size: 13px;
+  font-weight: 700;
+}
+.hud.free .hud-free-info {
+  display: block;
+}
+.drive-map-summary {
+  font-size: 13px !important;
+  letter-spacing: 0 !important;
+  color: #ffd38a;
+}
+.drive-map-acts .act {
+  position: absolute;
+  z-index: 2;
+  transform: translate(-50%, -50%);
+  font-size: 18px;
+  line-height: 1;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 2px #000);
+}
+.drive-map-acts .act.race {
+  padding: 3px 5px;
+  border: 2px solid #ffb02e;
+  border-radius: 8px;
+  background: rgba(30, 10, 0, 0.75);
+  font-size: 20px;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.drive-map-acts .act.cat {
+  font-size: 13px;
+}

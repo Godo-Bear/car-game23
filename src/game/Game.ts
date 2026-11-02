@@ -1,7 +1,8 @@
 import * as THREE from 'three';
-import type { CarId, CarSetup, PlayerSettings, TimeOfDay, TrackId } from '../../shared/api';
+import type { CarId, CarSetup, CityCourseId, CourseId, Difficulty, PlayerSettings, TimeOfDay, TrackId } from '../../shared/api';
 import { careerEvent, starTimes } from '../../shared/career';
 import { raceReward, upgradesOf } from '../../shared/economy';
+import { cup, GP_RIVALS } from '../../shared/grandprix';
 import { settleResult, todayKey } from '../../shared/quests';
 import { AccountService } from '../account/AccountService';
 import type { RacingLine } from '../ai/RacingLine';
@@ -11,12 +12,14 @@ import { Input } from '../core/Input';
 import { createRng } from '../core/math';
 import { type LocalSettings, SettingsStore } from '../core/Settings';
 import { neutralControls } from '../physics/VehiclePhysics';
+import type { ItemBox } from '../race/Items';
 import { placePickups } from '../race/Pickups';
 import { formatTime, type RaceEvent } from '../race/RaceManager';
-import { type FreeRoamGround, gridSlot, RaceSimulation } from '../race/RaceSimulation';
+import { DRIVER_NAMES, type FreeRoamGround, gridSlot, RaceSimulation } from '../race/RaceSimulation';
 import { RenderPipeline } from '../render/RenderPipeline';
+import { CourseDecor, coursePads } from '../track/CourseDecor';
 import type { TrackPath } from '../track/TrackPath';
-import { TRACKS, WORLDS, type WorldId } from '../track/tracks';
+import { CITY_COURSE_DEFS, courseInfo, isCityCourse, TRACKS, WORLDS, type WorldId } from '../track/tracks';
 import { DriveMap } from '../ui/DriveMap';
 import { GamepadMenu } from '../ui/GamepadMenu';
 import { Hud } from '../ui/Hud';
@@ -25,6 +28,7 @@ import { type HubPanel, type RaceReward, Screens } from '../ui/Screens';
 import { TouchControls } from '../ui/TouchControls';
 import { CarModel } from '../vehicles/CarModel';
 import { AI_LIVERIES, aiField, CARS, carSetup, randomPlate, upgradedSpec } from '../vehicles/cars';
+import { ItemView } from '../vehicles/ItemView';
 import { loadCarAsset, loadCarAssets, onCarAssetLoaded } from '../vehicles/importedCars';
 import { PickupView } from '../vehicles/PickupView';
 import { Sparks } from '../vehicles/Sparks';
@@ -35,11 +39,32 @@ import { loadProps, loadScenery } from '../world/sceneryModels';
 import { sceneProps } from '../world/scenes';
 import { buildWorld, type FreeRoamMap, type World } from '../world/World';
 import { Cinematics } from './Cinematics';
+import { FreeRoamPlay } from './FreeRoamPlay';
+import { driverOfCars, GrandPrixSession } from './GrandPrix';
 import { PerformanceMonitor } from './PerformanceMonitor';
 import { RaceFeedback } from './RaceFeedback';
 import { TrackLoader } from './TrackLoader';
 
 type State = 'home' | 'intro' | 'countdown' | 'racing' | 'finished' | 'freedrive';
+
+/** What's being raced: the course, the conditions, and what kind of race it is. */
+interface RaceSetup {
+  course: CourseId;
+  timeOfDay: TimeOfDay;
+  laps: number;
+  difficulty: Difficulty;
+  opponents: number;
+  /** Item boxes and items (Grand Prix and city races). */
+  items: boolean;
+  /** A career event. */
+  event?: string;
+  /** A Grand Prix round (see gp). */
+  gp?: boolean;
+  /** A city race started from free drive (afterwards you go back to it). */
+  fromFreeDrive?: boolean;
+  playerSlot?: number;
+  seed?: number;
+}
 
 const LIGHT_INTERVAL = 0.8;
 /** The homescreen backdrop: cars racing over the Hakone pass on a sunny day. */
@@ -61,6 +86,7 @@ export class Game {
     () => this.closeDriveMap(),
   );
   private readonly pickupView = new PickupView();
+  private readonly itemView = new ItemView();
   private readonly audio = new AudioEngine();
   private readonly account = new AccountService();
   private readonly loader = new TrackLoader();
@@ -70,11 +96,21 @@ export class Game {
   private readonly perf = new PerformanceMonitor();
   private readonly sunScreen = new THREE.Vector3();
   private feedback!: RaceFeedback;
+  /** Free drive's race markers, lucky cats, speed traps, jumps and drift zones. */
+  private freePlay!: FreeRoamPlay;
   private lastTime = -1;
 
   private track!: TrackPath;
   private line!: RacingLine;
   private world: World | null = null;
+  /** The race now (or last) run. */
+  private setup: RaceSetup | null = null;
+  /** A Grand Prix in progress. */
+  private gp: GrandPrixSession | null = null;
+  /** Trophy won by the last race of a cup (from its settled result). */
+  private gpTrophy = { place: 0, bonus: 0 };
+  /** A city course's start gantry, arrows and signs (while racing one). */
+  private courseDecor: CourseDecor | null = null;
   /** Built worlds are kept (except on Low quality) so going back to a circuit is instant. */
   private readonly worlds = new Map<WorldId, World>();
   private lighting!: Lighting;
@@ -117,7 +153,7 @@ export class Game {
 
   async init(): Promise<void> {
     this.lighting = new Lighting(this.scene, this.pipeline.renderer);
-    this.scene.add(this.effects.group, this.sparks.points, this.pickupView.group);
+    this.scene.add(this.effects.group, this.sparks.points, this.pickupView.group, this.itemView.group);
     // On the front bumper, aimed down the road (so it never lights our own bodywork).
     this.headlight.target.position.set(0, 0, 32);
     this.loader.line(HOME_TRACK);
@@ -125,6 +161,8 @@ export class Game {
 
     this.hud = new Hud(this.colors);
     this.feedback = new RaceFeedback(this.hud, this.audio, this.cam, this.sparks, this.store);
+    this.freePlay = new FreeRoamPlay(this.hud, this.audio, (course) => this.startCityRace(course));
+    this.scene.add(this.freePlay.group);
     this.screens = new Screens(
       this.account,
       {
@@ -133,7 +171,10 @@ export class Game {
         onHubPanel: (panel) => this.onHubPanel(panel),
         onTryOn: (setup) => this.onTryOn(setup),
         onResume: () => this.setPaused(false),
-        onRestart: () => void this.startRace(this.screens.settings),
+        onRestart: () => void (this.setup ? this.startSetup(this.setup) : this.startRace(this.screens.settings)),
+        onGrandPrix: (cupId, difficulty) => this.startGrandPrix(cupId, difficulty),
+        onGpNext: () => this.gpNext(),
+        onFreeBack: () => void this.backToFreeDrive(),
         onFreeDrive: (spot, tod) => void this.startFreeDrive(spot, tod),
         onQuit: () => void this.goHome(),
         onModalChange: (open) => {
@@ -254,7 +295,35 @@ export class Game {
   private async loadTrack(id: WorldId): Promise<void> {
     const line = this.loader.line(id);
     if (this.world?.def.id !== id) await this.swapWorld(id, line);
+    else if (this.track !== this.loader.track(id)) {
+      // Back from a city course on the same map: its own road again.
+      this.track = this.loader.track(id);
+      this.minimap = new Minimap(document.getElementById('minimap') as HTMLCanvasElement, this.track, this.colors);
+    }
+    this.showCourse(null);
     this.line = await line;
+  }
+
+  /** Race a city course on the free drive map: its line, minimap and decorations. */
+  private async useCourse(id: CityCourseId): Promise<void> {
+    this.track = this.loader.track(id);
+    this.line = await this.loader.line(id);
+    this.minimap = new Minimap(document.getElementById('minimap') as HTMLCanvasElement, this.track, this.colors);
+    this.showCourse(id);
+  }
+
+  private showCourse(id: CityCourseId | null): void {
+    this.courseDecor?.dispose();
+    this.courseDecor = null;
+    if (!id) return;
+    this.courseDecor = new CourseDecor(this.track, CITY_COURSE_DEFS[id].data, coursePads(this.track));
+    this.scene.add(this.courseDecor.group);
+  }
+
+  /** The start lights: on the city course's gantry, or the circuit's. */
+  private setStartLights(n: number): void {
+    if (this.courseDecor) this.courseDecor.setStartLights(n);
+    else this.world!.trackVisual.setStartLights(n);
   }
 
   private async swapWorld(id: WorldId, line: Promise<RacingLine>): Promise<void> {
@@ -306,11 +375,23 @@ export class Game {
     return { ...this.screens.settings, laps: 99, opponents: 5, difficulty: 'normal' };
   }
 
-  private createSimulation(settings: PlayerSettings, home = false, freeRoam?: FreeRoamGround): void {
+  private createSimulation(
+    settings: PlayerSettings,
+    home = false,
+    freeRoam?: FreeRoamGround,
+    extra: {
+      items?: boolean;
+      seed?: number;
+      playerSlot?: number;
+      gates?: number[];
+      pads?: { x: number; z: number; heading: number }[];
+      itemBoxes?: ItemBox[];
+    } = {},
+  ): void {
     const total = settings.opponents + 1;
     const car = CARS[settings.car];
     this.simCar = settings.car;
-    const seed = Math.floor(Math.random() * 1e6);
+    const seed = extra.seed ?? Math.floor(Math.random() * 1e6);
     // A mixed field of cars around the player's class (a few the same as the player's).
     const field = aiField(settings.car, settings.opponents, seed);
     this.sim = new RaceSimulation(
@@ -321,13 +402,17 @@ export class Game {
         difficulty: settings.difficulty,
         playerAssist: settings.assists ? 0.7 : 0.15,
         // Start mid-pack so there is someone to race either way (at the front for the showroom).
-        playerGridSlot: home ? 0 : Math.min(total - 1, Math.floor(total / 2) + 1),
+        playerGridSlot: extra.playerSlot ?? (home ? 0 : Math.min(total - 1, Math.floor(total / 2) + 1)),
         seed,
         // Your car with the upgrades you've bought fitted.
         carSpec: upgradedSpec(car.spec, upgradesOf(this.account.wallet, settings.car)),
         aiGrip: car.aiGrip,
         aiCars: field.map((f) => ({ spec: f.car.spec, aiGrip: f.car.aiGrip, power: f.power })),
         freeRoam,
+        items: extra.items,
+        gates: extra.gates,
+        boostPads: extra.pads,
+        itemBoxes: extra.itemBoxes,
       },
       this.line,
     );
@@ -357,6 +442,7 @@ export class Game {
     this.effectCars = this.sim.cars.map((c, i) => ({ car: c, root: this.carModels[i].root, look: this.carModels[i] }));
     // Nitro pickups on the road (not in the homescreen's showcase race).
     this.pickupView.setPickups(home ? [] : this.sim.pickups);
+    this.itemView.setItems(this.sim.items);
     this.effects.clear();
     this.feedback.reset();
     this.syncCarModels(1, 0);
@@ -375,6 +461,10 @@ export class Game {
     this.timeScale = 1;
     this.hud.setFreeDrive(false);
     this.feedback.freeDrive = false;
+    this.gp = null;
+    this.setup = null;
+    this.freePlay.setActivities(null);
+    this.screens.gp.hideTrophy();
     this.cine.endIntro();
     showCinematic(null);
     this.hud.setVisible(false);
@@ -382,7 +472,7 @@ export class Game {
     this.screens.hideAll();
     await this.loadTrack(HOME_TRACK);
     this.applyTimeOfDay(HOME_TIME);
-    this.world!.trackVisual.setStartLights(0);
+    this.setStartLights(0);
     this.createSimulation(this.homeRaceSettings(), true);
     if (!this.showroom) this.startAttract();
     if (first) await this.compile();
@@ -398,28 +488,69 @@ export class Game {
     this.cine.resetAttract(this.track, this.sim.player.proj.distance);
   }
 
-  private async startRace(settings: PlayerSettings): Promise<void> {
+  /** A career event (or the race picked in the menus). */
+  private startRace(settings: PlayerSettings): Promise<void> {
+    this.gp = null;
+    return this.startSetup({
+      course: settings.track,
+      timeOfDay: settings.timeOfDay,
+      laps: settings.laps,
+      difficulty: settings.difficulty,
+      opponents: settings.opponents,
+      items: false,
+      ...(this.screens.raceEvent ? { event: this.screens.raceEvent } : {}),
+    });
+  }
+
+  private async startSetup(setup: RaceSetup): Promise<void> {
     if (this.busy) return;
     this.busy = true;
+    this.setup = setup;
+    this.freePlay.setActivities(null);
     this.audio.unlock();
     this.screens.hideAll();
+    this.screens.gp.hideTrophy();
     this.feedback.quiet();
     this.hud.setFreeDrive(false);
     this.feedback.freeDrive = false;
-    const fresh = !this.worlds.has(settings.track);
-    await Promise.all([this.loadTrack(settings.track), loadCarAssets()]);
-    this.applyTimeOfDay(settings.timeOfDay);
-    this.createSimulation(settings);
+    const city = isCityCourse(setup.course);
+    const worldId: WorldId = city ? 'freeroam' : (setup.course as TrackId);
+    const fresh = !this.worlds.has(worldId);
+    await Promise.all([this.loadTrack(worldId), loadCarAssets()]);
+    let ground: FreeRoamGround | undefined;
+    let gates: number[] | undefined;
+    let pads: { x: number; z: number; heading: number }[] | undefined;
+    if (city) {
+      // A street race through the free drive city: you can leave the course (the shortcuts!).
+      const def = CITY_COURSE_DEFS[setup.course as CityCourseId];
+      await this.useCourse(def.id);
+      const map = this.world!.freeRoam!;
+      const bonus = def.data.shortcuts.map((s) => {
+        const [x, z] = s.pts[Math.floor(s.pts.length / 2)];
+        return { x, y: 0.07, z, kind: 'super' as const };
+      });
+      ground = { ...map, pickups: [...map.pickups, ...bonus] };
+      gates = def.data.gates;
+      pads = coursePads(this.track);
+    }
+    this.applyTimeOfDay(setup.timeOfDay);
+    this.createSimulation({ ...this.screens.settings, laps: setup.laps, difficulty: setup.difficulty, opponents: setup.opponents }, false, ground, {
+      items: setup.items,
+      seed: setup.seed,
+      playerSlot: setup.playerSlot,
+      gates,
+      pads,
+    });
     if (fresh) await this.compile();
     setLoading(null);
-    this.cam.mode = settings.camera;
+    this.cam.mode = this.screens.settings.camera;
     this.paused = false;
     this.timeScale = 1;
     this.countdownTime = 0;
     this.lightsOn = 0;
     this.lightsOutAt = 5 * LIGHT_INTERVAL + 0.6 + Math.random() * 0.9;
     this.accumulator = 0;
-    this.world!.trackVisual.setStartLights(0);
+    this.setStartLights(0);
     this.hud.clearMessage();
     this.input.clearActions();
 
@@ -429,24 +560,104 @@ export class Game {
     const chase = this.cam.camera.position.clone();
     const rows = Math.ceil(this.sim.cars.length / 2);
     this.cine.startIntro(this.track, gridSlot(this.track, rows).distance + rows * 3, this.playerModel.root, chase);
-    const def = TRACKS[settings.track];
+    const info = courseInfo(setup.course);
+    const gp = this.gp;
     showCinematic({
-      kicker: `${def.short} · ${TIME_LABEL[settings.timeOfDay]}`,
-      name: def.circuit,
-      meta: `${settings.laps} lap${settings.laps > 1 ? 's' : ''} · ${this.sim.cars.length} cars · ${CARS[settings.car].name}`,
+      kicker: gp ? `${gp.cup.name} · Race ${gp.round + 1} of ${gp.cup.races.length}` : `${info.short} · ${TIME_LABEL[setup.timeOfDay]}`,
+      name: info.circuit,
+      meta: `${setup.laps} lap${setup.laps > 1 ? 's' : ''} · ${this.sim.cars.length} cars${setup.items ? ' · items on' : ''} · ${CARS[this.screens.settings.car].name}`,
     });
     this.state = 'intro';
     this.hud.setVisible(false);
     this.busy = false;
   }
 
+  // ---------------------------------------------------------------- grand prix
+
+  private startGrandPrix(cupId: string, difficulty: Difficulty): void {
+    const c = cup(cupId);
+    if (!c) return;
+    this.gp = new GrandPrixSession(c, difficulty, Math.floor(Math.random() * 1e6));
+    void this.startRound();
+  }
+
+  private startRound(): Promise<void> {
+    const gp = this.gp!;
+    return this.startSetup({
+      course: gp.race.track,
+      timeOfDay: gp.race.timeOfDay,
+      laps: gp.cup.laps,
+      difficulty: gp.difficulty,
+      opponents: GP_RIVALS,
+      items: true,
+      gp: true,
+      playerSlot: gp.playerSlot(),
+      seed: gp.seed,
+    });
+  }
+
+  /** After a cup race: on to the next race, or the trophy after the last. */
+  private gpNext(): void {
+    const gp = this.gp;
+    if (!gp) return;
+    if (gp.over) {
+      this.screens.hideAll();
+      this.screens.gp.showTrophy({ cupName: gp.cup.name, difficulty: gp.difficulty, place: gp.playerPlace(), bonus: this.gpTrophy.bonus, rows: this.gpRows() });
+      return;
+    }
+    gp.next();
+    void this.startRound();
+  }
+
+  /** The cup standings, with each driver's name and colour (from the race just run). */
+  private gpRows() {
+    const gp = this.gp!;
+    const drivers = driverOfCars(this.sim.cars);
+    const carOf: number[] = [];
+    drivers.forEach((d, carId) => {
+      carOf[d] = carId;
+    });
+    return gp.table().map((r) => ({
+      name: r.driver === 0 ? 'YOU' : DRIVER_NAMES[(r.driver - 1) % DRIVER_NAMES.length],
+      color: this.colors[carOf[r.driver]] ?? '#888',
+      me: r.driver === 0,
+      place: r.place,
+      race: r.race,
+      points: r.points,
+    }));
+  }
+
+  // ---------------------------------------------------------------- free drive
+
+  /** From free drive: race a city course, starting right here in the city. */
+  private startCityRace(id: CityCourseId): void {
+    this.gp = null;
+    void this.startSetup({
+      course: id,
+      timeOfDay: this.timeOfDay,
+      laps: 2,
+      difficulty: this.screens.settings.difficulty,
+      opponents: 7,
+      items: true,
+      fromFreeDrive: true,
+    });
+  }
+
+  /** After a city race started from free drive: back to driving round, at the course's start. */
+  private backToFreeDrive(): Promise<void> {
+    const start = this.track.samples[0];
+    return this.startFreeDrive({ x: start.x, z: start.z, heading: start.heading }, this.timeOfDay);
+  }
+
   /**
    * Free drive: the open map - the city, the ring road, the mountains and the dirt trails - with
    * a few cars cruising the ring road. No laps or timing; Esc for the menu.
    */
-  private async startFreeDrive(spotId = 'centre', tod: TimeOfDay = 'day'): Promise<void> {
+  private async startFreeDrive(spot: string | { x: number; z: number; heading: number } = 'centre', tod: TimeOfDay = 'day'): Promise<void> {
     if (this.busy) return;
     this.busy = true;
+    this.gp = null;
+    this.setup = null;
     this.audio.unlock();
     this.screens.hideAll();
     this.feedback.quiet();
@@ -455,10 +666,16 @@ export class Game {
     const map = this.world!.freeRoam!;
     this.applyTimeOfDay(tod);
     // Traffic: the AI lap the ring road (they keep to it); you can go anywhere.
-    this.createSimulation({ ...this.screens.settings, laps: 99, opponents: 6, difficulty: 'easy' }, false, map);
+    // Items and boost pads round town too (the traffic picks up items as well).
+    this.createSimulation({ ...this.screens.settings, laps: 99, opponents: 6, difficulty: 'easy' }, false, map, {
+      items: true,
+      itemBoxes: map.activities.boxes.map((b) => ({ ...b, distance: 0, backAt: 0 })),
+      pads: map.activities.pads,
+    });
+    this.freePlay.setActivities(map.activities, (x, z) => map.surfaceAt(x, z));
     for (const car of this.sim.cars) car.autopilot = !car.isPlayer;
     this.sim.startRace();
-    this.placeAtSpawn(FREE_DRIVE_SPOTS.find((s) => s.id === spotId) ?? map.spawn);
+    this.placeAtSpawn(typeof spot === 'string' ? (FREE_DRIVE_SPOTS.find((s) => s.id === spot) ?? map.spawn) : spot);
     if (fresh) await this.compile();
     setLoading(null);
     this.cam.mode = this.screens.settings.camera;
@@ -505,7 +722,7 @@ export class Game {
   private openDriveMap(): void {
     const p = this.sim.player.physics;
     this.setPaused(true, false);
-    this.driveMap.open(p.x, p.z, p.heading);
+    this.driveMap.open(p.x, p.z, p.heading, this.world?.freeRoam?.activities ?? null, this.freePlay.progress, this.freePlay.summary());
   }
 
   private closeDriveMap(): void {
@@ -631,7 +848,7 @@ export class Game {
     this.elapsed += dt;
     const controls = this.input.update();
     // Gamepad menus while a menu is up (not mid-race).
-    const menus = this.state === 'home' || this.paused || this.modalOpen || this.screens.resultsVisible;
+    const menus = this.state === 'home' || this.paused || this.modalOpen || this.screens.resultsVisible || this.screens.gp.trophyVisible;
     this.input.mapKeys = this.state === 'freedrive' && !this.paused && !this.modalOpen;
     this.padMenu.update(dt, menus && !this.busy);
     this.handleActions();
@@ -663,6 +880,18 @@ export class Game {
     this.syncCarModels(alpha, simDt);
     this.effects.update(this.effectCars, simDt, this.cam.camera, this.pipeline.renderer.domElement.height);
     this.pickupView.update(this.sim.time, this.elapsed);
+    this.itemView.update(
+      this.sim.time,
+      this.elapsed,
+      this.carModels.map((m) => m.root),
+    );
+    this.courseDecor?.update(this.elapsed);
+    if (this.state === 'freedrive' && running) {
+      this.freePlay.update(this.sim, this.feedback.driftPoints, simDt, this.elapsed);
+      this.hud.setFreeInfo(this.freePlay.summary());
+    }
+    // City courses: lost off the course for a while - point the way back.
+    if (this.state === 'racing' && this.sim.offCourseTime > 6) this.hud.showMessage('BACK TO THE COURSE · R to return', 0.3, 'warn');
     const blur = running && !home ? this.feedback.update(this.sim, this.state === 'racing' || this.state === 'freedrive', this.frameImpact, simDt) : 0;
     if (running && !home && this.frameImpact > 3) this.input.rumble(this.frameImpact / 15);
     this.frameImpact = 0;
@@ -760,6 +989,7 @@ export class Game {
       this.screens.settings = { ...this.screens.settings, camera: mode };
       void this.account.saveSettings({ camera: mode });
     }
+    if (input.consume('item') && (this.state === 'racing' || this.state === 'freedrive')) this.sim.useItem(this.sim.player);
     if (input.consume('jump') && this.state === 'freedrive' && this.sim.jump(this.sim.player)) this.input.rumble(0.3, 80);
     if (input.consume('reset') && this.state === 'freedrive') {
       // Back on your wheels where you are (stopped).
@@ -782,14 +1012,14 @@ export class Game {
     const lights = Math.min(5, Math.floor(this.countdownTime / LIGHT_INTERVAL));
     if (lights !== this.lightsOn && this.countdownTime < this.lightsOutAt) {
       this.lightsOn = lights;
-      this.world!.trackVisual.setStartLights(lights);
+      this.setStartLights(lights);
       if (lights > 0) {
         this.audio.beep(false);
         this.hud.showMessage('●'.repeat(lights) + '○'.repeat(5 - lights), 5, 'lights');
       }
     }
     if (this.countdownTime >= this.lightsOutAt) {
-      this.world!.trackVisual.setStartLights(0);
+      this.setStartLights(0);
       this.audio.beep(true);
       this.hud.showMessage('GO!', 1.2, 'go');
       this.state = 'racing';
@@ -800,6 +1030,10 @@ export class Game {
   private handleEvents(events: RaceEvent[]): void {
     const playerId = this.sim.player.id;
     for (const e of events) {
+      if (e.type === 'itemUse' || e.type === 'itemHit' || e.type === 'itemBlocked' || e.type === 'itemReady') {
+        this.onItemEvent(e, playerId);
+        continue;
+      }
       if (e.racerId !== playerId) continue;
       // Free drive has no laps: only pickups and boosts count.
       if (this.state === 'freedrive' && e.type !== 'pickup' && e.type !== 'boost') continue;
@@ -811,7 +1045,41 @@ export class Game {
         this.onPlayerFinished(e.position);
       } else if (e.type === 'pickup' || e.type === 'boost') {
         this.onBoost(e.kind === 'nitro' ? 'pickup' : e.kind);
+      } else if (e.type === 'pad') {
+        this.hud.showBoost('BOOST!', 'perfect');
+        this.audio.boost(1);
+      } else if (e.type === 'checkpoint') {
+        this.hud.showMessage('CHECKPOINT MISSED!', 2, 'warn');
+        this.audio.item(2);
+        this.cam.snap();
       }
+    }
+  }
+
+  /** Items: sounds, flashes and callouts for what happens to you (or what you do to others). */
+  private onItemEvent(e: Extract<RaceEvent, { type: 'itemUse' | 'itemHit' | 'itemBlocked' | 'itemReady' }>, me: number): void {
+    // A Thunder Drum from anyone flashes the sky.
+    if (e.type === 'itemUse' && e.item === 'thunder') {
+      this.hud.showFlash('thunder');
+      this.audio.impact(14);
+    }
+    if (e.type === 'itemReady' && e.racerId === me) this.audio.item(0);
+    else if (e.type === 'itemUse' && e.racerId === me) {
+      if (e.item === 'ramune' || e.item === 'ramune3') this.onBoost('super');
+      else this.audio.item(1);
+      if (e.item === 'luckycat') this.hud.showBoost('LUCKY CAT!', 'perfect');
+    } else if (e.type === 'itemHit' && e.racerId === me) {
+      this.audio.item(2);
+      this.hud.showFlash(e.item === 'thunder' ? 'thunder' : 'hit');
+      this.hud.showMessage(e.item === 'thunder' ? 'STUNNED!' : 'SPUN OUT!', 1.2, 'warn');
+      if (this.applied.cameraShake) this.cam.addShake(0.6);
+      this.input.rumble(0.9, 400);
+    } else if (e.type === 'itemHit' && e.by === me && e.item !== 'thunder') {
+      this.hud.showBoost('HIT!', 'shockwave');
+      this.audio.item(3);
+    } else if (e.type === 'itemBlocked' && e.racerId === me) {
+      this.audio.item(3);
+      this.hud.showBoost('BLOCKED!', 'perfect');
     }
   }
 
@@ -834,21 +1102,32 @@ export class Game {
     // Slow-motion shot from beside the line, on the side the car is not on.
     this.cine.startFinish(this.track, this.sim.player.proj.lateral > 0 ? -1 : 1);
     const me = this.sim.race.racers[this.sim.player.id];
-    const settings = this.screens.settings;
+    const setup = this.setup!;
+    const gp = this.gp;
+    if (gp) {
+      // Everyone's place now (cars still running are placed by how far round they are).
+      const drivers = driverOfCars(this.sim.cars);
+      const places: number[] = [];
+      for (const r of this.sim.race.racers) places[drivers[r.id]] = r.position;
+      gp.record(places);
+    }
     const record = {
-      track: settings.track,
+      track: setup.course,
       position,
       fieldSize: this.sim.cars.length,
-      laps: settings.laps,
-      difficulty: settings.difficulty,
+      laps: setup.laps,
+      difficulty: setup.difficulty,
       totalTime: me.finishTime,
       bestLap: me.bestLapTime,
       driftPoints: this.feedback.driftPoints,
-      ...(this.screens.raceEvent ? { event: this.screens.raceEvent } : {}),
+      ...(setup.event ? { event: setup.event } : {}),
+      ...(gp ? { gp: { cup: gp.cup.id, round: gp.round, ...(gp.last ? { place: gp.playerPlace() } : {}) } } : {}),
     };
-    // What this result pays (prize money, a career event's first-podium and star bonuses, drift points).
+    // What this result pays (prize money, a career event's first-podium and star bonuses, a cup's
+    // trophy, drift points).
     const settled = settleResult(this.account.wallet, record, todayKey());
     const ev = careerEvent(record.event);
+    if (gp?.last) this.gpTrophy = { place: gp.playerPlace(), bonus: typeof settled === 'string' ? 0 : (settled.trophyBonus ?? 0) };
     const reward: RaceReward =
       typeof settled === 'string'
         ? { earned: raceReward(record), dp: 0 }
@@ -861,6 +1140,8 @@ export class Game {
     setTimeout(async () => {
       if (this.state !== 'finished') return;
       this.screens.showResults(this.resultsData(), 'Saving result…', reward);
+      this.screens.gp.showStandings(gp ? { cupName: gp.cup.name, round: gp.round, rounds: gp.cup.races.length, rows: this.gpRows() } : null);
+      this.screens.showFreeBack(!!setup.fromFreeDrive);
       const where = await saving;
       if (this.state !== 'finished') return;
       this.screens.setResultsSaved(
@@ -878,7 +1159,7 @@ export class Game {
   }
 
   private syncCarModels(alpha: number, dt: number): void {
-    for (let i = 0; i < this.sim.cars.length; i++) this.carModels[i].update(this.sim.cars[i], alpha, dt);
+    for (let i = 0; i < this.sim.cars.length; i++) this.carModels[i].update(this.sim.cars[i], alpha, dt, this.sim.items?.state[this.sim.cars[i].id]);
   }
 
   private resize(): void {

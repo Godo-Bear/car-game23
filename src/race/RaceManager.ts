@@ -1,4 +1,5 @@
 import type { BoostKind } from '../physics/VehiclePhysics';
+import type { ItemEvent } from './Items';
 import type { PickupKind } from './Pickups';
 export interface RacerInfo {
   id: number;
@@ -30,7 +31,13 @@ export type RaceEvent =
   | { type: 'finish'; racerId: number; position: number; time: number }
   /** Nitro pickups and special boosts (see Pickups.ts and VehiclePhysics). */
   | { type: 'pickup'; racerId: number; kind: PickupKind }
-  | { type: 'boost'; racerId: number; kind: BoostKind };
+  | { type: 'boost'; racerId: number; kind: BoostKind }
+  /** Items (see Items.ts). */
+  | ItemEvent
+  /** City courses: rejoined the course past a checkpoint gate that was skipped (put back where you left it). */
+  | { type: 'checkpoint'; racerId: number }
+  /** Drove over a boost pad. */
+  | { type: 'pad'; racerId: number };
 
 /**
  * Tracks laps, lap times and race positions.

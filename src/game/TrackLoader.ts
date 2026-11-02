@@ -1,6 +1,6 @@
 import { RacingLine, relaxRacingLine } from '../ai/RacingLine';
 import { TrackPath } from '../track/TrackPath';
-import { TRACKS, WORLDS, type WorldId } from '../track/tracks';
+import { type LineId, layoutOf, TRACKS } from '../track/tracks';
 
 const CACHE_KEY = 'tokyo-circuit.line.v1.';
 
@@ -11,15 +11,15 @@ const CACHE_KEY = 'tokyo-circuit.line.v1.';
  * device so later visits skip the work entirely.
  */
 export class TrackLoader {
-  private readonly tracks = new Map<WorldId, TrackPath>();
-  private readonly lines = new Map<WorldId, Promise<RacingLine>>();
-  private readonly waiting = new Map<WorldId, (offsets: Float32Array) => void>();
+  private readonly tracks = new Map<LineId, TrackPath>();
+  private readonly lines = new Map<LineId, Promise<RacingLine>>();
+  private readonly waiting = new Map<LineId, (offsets: Float32Array) => void>();
   private worker: Worker | null = null;
 
   constructor() {
     try {
       this.worker = new Worker(new URL('../track/racingLine.worker.ts', import.meta.url), { type: 'module' });
-      this.worker.onmessage = (e: MessageEvent<{ id: WorldId; offsets: Float32Array }>) => {
+      this.worker.onmessage = (e: MessageEvent<{ id: LineId; offsets: Float32Array }>) => {
         this.waiting.get(e.data.id)?.(e.data.offsets);
         this.waiting.delete(e.data.id);
       };
@@ -29,16 +29,16 @@ export class TrackLoader {
     }
   }
 
-  track(id: WorldId): TrackPath {
+  track(id: LineId): TrackPath {
     let track = this.tracks.get(id);
     if (!track) {
-      track = new TrackPath(WORLDS[id].layout);
+      track = new TrackPath(layoutOf(id));
       this.tracks.set(id, track);
     }
     return track;
   }
 
-  line(id: WorldId): Promise<RacingLine> {
+  line(id: LineId): Promise<RacingLine> {
     let line = this.lines.get(id);
     if (!line) {
       const track = this.track(id);
@@ -64,7 +64,7 @@ export class TrackLoader {
 
   /** Queue the other circuits so switching to them later is quick. */
   prefetchAll(): void {
-    for (const id of Object.keys(TRACKS) as WorldId[]) void this.line(id);
+    for (const id of Object.keys(TRACKS) as LineId[]) void this.line(id);
   }
 
   /** The worker failed to start (e.g. blocked by policy): finish outstanding work here. */

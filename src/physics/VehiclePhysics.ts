@@ -307,6 +307,12 @@ export class VehiclePhysics {
     this.boostEvent = 'super';
   }
 
+  /** An item's boost (see race/Items.ts): `seconds` of strong boost, leaving the tank as it is. */
+  itemBoost(seconds: number): void {
+    this.superTime = Math.max(this.superTime, seconds);
+    this.boostKind = 'super';
+  }
+
   /** Perfect nitro and shockwave: decided when the nitro button is pressed. */
   private updateBoostKind(nitro: boolean, dt: number): void {
     this.clock += dt;

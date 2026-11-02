@@ -47,6 +47,7 @@ export function newWallet(): Wallet {
     dp: 0,
     dpTotal: 0,
     items: [],
+    trophies: {},
   };
 }
 

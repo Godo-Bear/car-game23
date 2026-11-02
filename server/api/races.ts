@@ -1,4 +1,4 @@
-import { DIFFICULTIES, type RaceRecord, TRACK_IDS } from '../../shared/api';
+import { COURSE_IDS, DIFFICULTIES, type RaceRecord } from '../../shared/api';
 import { settleResult, todayKey } from '../../shared/quests';
 import { type ApiHandler, checkWrite, currentUser, fail, json, loadProfile, now, readJson, walletOf } from '../auth';
 
@@ -6,7 +6,7 @@ const isInt = (v: unknown, lo: number, hi: number): v is number => Number.isInte
 const isTime = (v: unknown, lo: number, hi: number): v is number | null => v === null || (typeof v === 'number' && v >= lo && v <= hi);
 
 /**
- * POST /api/races  { track, position, fieldSize, laps, difficulty, totalTime, bestLap, event?, driftPoints? }
+ * POST /api/races  { track, position, fieldSize, laps, difficulty, totalTime, bestLap, event?, driftPoints?, gp? }
  * Records a finished race, updates career stats and pays the prize money. (Results come from the
  * browser, so this is sanity-checked rather than cheat-proof - fine for a personal career.)
  */
@@ -22,14 +22,22 @@ export const races: ApiHandler = async (request, env) => {
   if (r && r.track === undefined) r.track = 'tokyo';
   if (
     !r ||
-    !TRACK_IDS.includes(r.track) ||
+    !COURSE_IDS.includes(r.track) ||
     !isInt(r.fieldSize, 2, 12) ||
     !isInt(r.position, 1, r.fieldSize) ||
     !isInt(r.laps, 1, 10) ||
     !DIFFICULTIES.includes(r.difficulty) ||
     !isTime(r.bestLap, 50, 900) ||
     !isTime(r.totalTime, 50, 9000) ||
-    (r.driftPoints !== undefined && !(typeof r.driftPoints === 'number' && r.driftPoints >= 0))
+    (r.driftPoints !== undefined && !(typeof r.driftPoints === 'number' && r.driftPoints >= 0)) ||
+    (r.gp !== undefined &&
+      !(
+        r.gp &&
+        typeof r.gp === 'object' &&
+        typeof r.gp.cup === 'string' &&
+        isInt(r.gp.round, 0, 3) &&
+        (r.gp.place === undefined || isInt(r.gp.place, 1, r.fieldSize))
+      ))
   ) {
     return fail(400, 'Invalid race result.');
   }

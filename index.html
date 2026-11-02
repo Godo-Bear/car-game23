@@ -63,7 +63,8 @@
     <div id="drive-map" class="drive-map hidden" role="dialog" aria-label="Map">
       <div class="drive-map-head">
         <b>MAP</b>
-        <span>Tap a place to teleport to the nearest road · Esc to close</span>
+        <span>Tap a place to teleport to the nearest road · 🏁 races · Esc to close</span>
+        <b id="drive-map-summary" class="drive-map-summary"></b>
         <button type="button" id="drive-map-close" class="icon-btn" aria-label="Close the map">✕</button>
       </div>
       <div id="drive-map-frame" class="drive-map-frame"><span id="drive-map-me" class="drive-map-me" aria-hidden="true"></span></div>
@@ -106,6 +107,14 @@
       </div>
       <div class="rotate-hint">↻ Turn your device sideways to race</div>
       <div id="hud-message" class="hud-message"></div>
+      <!-- Items: what you hold (tap it, or E / LB, to use it) -->
+      <button type="button" id="hud-item" class="hud-item" aria-label="Use item">
+        <span class="slot"><span id="hud-item-icon" class="icon"></span><b id="hud-item-uses" class="uses"></b></span>
+        <small id="hud-item-name" class="name"></small>
+        <kbd class="key-hint">E</kbd>
+      </button>
+      <div id="hud-flash" class="hud-flash"></div>
+      <div id="hud-free-info" class="hud-free-info"></div>
       <div id="hud-boost" class="hud-boost"></div>
       <canvas id="minimap" class="minimap" width="440" height="440"></canvas>
       <div class="speedo">
@@ -188,12 +197,34 @@
             <small id="mode-career-info">20 events across Japan</small>
             <span class="go" aria-hidden="true">▶</span>
           </button>
+          <button type="button" id="mode-gp" class="mode-card gp">
+            <span class="tag">ITEMS · CUPS</span>
+            <b>Grand Prix</b>
+            <small id="mode-gp-info">Four-race cups with items · win trophies</small>
+            <span class="go" aria-hidden="true">▶</span>
+          </button>
           <button type="button" id="mode-free" class="mode-card free">
             <span class="tag">OPEN WORLD</span>
             <b>Free Drive</b>
             <small id="mode-free-info">Drive anywhere on the open map</small>
             <span class="go" id="mode-free-go" aria-hidden="true">▶</span>
           </button>
+        </div>
+      </div>
+
+      <!-- Grand Prix: pick a cup and class -->
+      <div class="hub-panel hidden gp-panel" data-panel="grandprix">
+        <div class="panel gp-card">
+          <button type="button" class="link-btn back-link" data-back>‹ Back</button>
+          <small class="ev-num">GRAND PRIX · ITEMS ON · 8 CARS</small>
+          <h2>Choose a cup</h2>
+          <div id="gp-cups" class="gp-cups"></div>
+          <div class="setting">
+            <span>Class</span>
+            <div class="seg" id="gp-class"><button type="button" data-value="easy">Easy</button><button type="button" data-value="normal">Normal</button><button type="button" data-value="hard">Hard</button></div>
+          </div>
+          <p id="gp-info" class="muted small-text"></p>
+          <button type="button" id="btn-gp-start" class="primary race-btn">START CUP ▶</button>
         </div>
       </div>
 
@@ -567,11 +598,29 @@
         <p id="results-earned" class="earned"></p>
         <div id="results-extra" class="results-extra"></div>
         <table id="results-table" class="results"></table>
+        <div id="results-gp" class="results-gp hidden"></div>
         <p id="results-saved" class="muted"></p>
         <div class="row">
+          <button type="button" id="btn-gp-next" class="primary hidden">Next race ▶</button>
+          <button type="button" id="btn-free-back" class="primary hidden">Back to free drive</button>
           <button type="button" id="btn-again" class="primary">Race again</button>
           <button type="button" id="btn-results-map">Career map</button>
           <button type="button" id="btn-home" class="secondary">Home</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Grand Prix: the trophy ceremony -->
+    <div id="screen-trophy" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="panel trophy-panel">
+        <div id="trophy-art" class="trophy-art"></div>
+        <h2 id="trophy-title">Gold trophy!</h2>
+        <p id="trophy-sub" class="muted"></p>
+        <p id="trophy-bonus" class="earned"></p>
+        <ol id="trophy-table" class="trophy-table"></ol>
+        <div class="row">
+          <button type="button" id="btn-trophy-gp" class="primary">Grand Prix</button>
+          <button type="button" id="btn-trophy-home" class="secondary">Home</button>
         </div>
       </div>
     </div>
