@@ -3,7 +3,32 @@
 A Forza-inspired 3D racing game set in Japan — city streets, a mountain pass and cherry-blossom
 countryside, by day, at sunset or at night — running in the browser and hosted on Cloudflare.
 
-- **Play tab:** the bottom bar's *Play* lets you choose *Career* (the event map) or *Free Drive*.
+- **Grand Prix (kart-racing style, with items):** *Play → Grand Prix* has four cups of four
+  races - the **Sakura Cup**, **Neon Cup**, **Mountain Cup** (opens with your first trophy) and
+  **City Cup** (street races through the free drive city; opens with free drive) - at Easy, Normal
+  or Hard. Every race scores points (15, 12, 10, 8, 6, 4, 2, 1); the standings show after each
+  race, the next race's grid is reversed (the leader starts at the back) and the cup ends with a
+  trophy ceremony. A top-three finish overall wins a gold, silver or bronze trophy for that cup and
+  class, saved to your account with a bonus (up to ¥32,000; bettering a trophy pays the
+  difference; the server checks it). Each race also pays prize money as usual.
+- **Items:** only in the kart-style races - Grand Prix rounds and the city street races (not in
+  career events or plain free drive) - glowing 福 item boxes sit in rows across the road. Drive
+  through one and, after a quick roulette, you hold an item (the further back you are, the better
+  the odds of a strong one): **Ramune Rocket** (a boost; the **Triple Ramune** has three), **Oil
+  Slick** (dropped behind you), **Shuriken** (thrown straight down the road), **Paper Lantern**
+  (homes in on the car one place ahead), **Lucky Cat** (a charm that soaks up one hit) and the rare
+  **Thunder Drum** (stuns everyone ahead of you). A hit spins you out; a stun shrinks and slows
+  you for a moment. Use items with *E* (LB on a controller, or tap the item slot); the AI racers
+  use them too.
+- **City courses:** four street circuits through the free drive city - *Inner Ring*, *Tower
+  District*, *Big Wheel Run* and *Castle Quarter* - traced along its avenues and ring roads
+  (`src/track/cityCourseGen.ts` works them out from the street network; the results are saved in
+  `cityCourseData.ts`). Glowing arrows show the way at every junction, and each has a marked
+  **shortcut** (yellow 近道 SHORTCUT signs and arrows down a side street, with a gold super boost
+  halfway). You can leave the course anywhere, but checkpoint gates round the lap mean a cut that
+  skips one puts you back where you left (*R* also takes you back). Boost pads on the straights
+  give anyone who drives over them a burst of speed.
+- **Play tab:** the bottom bar's *Play* lets you choose *Career* (the event map), *Grand Prix* or *Free Drive*.
   Free drive opens a top-down map of the open world (`public/freedrive/map.jpg`, rendered from
   the game by `node scripts/render-freedrive-map.mjs`) with pins for places to start - City
   Centre, Tokyo Tower, Castle Park, Big Wheel, Skytree, Ring Road, Mountain Road, Dirt Trails -
@@ -22,7 +47,12 @@ countryside, by day, at sunset or at night — running in the browser and hosted
   ring road; nitro bottles (and gold super boosts) sit along the ring road, the avenues, the ring
   streets and the slip roads, and the drift guide carries a drift round the bends of any road. The
   *Map* button (🗺, *Tab*, or D-pad up) opens the map: tap a starting-place pin, or anywhere, to
-  teleport to the nearest road. *J* (B on a controller, ⤒ on screen) jumps. No laps or timing: *R* puts you back on your wheels where you are,
+  teleport to the nearest road. *J* (B on a controller, ⤒ on screen) jumps.
+  **Things to do** (all shown on the map, with your records): stop in a glowing 🏁 race marker to
+  race that city course (2 laps, 7 rivals, items); find the **30 lucky cats** hidden round the map
+  (down side streets, by the landmarks, on the trails and up in the hills); set speeds past the 📸
+  **speed traps**, fly off the 🛫 **jump ramps** and score in the 🌀 **drift zones** (one to three
+  stars each). Boost pads sit on the avenues. Your progress is kept on this device. No laps or timing: *R* puts you back on your wheels where you are,
   *Esc* for the menu (Resume / Settings / Quit to home). The map picture is the game seen from
   above with a road map drawn over it (buildings, roads, trails and the nitro).
 - **Touch screen support:** play on a phone or tablet with on-screen steering, pedals, drift and

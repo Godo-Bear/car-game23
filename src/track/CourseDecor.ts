@@ -126,7 +126,8 @@ export class CourseDecor {
       polygonOffset: true,
       polygonOffsetFactor: -3,
     });
-    const sign = new THREE.MeshBasicMaterial({ map: shortcutTexture(), side: THREE.DoubleSide });
+    const signRight = new THREE.MeshBasicMaterial({ map: shortcutTexture(1) });
+    const signLeft = new THREE.MeshBasicMaterial({ map: shortcutTexture(-1) });
     for (const sc of data.shortcuts) {
       const P = sc.pts;
       let run = 0;
@@ -139,18 +140,22 @@ export class CourseDecor {
         a.rotation.y = Math.atan2(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]);
         this.group.add(a);
       }
-      // The sign stands at the corner where the shortcut leaves the course.
-      const [x0, z0] = P[0];
-      const [x1, z1] = P[Math.min(3, P.length - 1)];
-      const dir = Math.atan2(x1 - x0, z1 - z0);
-      const board = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 2.1), sign);
-      const side = 8.5;
-      const bx = x0 + Math.sin(dir) * 6 + Math.cos(dir) * side;
-      const bz = z0 + Math.cos(dir) * 6 - Math.sin(dir) * side;
-      board.position.set(bx, 3.2, bz);
-      board.rotation.y = dir + Math.PI;
-      const pole = new THREE.Mesh(new THREE.BoxGeometry(0.14, 2.6, 0.14), poleMat);
-      pole.position.set(bx, 1.3, bz);
+      // The sign stands at the roadside 30 m before the turn-off, on the shortcut's side, facing
+      // the cars coming up to it, its arrow pointing the way.
+      const at = track.pointAt(sc.from - 30, 0);
+      const exit = track.pointAt(sc.from, 0);
+      const [x3, z3] = P[Math.min(4, P.length - 1)];
+      const s0 = track.sample(track.indexAtDistance(sc.from));
+      const side = (x3 - exit.x) * s0.rx + (z3 - exit.z) * s0.rz >= 0 ? 1 : -1;
+      const lat = side * (track.halfWidth + 3);
+      const r = track.sample(track.indexAtDistance(sc.from - 30));
+      const bx = at.x + r.rx * lat;
+      const bz = at.z + r.rz * lat;
+      const board = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 2.1), side > 0 ? signRight : signLeft);
+      board.position.set(bx, at.y + 2.9, bz);
+      board.rotation.y = r.heading + Math.PI;
+      const pole = new THREE.Mesh(new THREE.BoxGeometry(0.14, 2.4, 0.14), poleMat);
+      pole.position.set(bx, at.y + 1.2, bz);
       this.group.add(board, pole);
     }
     // Boost pads.
@@ -264,7 +269,8 @@ function chevronTexture(): THREE.Texture {
   });
 }
 
-function shortcutTexture(): THREE.Texture {
+/** The 近道 SHORTCUT board, its arrow pointing right (1) or left (-1). */
+function shortcutTexture(dir: 1 | -1): THREE.Texture {
   return canvas(256, 128, (g) => {
     g.fillStyle = '#ffd21f';
     g.fillRect(0, 0, 256, 128);
@@ -272,16 +278,19 @@ function shortcutTexture(): THREE.Texture {
     g.lineWidth = 8;
     g.strokeRect(6, 6, 244, 116);
     g.fillStyle = '#111';
+    const textX = dir > 0 ? 100 : 156;
     g.font = 'bold 44px "Hiragino Sans", "Yu Gothic", sans-serif';
     g.textAlign = 'center';
-    g.fillText('近道', 92, 58);
-    g.font = 'bold 28px sans-serif';
-    g.fillText('SHORTCUT', 112, 104);
-    // An arrow pointing off to the side.
+    g.fillText('近道', textX, 58);
+    g.font = 'bold 26px sans-serif';
+    g.fillText('SHORTCUT', textX, 102);
+    // The arrow, at the end it points to.
+    const tip = dir > 0 ? 238 : 18;
+    const base = dir > 0 ? 190 : 66;
     g.beginPath();
-    g.moveTo(178, 22);
-    g.lineTo(236, 50);
-    g.lineTo(178, 78);
+    g.moveTo(base, 26);
+    g.lineTo(tip, 64);
+    g.lineTo(base, 102);
     g.closePath();
     g.fill();
   });

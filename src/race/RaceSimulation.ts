@@ -6,7 +6,7 @@ import { collideCars, collideWithWalls, type WallContact } from '../physics/Coll
 import { neutralControls, SPORTS_CAR, type VehicleControls, VehiclePhysics, type VehicleSpec } from '../physics/VehiclePhysics';
 import { inSpan } from '../track/span';
 import { createProjection, type TrackLayout, TrackPath, type TrackProjection } from '../track/TrackPath';
-import { type ItemBox, ItemSystem } from './Items';
+import { ItemSystem } from './Items';
 import { NITRO_PICKUP, PICKUP_RESPAWN, type Pickup, type PickupKind, pickupAt, pickupNear, placePickups, SUPER_SECONDS } from './Pickups';
 import { type RaceEvent, RaceManager } from './RaceManager';
 
@@ -29,10 +29,8 @@ export interface RaceSettings {
   aiCars: AICar[];
   /** Free drive: the player can leave the road and drive anywhere on this ground (the AI keep to the road). */
   freeRoam?: FreeRoamGround;
-  /** Item boxes and items (kart-racing style; see Items.ts). */
+  /** Item boxes and items (kart-racing style; see Items.ts): Grand Prix and city races only. */
   items?: boolean;
-  /** Extra item boxes off the course (free drive's town). */
-  itemBoxes?: ItemBox[];
   /**
    * City courses (with freeRoam): checkpoint gates round the lap. The player may leave the course
    * - down a side street, say - and progress waits where they left it until they're back on it;
@@ -291,7 +289,7 @@ export class RaceSimulation {
         }
       }
     }
-    this.items = s.items ? new ItemSystem(this.track, this.cars.length, s.seed, s.itemBoxes) : null;
+    this.items = s.items ? new ItemSystem(this.track, this.cars.length, s.seed) : null;
     this.race = this.placeOnGrid();
   }
 

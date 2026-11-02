@@ -12,7 +12,6 @@ import { Input } from '../core/Input';
 import { createRng } from '../core/math';
 import { type LocalSettings, SettingsStore } from '../core/Settings';
 import { neutralControls } from '../physics/VehiclePhysics';
-import type { ItemBox } from '../race/Items';
 import { placePickups } from '../race/Pickups';
 import { formatTime, type RaceEvent } from '../race/RaceManager';
 import { DRIVER_NAMES, type FreeRoamGround, gridSlot, RaceSimulation } from '../race/RaceSimulation';
@@ -54,7 +53,10 @@ interface RaceSetup {
   laps: number;
   difficulty: Difficulty;
   opponents: number;
-  /** Item boxes and items (Grand Prix and city races). */
+  /**
+   * Item boxes and items. Only the kart-style races have them: Grand Prix rounds and the city
+   * street races (not career events, and not free drive).
+   */
   items: boolean;
   /** A career event. */
   event?: string;
@@ -385,7 +387,6 @@ export class Game {
       playerSlot?: number;
       gates?: number[];
       pads?: { x: number; z: number; heading: number }[];
-      itemBoxes?: ItemBox[];
     } = {},
   ): void {
     const total = settings.opponents + 1;
@@ -412,7 +413,6 @@ export class Game {
         items: extra.items,
         gates: extra.gates,
         boostPads: extra.pads,
-        itemBoxes: extra.itemBoxes,
       },
       this.line,
     );
@@ -666,12 +666,8 @@ export class Game {
     const map = this.world!.freeRoam!;
     this.applyTimeOfDay(tod);
     // Traffic: the AI lap the ring road (they keep to it); you can go anywhere.
-    // Items and boost pads round town too (the traffic picks up items as well).
-    this.createSimulation({ ...this.screens.settings, laps: 99, opponents: 6, difficulty: 'easy' }, false, map, {
-      items: true,
-      itemBoxes: map.activities.boxes.map((b) => ({ ...b, distance: 0, backAt: 0 })),
-      pads: map.activities.pads,
-    });
+    // Boost pads round town. (No items: they're for the Grand Prix and the city races.)
+    this.createSimulation({ ...this.screens.settings, laps: 99, opponents: 6, difficulty: 'easy' }, false, map, { pads: map.activities.pads });
     this.freePlay.setActivities(map.activities, (x, z) => map.surfaceAt(x, z));
     for (const car of this.sim.cars) car.autopilot = !car.isPlayer;
     this.sim.startRace();

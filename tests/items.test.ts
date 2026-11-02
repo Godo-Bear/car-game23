@@ -194,6 +194,19 @@ describe('items', () => {
     expect(events.some((e) => e.type === 'itemHit' && e.racerId === a.id && e.item === 'lantern')).toBe(true);
   });
 
+  it('only races set up with items have them (career events and free drive have none)', () => {
+    const plain = new RaceSimulation(TRACKS.tokyo.layout, { opponents: 3, seed: 7 });
+    plain.startRace();
+    expect(plain.items).toBeNull();
+    expect(plain.useItem(plain.player)).toBe(false);
+    // Not before the start either.
+    const sim = new RaceSimulation(TRACKS.tokyo.layout, { opponents: 1, items: true, seed: 7 });
+    give(sim, sim.player.id, 'ramune');
+    expect(sim.useItem(sim.player)).toBe(false);
+    sim.startRace();
+    expect(sim.useItem(sim.player)).toBe(true);
+  });
+
   it('a whole race with items runs to the finish, with the AI using them', () => {
     const sim = new RaceSimulation(TRACKS.tokyo.layout, { opponents: 7, items: true, laps: 1, seed: 11 });
     for (const c of sim.cars) c.autopilot = true;

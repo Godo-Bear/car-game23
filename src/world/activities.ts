@@ -10,7 +10,7 @@ import { CITY_COURSE_DEFS } from '../track/tracks';
  * - jump ramps (how far did you fly?);
  * - drift zones (how many drift points in one go?);
  * - lucky cats to find all over the map;
- * - boost pads and rows of item boxes round town.
+ * - boost pads round town.
  * Everything's worked out from the map itself, the same every time.
  */
 export interface Ramp {
@@ -55,7 +55,6 @@ export interface FreeActivities {
   zones: DriftZone[];
   cats: { x: number; y: number; z: number }[];
   pads: { x: number; z: number; heading: number }[];
-  boxes: { x: number; y: number; z: number }[];
 }
 
 /** Star thresholds: speed traps (km/h), jumps (m), drift zones (points). */
@@ -132,30 +131,21 @@ export function placeActivities(input: PlaceInput): FreeActivities {
     traps.push({ id: `trap-avenue-${k}`, name: `${compass(p.x, p.z)} Avenue`, ...p });
   }
 
-  // Jump ramps: on the grass beside the slip roads (where it's flat enough), and on two avenues
-  // as they leave town.
+  // Jump ramps: one at the start of each slip road out of town (flat ground, and you come at it
+  // flat out down the avenue), on the road itself, leaping out over the fields.
   const ramps: Ramp[] = [];
   for (const s of slips) {
-    if (ramps.length >= 5) break;
     const P = s.pts;
-    const i = Math.floor(P.length * 0.45);
-    const [x0, z0] = P[i];
-    const [x1, z1] = P[i + 2];
-    const heading = Math.atan2(x1 - x0, z1 - z0);
-    const side = ramps.length % 2 ? 1 : -1;
-    const x = x0 + Math.cos(heading) * 26 * side;
-    const z = z0 - Math.sin(heading) * 26 * side;
-    const flat =
-      Math.abs(input.surfaceAt(x + Math.sin(heading) * 6, z + Math.cos(heading) * 6) - input.surfaceAt(x - Math.sin(heading) * 6, z - Math.cos(heading) * 6)) <
-      1.2;
-    if (!flat || !input.clear(x, z, 10)) continue;
-    ramps.push({ id: `ramp-${ramps.length + 1}`, name: `${compass(x, z)} Hill Jump`, x, z, heading, length: 9, width: 6, height: 2.2 });
-  }
-  for (const k of [1, 5]) {
-    const a = avenues[k];
-    if (!a) continue;
-    const p = at(a.pts, 1100);
-    ramps.push({ id: `ramp-avenue-${k}`, name: `${compass(p.x, p.z)} Avenue Jump`, ...p, length: 8, width: 6, height: 1.9 });
+    const k = Math.min(5, P.length - 2);
+    const [x, z] = P[k];
+    const heading = Math.atan2(P[k + 1][0] - P[k - 1][0], P[k + 1][1] - P[k - 1][1]);
+    const h = (d: number, side: number) =>
+      input.surfaceAt(x + Math.sin(heading) * d + Math.cos(heading) * side, z + Math.cos(heading) * d - Math.sin(heading) * side);
+    const flat = Math.abs(h(-6, 0) - h(6, 0)) < 0.8 && Math.abs(h(0, -3) - h(0, 3)) < 0.4;
+    if (!flat || !input.clear(x, z, 6)) continue;
+    const base = `${compass(x, z)} Gate Jump`;
+    const same = ramps.filter((r) => r.name.startsWith(base)).length;
+    ramps.push({ id: `ramp-${ramps.length + 1}`, name: same ? `${base} ${same + 1}` : base, x, z, heading, length: 9, width: 7, height: 2.2 });
   }
 
   // Drift zones: the roundabout in the middle of town, and the two twistiest bits of the ring road.
@@ -213,20 +203,17 @@ export function placeActivities(input: PlaceInput): FreeActivities {
     return grade < 0.35 && add(x, z);
   });
 
-  // Boost pads on the avenues (both ways), and item boxes in rows across them.
+  // Boost pads on the avenues (both ways).
   const pads: FreeActivities['pads'] = [];
-  const boxes: FreeActivities['boxes'] = [];
   avenues.forEach((a, k) => {
     for (const radius of [540, 880]) {
       const p = at(a.pts, radius + (k % 2) * 40);
       pads.push({ x: p.x + Math.cos(p.heading) * 3.5, z: p.z - Math.sin(p.heading) * 3.5, heading: p.heading });
       pads.push({ x: p.x - Math.cos(p.heading) * 3.5, z: p.z + Math.sin(p.heading) * 3.5, heading: p.heading + Math.PI });
     }
-    const q = at(a.pts, 700);
-    for (const lat of [-4.5, 0, 4.5]) boxes.push({ x: q.x + Math.cos(q.heading) * lat, y: 0.08, z: q.z - Math.sin(q.heading) * lat });
   });
 
-  return { markers, traps, ramps, zones, cats, pads, boxes };
+  return { markers, traps, ramps, zones, cats, pads };
 }
 
 /** Height of a ramp's surface above the ground under it at (x, z), or 0 off it. */

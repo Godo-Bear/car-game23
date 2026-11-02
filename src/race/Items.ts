@@ -193,10 +193,8 @@ export class ItemSystem {
     private readonly track: TrackPath,
     cars: number,
     seed: number,
-    /** Extra boxes off the course (free drive's town). */
-    extraBoxes: ItemBox[] = [],
   ) {
-    this.boxes = [...placeItemBoxes(track), ...extraBoxes];
+    this.boxes = placeItemBoxes(track);
     this.state = Array.from({ length: cars }, fresh);
     this.rng = createRng(seed ^ 0x51ed);
   }

@@ -180,10 +180,10 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
     freeRoam = {
       surfaceAt(x, z) {
         // (And the jump ramps on top.)
-        let h = ground(x, z);
+        const h = ground(x, z);
         for (const r of activities.ramps) {
           const up = rampHeight(r, x, z);
-          if (up > 0) h = Math.max(h, ground(r.x, r.z) + up);
+          if (up > 0) return h + up;
         }
         return h;
       },
