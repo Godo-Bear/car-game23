@@ -893,8 +893,10 @@ export class Game {
       city.people.group.visible = on;
       if (on && running) {
         const p = this.sim.player.physics;
-        city.traffic.update(simDt, p, this.elapsed);
-        city.people.update(simDt, this.elapsed, { x: p.x, z: p.z, speed: p.speed });
+        // (The cars stop for people crossing; buses at the stops take the people waiting there.)
+        city.traffic.update(simDt, p, this.elapsed, city.people.inRoad);
+        city.people.update(simDt, this.elapsed, { x: p.x, z: p.z, speed: p.speed }, city.traffic.busesAt);
+        for (const v of city.traffic.horns) this.audio.horn(v);
       }
     }
     if (this.state === 'freedrive' && running) {

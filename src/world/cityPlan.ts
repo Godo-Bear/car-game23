@@ -201,8 +201,15 @@ export class StreetField {
   at(k: number, s: number): { x: number; z: number; tx: number; tz: number } {
     const P = this.streets[k].pts;
     const cum = this.lengths[k];
-    let i = 1;
-    while (i < cum.length - 1 && cum[i] < s) i++;
+    // (The first corner at or past s.)
+    let lo = 1;
+    let hi = cum.length - 1;
+    while (lo < hi) {
+      const m = (lo + hi) >> 1;
+      if (cum[m] < s) lo = m + 1;
+      else hi = m;
+    }
+    const i = lo;
     const seg = cum[i] - cum[i - 1] || 1;
     const t = Math.max(0, Math.min(1, (s - cum[i - 1]) / seg));
     const [ax, az] = P[i - 1];
@@ -214,6 +221,136 @@ export class StreetField {
     const cum = this.lengths[k];
     return cum[cum.length - 1];
   }
+
+  /** How far along street k is the point on it nearest (x, z)? */
+  project(k: number, x: number, z: number): number {
+    const P = this.streets[k].pts;
+    const cum = this.lengths[k];
+    let best = 0;
+    let bestD = Infinity;
+    for (let i = 0; i + 1 < P.length; i++) {
+      const [ax, az] = P[i];
+      const dx = P[i + 1][0] - ax;
+      const dz = P[i + 1][1] - az;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+      const d = (x - ax - dx * t) ** 2 + (z - az - dz * t) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        best = cum[i] + t * (cum[i + 1] - cum[i]);
+      }
+    }
+    return best;
+  }
+}
+
+/** How a street's traffic goes through a junction: traffic lights, give way (with or without a zebra crossing), into the roundabout, or right of way. */
+export type JunctionKind = 'signal' | 'yieldZebra' | 'entry' | 'yield' | 'priority';
+
+/** Where along a street (s from a to b) another street (j) crosses or meets it. */
+export interface StreetJunction {
+  a: number;
+  b: number;
+  j: number;
+  kind: JunctionKind;
+}
+
+/** The roundabout's ring (all of it near the middle of town). */
+export function isCentral(street: CityStreet): boolean {
+  return street.pts.every(([x, z]) => x * x + z * z < 60 * 60);
+}
+
+/**
+ * The junctions along every street: wherever any part of its width comes within 1.5 m of
+ * another street. The side streets give way to the main roads (and the later side street to
+ * the earlier); main roads crossing get traffic lights (but not at the roundabout, which has
+ * right of way).
+ */
+export function streetJunctions(streets: CityStreet[], field = new StreetField(streets)): StreetJunction[][] {
+  const central = streets.map(isCentral);
+  return streets.map((st, k) => {
+    const L = field.length(k);
+    const hw = st.width / 2;
+    const out: StreetJunction[] = [];
+    let cur: StreetJunction | null = null;
+    for (let s = 0; s <= L + 0.99; s += 1) {
+      const ss = Math.min(s, L);
+      const p = field.at(k, ss);
+      if (field.clear(p.x, p.z, hw + 1.5, k)) continue;
+      let j = -1;
+      for (const o of [0, -hw, hw]) {
+        const hit = field.nearest(p.x - p.tz * o, p.z + p.tx * o, 1.5, k);
+        if (hit) {
+          j = hit.k;
+          break;
+        }
+      }
+      if (j < 0) continue;
+      if (cur && ss - cur.b <= 1.01) cur.b = ss;
+      else {
+        cur = { a: ss, b: ss, j, kind: 'priority' };
+        out.push(cur);
+      }
+    }
+    const major = st.width >= 14;
+    for (const J of out) {
+      const majorJ = streets[J.j].width >= 14;
+      const mid = field.at(k, (J.a + J.b) / 2);
+      if (central[k]) J.kind = 'priority';
+      else if (central[J.j]) J.kind = 'entry';
+      else if (major && majorJ) J.kind = Math.hypot(mid.x, mid.z) < 60 ? 'priority' : 'signal';
+      else if (major) J.kind = 'priority';
+      else if (majorJ) J.kind = 'yieldZebra';
+      else J.kind = k > J.j ? 'yield' : 'priority';
+    }
+    return out;
+  });
+}
+
+/** Coming up to a junction (where it isn't the right of way): what's painted on the way in. */
+export interface Approach {
+  /** Which junction on the street (index). */
+  index: number;
+  j: number;
+  kind: JunctionKind;
+  /** Travelling along the street (+1) or against it (-1). */
+  g: 1 | -1;
+  /** Where the junction begins, this way (s). */
+  at: number;
+  /** Road back to the last junction (m). */
+  room: number;
+  /** The zebra crossing across the street (s span), if there is one. */
+  zebra: [number, number] | null;
+  /** The stop line: where the front of a car stops (s), if there's room for one. */
+  stop: number | null;
+}
+
+/** Every way into a junction on street k that isn't a right of way (each junction, both directions). */
+export function streetApproaches(junctions: StreetJunction[], length: number): Approach[] {
+  const out: Approach[] = [];
+  junctions.forEach((J, index) => {
+    if (J.kind === 'priority') return;
+    const prev = index > 0 ? junctions[index - 1].b : -Infinity;
+    const next = index + 1 < junctions.length ? junctions[index + 1].a : Infinity;
+    const zebra = J.kind === 'signal' || J.kind === 'yieldZebra' || J.kind === 'entry';
+    for (const g of [1, -1] as const) {
+      const at = g > 0 ? J.a : J.b;
+      const room = g > 0 ? at - Math.max(prev, 0) : Math.min(next, length) - at;
+      if ((g > 0 && J.a < 3) || (g < 0 && J.b > length - 3) || room < 12) continue;
+      const back = (d: number) => at - g * d;
+      const stopAt = zebra ? 9 : 3;
+      out.push({
+        index,
+        j: J.j,
+        kind: J.kind,
+        g,
+        at,
+        room,
+        zebra: zebra ? [Math.min(back(7), back(3)), Math.min(back(7), back(3)) + 4] : null,
+        stop: room > stopAt + 2 ? back(stopAt) : null,
+      });
+    }
+  });
+  return out;
 }
 
 /** The corners of a lot (its local x along the street, z across). */

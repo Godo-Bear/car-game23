@@ -48,9 +48,21 @@ countryside, by day, at sunset or at night — running in the browser and hosted
   fill the biggest blocks; a plaza with a fountain sits in the roundabout. Street lamps (with
   pools of light at night), avenue trees, traffic lights at the main junctions, utility poles and
   wires down the side streets, blue direction signs and 止まれ signs line the streets
-  (`StreetFurniture.ts`); traffic drives on the left in proper lanes, turns at the junctions and
-  waits at red lights (`CityTraffic.ts`), and people walk the pavements and hop out of your way
-  (`CityPeople.ts`). Both live around you, wherever you drive.
+  (`StreetFurniture.ts`).
+  **Traffic** (`CityTraffic.ts`, models in `trafficModels.ts`): kei cars (yellow plates), hatchbacks,
+  saloons, taxis (roof sign and 空車 lamp lit), minivans, kei trucks, delivery trucks, green city
+  buses and the odd police car, properly shaped with glass, plates and turning wheels. They drive
+  on the left in their lanes and plan each junction as it comes: straight on, or a turn with the
+  indicator going, slowing and moving to the right lane first, then a smooth curve round the
+  corner (turning right, they wait for a gap in the oncoming traffic). They stop at red lights and
+  at the 止まれ lines, give way to people on the crossings, overtake slow traffic on the main
+  roads, queue, brake for you and honk if you block them; buses pull in at the bus stops. Brake
+  lights, indicators, hazards when you hit one, headlight beams on the road after dark.
+  **People** (`CityPeople.ts`): suits, short sleeves, bags, school kids in yellow caps with their
+  randoseru, clear umbrellas after dark. They cross at the zebra crossings (waiting for the green
+  man at the lights), queue at the bus stops and get on the bus, look in shop windows and stand
+  chatting; cyclists ride their mamachari down the side streets. Anyone you drive at steps aside -
+  or jumps clear with their arms up. Traffic and people live around you, wherever you drive.
   **The streets** (`StreetMesh.ts`, textures in `streetTextures.ts`) are made like Japanese town
   streets: asphalt with wheel tracks worn into every lane (plain at the junctions), cracks and
   patches; kerbed, brick-paved pavements with a yellow tactile strip along the main roads, a
@@ -296,8 +308,9 @@ runs at a fixed 120 Hz, and is covered by unit tests — including a headless 8-
 │   │   ├── StreetMesh.ts       # Free drive streets: asphalt, pavements, corners, markings, rails
 │   │   ├── streetTextures.ts   # Asphalt, paving, worn paint and the road-marking atlas
 │   │   ├── StreetFurniture.ts  # Lamps, avenue trees, traffic lights, poles and wires, signs
-│   │   ├── CityTraffic.ts      # Cars on the free drive streets (lanes, turns, red lights)
-│   │   ├── CityPeople.ts       # People walking the pavements
+│   │   ├── CityTraffic.ts      # Free drive traffic: lanes, planned turns, lights, stop lines, buses
+│   │   ├── trafficModels.ts    # The traffic's vehicles: cars, taxis, trucks, buses, police
+│   │   ├── CityPeople.ts       # People: walking, crossing, bus stops, cyclists, umbrellas
 │   │   ├── Nature.ts           # Terrain, lakes, forests, cherry blossoms, petals, pagoda, Fuji
 │   │   ├── foliage.ts          # Tree shapes, wind sway, contact shadows
 │   │   ├── Grass.ts            # GPU grass field that travels with the camera

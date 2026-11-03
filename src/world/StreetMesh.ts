@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { createRng } from '../core/math';
 import type { Footprint } from './City';
-import { type CityStreet, PAVEMENT, StreetField, streetLayout } from './cityPlan';
+import { type CityStreet, isCentral, PAVEMENT, StreetField, type StreetJunction, streetApproaches, streetJunctions, streetLayout } from './cityPlan';
 import { GeometryBuilder } from './GeometryBuilder';
 import { ATLAS_H, ATLAS_W, DECAL, type DecalKind, markingAtlas, PAVING_TILE, pavementTexture, ROAD_TILE, streetAsphalt, wornPaint } from './streetTextures';
 import { applyRoadDetail } from './surfaces';
@@ -211,15 +211,6 @@ function subtract(spans: Span[], cuts: Span[], min = 0.5): Span[] {
   return out.filter(([a, b]) => b - a >= min);
 }
 
-/** Where along a street another street crosses or meets it (s from a to b), and which. */
-interface Junction {
-  a: number;
-  b: number;
-  j: number;
-  /** How this street's traffic goes through it. */
-  kind: 'signal' | 'yieldZebra' | 'entry' | 'yield' | 'priority';
-}
-
 /** One end of a run of pavement (where it stops for a junction). */
 interface End {
   k: number;
@@ -239,6 +230,10 @@ export class StreetMesh {
   readonly group = new THREE.Group();
   /** Guard rails, bus stops, post boxes (for the car to hit). */
   readonly footprints: Footprint[] = [];
+  /** The junctions along each street (for the traffic and people). */
+  readonly junctions: StreetJunction[][];
+  /** The bus stops: street, how far along, which side. */
+  readonly busStops: { k: number; s: number; side: 1 | -1 }[] = [];
   private readonly field: StreetField;
   private readonly lines: Line[];
   private readonly heights: number[];
@@ -266,8 +261,9 @@ export class StreetMesh {
     this.field = new StreetField(streets);
     this.lines = streets.map((s) => new Line(s.pts));
     this.heights = streets.map((s) => streetHeight(s.width));
-    const central = streets.map((s) => s.pts.every(([x, z]) => x * x + z * z < 60 * 60));
-    const junctions = streets.map((_, k) => this.junctionSpans(k, central));
+    const central = streets.map(isCentral);
+    const junctions = streetJunctions(streets, this.field);
+    this.junctions = junctions;
     const runs = streets.map((_, k) => [this.pavementRuns(k, -1), this.pavementRuns(k, 1)] as const);
     const ends: End[] = [];
     streets.forEach((_, k) => {
@@ -286,49 +282,6 @@ export class StreetMesh {
   }
 
   // ---------------------------------------------------------------- analysis
-
-  /** Where other streets cross or meet street k: wherever any part of its width is within 1.5 m of one. */
-  private junctionSpans(k: number, central: boolean[]): Junction[] {
-    const line = this.lines[k];
-    const w = this.streets[k].width;
-    const hw = w / 2;
-    const out: Junction[] = [];
-    let cur: Junction | null = null;
-    for (let s = 0; s <= line.length + 0.99; s += 1) {
-      const ss = Math.min(s, line.length);
-      let j = -1;
-      const [cx, cz] = line.at(ss);
-      if (!this.field.clear(cx, cz, hw + 1.5, k)) {
-        for (const o of [0, -hw, hw]) {
-          const [x, z] = line.at(ss, o);
-          const hit = this.field.nearest(x, z, 1.5, k);
-          if (hit) {
-            j = hit.k;
-            break;
-          }
-        }
-      }
-      if (j < 0) continue;
-      if (cur && ss - cur.b <= 1.01) cur.b = ss;
-      else {
-        cur = { a: ss, b: ss, j, kind: 'priority' };
-        out.push(cur);
-      }
-    }
-    const major = w >= 14;
-    for (const J of out) {
-      const wj = this.streets[J.j].width;
-      const majorJ = wj >= 14;
-      const [mx, mz] = line.at((J.a + J.b) / 2);
-      if (central[k]) J.kind = 'priority';
-      else if (central[J.j]) J.kind = 'entry';
-      else if (major && majorJ) J.kind = Math.hypot(mx, mz) < 60 ? 'priority' : 'signal';
-      else if (major) J.kind = 'priority';
-      else if (majorJ) J.kind = 'yieldZebra';
-      else J.kind = k > J.j ? 'yield' : 'priority';
-    }
-    return out;
-  }
 
   /** Stretches of pavement on one side of street k: wherever it keeps CORNER metres clear of every other street. */
   private pavementRuns(k: number, side: 1 | -1): Span[] {
@@ -355,7 +308,7 @@ export class StreetMesh {
   // ---------------------------------------------------------------- road surface
 
   /** The asphalt: lane-worn everywhere but the junctions, which are plain (and the same whichever street draws them). */
-  private surface(k: number, junctions: Junction[]): void {
+  private surface(k: number, junctions: StreetJunction[]): void {
     const line = this.lines[k];
     const w = this.streets[k].width;
     const hw = w / 2;
@@ -621,7 +574,7 @@ export class StreetMesh {
    * Centre and lane lines, and what's painted coming up to each junction. Returns the zebra
    * crossings (s spans), where the edge lines stop.
    */
-  private markings(k: number, junctions: Junction[], runs: readonly [Span[], Span[]], rng: () => number): Span[] {
+  private markings(k: number, junctions: StreetJunction[], runs: readonly [Span[], Span[]], rng: () => number): Span[] {
     const line = this.lines[k];
     const L = line.length;
     const w = this.streets[k].width;
@@ -630,49 +583,44 @@ export class StreetMesh {
     const zebras: Span[] = [];
     const breaks: Span[] = [];
     const solid: Span[] = [];
-    junctions.forEach((J, i) => {
-      const prev = i > 0 ? junctions[i - 1].b : -Infinity;
-      const next = i + 1 < junctions.length ? junctions[i + 1].a : Infinity;
+    for (const J of junctions) {
       const zebra = J.kind === 'signal' || J.kind === 'yieldZebra' || J.kind === 'entry';
       if (J.kind === 'priority') {
         // Through a junction with a bigger road (or the roundabout's spokes): the lines stop.
         if (this.heights[J.j] > this.heights[k]) breaks.push([J.a - 1, J.b + 1]);
       } else breaks.push([J.a - (zebra ? 7 : 3), J.b + (zebra ? 7 : 3)]);
-      for (const g of [1, -1] as const) {
-        const sJ = g > 0 ? J.a : J.b;
-        const room = g > 0 ? sJ - Math.max(prev, 0) : Math.min(next, L) - sJ;
-        if ((g > 0 && J.a < 3) || (g < 0 && J.b > L - 3) || room < 12) continue;
-        const back = (d: number) => sJ - g * d;
-        if (J.kind === 'priority') continue;
-        if (zebra) {
-          // Zebra crossing: 0.45 m stripes across the whole road, 3-7 m back.
-          const z0 = Math.min(back(7), back(3));
-          zebras.push([z0, z0 + 4]);
-          for (let o = -w / 2 + 0.7; o + 0.45 <= w / 2 - 0.7; o += 0.9) this.stripe(k, z0, z0 + 4, o, o + 0.45);
-        }
-        // The stop line across this way's lanes.
-        const stopAt = zebra ? 9 : 3;
-        if (room > stopAt + 2) {
-          const s = Math.min(back(stopAt), back(stopAt - 0.45));
-          this.stripe(k, s, s + 0.45, -g * 0.35, -g * lay.edge, WHITE, true);
-        }
-        if (J.kind === 'signal') {
-          // Lane arrows: straight or right in the inside lane, straight or left in the outside one.
-          for (const d of [13, 43]) {
-            if (room < d + 12) break;
-            this.mark('arrowRight', k, back(d), -g * lay.lanes[0], g, 1.5, 5);
-            this.mark('arrowLeft', k, back(d), -g * lay.lanes[1], g, 1.5, 5);
-          }
-          // No changing lanes in the last 30 m.
-          if (lay.laneLine !== null) solid.push([Math.min(back(37), back(7)), Math.max(back(37), back(7))]);
-        } else if (J.kind === 'yield' || J.kind === 'yieldZebra') {
-          // 止まれ ("stop") behind the stop line, and ◇ (a crossing ahead) further back.
-          const d = stopAt + 1.2 + 3.75;
-          if (room > d + 5) this.mark('stop', k, back(d), -g * lay.lanes[0], g, 2, 7.5);
-          if (J.kind === 'yieldZebra') for (const dd of [30, 50]) if (room > dd + 12) this.mark('diamond', k, back(dd), -g * lay.lanes[0], g, 1.5, 4.5);
-        }
+    }
+    for (const A of streetApproaches(junctions, L)) {
+      const { g, room } = A;
+      const back = (d: number) => A.at - g * d;
+      if (A.zebra) {
+        // Zebra crossing: 0.45 m stripes across the whole road, 3-7 m back.
+        const [z0, z1] = A.zebra;
+        zebras.push([z0, z1]);
+        for (let o = -w / 2 + 0.7; o + 0.45 <= w / 2 - 0.7; o += 0.9) this.stripe(k, z0, z1, o, o + 0.45);
       }
-    });
+      // The stop line across this way's lanes.
+      if (A.stop !== null) {
+        const s = Math.min(A.stop, A.stop + g * 0.45);
+        this.stripe(k, s, s + 0.45, -g * 0.35, -g * lay.edge, WHITE, true);
+      }
+      const stopAt = A.zebra ? 9 : 3;
+      if (A.kind === 'signal') {
+        // Lane arrows: straight or right in the inside lane, straight or left in the outside one.
+        for (const d of [13, 43]) {
+          if (room < d + 12) break;
+          this.mark('arrowRight', k, back(d), -g * lay.lanes[0], g, 1.5, 5);
+          this.mark('arrowLeft', k, back(d), -g * lay.lanes[1], g, 1.5, 5);
+        }
+        // No changing lanes in the last 30 m.
+        if (lay.laneLine !== null) solid.push([Math.min(back(37), back(7)), Math.max(back(37), back(7))]);
+      } else if (A.kind === 'yield' || A.kind === 'yieldZebra') {
+        // 止まれ ("stop") behind the stop line, and ◇ (a crossing ahead) further back.
+        const d = stopAt + 1.2 + 3.75;
+        if (room > d + 5) this.mark('stop', k, back(d), -g * lay.lanes[0], g, 2, 7.5);
+        if (A.kind === 'yieldZebra') for (const dd of [30, 50]) if (room > dd + 12) this.mark('diamond', k, back(dd), -g * lay.lanes[0], g, 1.5, 4.5);
+      }
+    }
     // Centre line: a yellow double line on the main roads (no overtaking), a dashed white line on the side streets.
     const open = subtract([[0, L]], breaks, 0.8);
     if (major) {
@@ -729,7 +677,7 @@ export class StreetMesh {
   }
 
   /** Manhole covers in the road, drain grates in the gutters. */
-  private fittings(k: number, junctions: Junction[], runs: readonly [Span[], Span[]], rng: () => number): void {
+  private fittings(k: number, junctions: StreetJunction[], runs: readonly [Span[], Span[]], rng: () => number): void {
     const line = this.lines[k];
     const lay = streetLayout(this.streets[k].width);
     const hw = this.streets[k].width / 2;
@@ -747,7 +695,7 @@ export class StreetMesh {
   // ---------------------------------------------------------------- street furniture
 
   /** Main roads: white guard rails along the kerbs (gaps at the corners and driveways), bus stops. */
-  private furnish(k: number, junctions: Junction[], runs: readonly [Span[], Span[]], rng: () => number): void {
+  private furnish(k: number, junctions: StreetJunction[], runs: readonly [Span[], Span[]], rng: () => number): void {
     const hw = this.streets[k].width / 2;
     runs.forEach((list, i) => {
       const side = i ? 1 : -1;
@@ -759,6 +707,7 @@ export class StreetMesh {
           const s = [0, 5, -5, 10, -10].map((d) => at + d).find((s) => this.stopFits(k, s, side, junctions));
           if (s === undefined) continue;
           this.busStop(k, s, side);
+          this.busStops.push({ k, s, side });
           stops.push([s - 9, s + 9]);
         }
       }
@@ -781,7 +730,7 @@ export class StreetMesh {
   }
 
   /** Room for a bus stop at s: away from junctions and the middle of town, clear of the trees and lamps. */
-  private stopFits(k: number, s: number, side: 1 | -1, junctions: Junction[]): boolean {
+  private stopFits(k: number, s: number, side: 1 | -1, junctions: StreetJunction[]): boolean {
     const line = this.lines[k];
     if (junctions.some((J) => s > J.a - 40 && s < J.b + 40)) return false;
     const [x, z] = line.at(s);

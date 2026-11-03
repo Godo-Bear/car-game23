@@ -558,7 +558,8 @@ export class RaceSimulation {
     }
     if (ground.traffic) {
       ground.traffic.boxes.forEach((o, i) => {
-        if ((o.x - ph.x) ** 2 + (o.z - ph.z) ** 2 > 36) return;
+        // (Within reach of its far end: a bus is long.)
+        if ((o.x - ph.x) ** 2 + (o.z - ph.z) ** 2 > (o.hd + 4) ** 2) return;
         // A real knock stops that car for a moment.
         if (pushOut(o) > 2) ground.traffic!.bump(i);
       });

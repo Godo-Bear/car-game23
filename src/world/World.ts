@@ -165,10 +165,10 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
     city = new City(track, [], rng, { ...scene.city, noLots: true });
     streetCity = new StreetCity(streets.streets, R, landmarkGrounds(scene.city), createRng(1907));
     furniture = new StreetFurniture(streets.streets, createRng(2024));
-    // Life on the streets (free drive only): traffic and people, more of both on higher detail.
-    traffic = new CityTraffic(streets.streets, furniture.junctions, Math.round(28 + 34 * detail), createRng(31));
-    people = new CityPeople(streets.streets, Math.round(90 + 170 * detail), createRng(47));
     streetMesh = new StreetMesh(streets.streets, createRng(88), furniture.footprints);
+    // Life on the streets (free drive only): traffic and people, more of both on higher detail.
+    traffic = new CityTraffic(streets.streets, furniture.junctions, Math.round(28 + 34 * detail), createRng(31), streetMesh.busStops);
+    people = new CityPeople(streets.streets, Math.round(90 + 170 * detail), createRng(47), { signals: furniture.junctions, busStops: streetMesh.busStops });
     // After dark the streets are wet from the evening's rain: the lamps and neon reflect in them.
     streaks = new ReflectionStreaks([...furniture.streakLights, ...streetCity.streakLights]);
     group.add(city.group, streetCity.group, furniture.group, traffic.group, people.group, streetMesh.group, streaks.mesh);
@@ -234,6 +234,7 @@ export function buildWorld(def: TrackDef, track: TrackPath, rng: () => number, d
       streetCity?.setTimeOfDay(tod);
       furniture?.setTimeOfDay(tod);
       traffic?.setTimeOfDay(tod);
+      people?.setTimeOfDay(tod);
       streetMesh?.setTimeOfDay(tod);
       trackVisual.setTimeOfDay(tod);
       roadWetness.value = streetMesh && tod === 'night' ? 0.85 : 0;

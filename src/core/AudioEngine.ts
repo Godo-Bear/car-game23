@@ -263,6 +263,32 @@ export class AudioEngine {
     }
   }
 
+  /** A car horn somewhere in the traffic (loudness 0-1, by how near it is): two notes a third apart. */
+  horn(volume: number): void {
+    const ctx = this.ctx;
+    if (!ctx || volume <= 0.02) return;
+    const t = ctx.currentTime;
+    const len = 0.28 + Math.random() * 0.35;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.16 * volume, t + 0.02);
+    g.gain.setValueAtTime(0.16 * volume, t + len);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + len + 0.08);
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 1900;
+    filter.connect(g).connect(this.fxBus);
+    const pitch = 0.9 + Math.random() * 0.25;
+    for (const f of [370, 466]) {
+      const o = ctx.createOscillator();
+      o.type = 'square';
+      o.frequency.value = f * pitch;
+      o.connect(filter);
+      o.start(t);
+      o.stop(t + len + 0.1);
+    }
+  }
+
   beep(high: boolean): void {
     const ctx = this.ctx;
     if (!ctx) return;
