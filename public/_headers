@@ -6,7 +6,8 @@
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
-  X-Frame-Options: SAMEORIGIN
+  # The game can be embedded in any site (an <iframe> on a game portal or another page).
+  Content-Security-Policy: frame-ancestors *
   Permissions-Policy: camera=(), microphone=(), geolocation=()
 
 /previews/*
