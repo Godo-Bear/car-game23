@@ -6,8 +6,8 @@
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
-  # The game can be embedded in any site (an <iframe> on a game portal or another page).
-  Content-Security-Policy: frame-ancestors *
+  # Only this site and StudySmartly may show the game inside a page (<iframe>).
+  Content-Security-Policy: frame-ancestors 'self' https://studysmartly.jn-studios.workers.dev
   Permissions-Policy: camera=(), microphone=(), geolocation=()
 
 /previews/*
